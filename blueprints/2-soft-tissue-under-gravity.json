@@ -1,0 +1,166 @@
+{
+    "esasim": {
+        "kind": "blueprint",
+        "flow_id": 19
+    },
+    "name": "2 · Soft tissue under gravity",
+    "description": "The same CT case as a soft-tissue model (metaball method of G. De Novi): organs sag, sway and push each other as the body turns, held by the fixed skeleton and contained by the skin.",
+    "published_version": 1,
+    "updated": "2026-11-08 21:04:33",
+    "graph": {
+        "nodes": [
+            {
+                "id": "dl",
+                "type": "download-files",
+                "x": 0,
+                "y": 160,
+                "params": {
+                    "sources": "https://zenodo.org/records/10047263",
+                    "fetch": "*.zip",
+                    "keep": "*.nii.gz",
+                    "inside": "",
+                    "case_file": "ct.nii.gz",
+                    "cases": "s1400",
+                    "also": "meta.csv",
+                    "per_folder": 0,
+                    "max_files": 0,
+                    "seed": 1,
+                    "remote_zip": "auto",
+                    "licence": "CC-BY-4.0",
+                    "credit": "TotalSegmentator dataset v2.0.1 (small subset), Zenodo, doi:10.5281/zenodo.10047263. Wasserthal J., Breit H.-C., Meyer M.T., et al. TotalSegmentator: Robust Segmentation of 104 Anatomic Structures in CT Images. Radiology: Artificial Intelligence 2023; 5(5): e230024."
+                },
+                "title": "TotalSegmentator dataset (Zenodo): case s1400"
+            },
+            {
+                "id": "mesh",
+                "type": "labels-to-meshes",
+                "x": 420,
+                "y": 40,
+                "params": {
+                    "structures": "",
+                    "min_ml": 1,
+                    "smooth": 15,
+                    "triangles": 20000,
+                    "scene_triangles": 300000,
+                    "step": 1,
+                    "largest": false,
+                    "formats": "glb"
+                },
+                "title": "Expert labels to 3D models"
+            },
+            {
+                "id": "soft",
+                "type": "soft-body",
+                "x": 420,
+                "y": 320,
+                "params": {
+                    "structures": "",
+                    "spheres": 40,
+                    "bone_spheres": 16,
+                    "coverage": 85,
+                    "skin": true,
+                    "skin_spacing": 40,
+                    "body_hu": -300
+                },
+                "title": "Soft-tissue model (metaballs)"
+            },
+            {
+                "id": "anatomy",
+                "type": "viewer-3d",
+                "x": 860,
+                "y": 60,
+                "params": {
+                    "environment": "night",
+                    "quality": "high",
+                    "floor": false,
+                    "models": "one at a time",
+                    "grid": false,
+                    "mouse_mode": "The model"
+                },
+                "title": "Soft anatomy: turn it, pull an organ"
+            },
+            {
+                "id": "tissues",
+                "type": "table-view",
+                "x": 860,
+                "y": 380,
+                "params": {
+                    "rows": 50
+                },
+                "title": "Structures: tissue, stiffness, spheres"
+            }
+        ],
+        "edges": [
+            {
+                "id": "dl.files>mesh.labels",
+                "from": {
+                    "node": "dl",
+                    "port": "files"
+                },
+                "to": {
+                    "node": "mesh",
+                    "port": "labels"
+                }
+            },
+            {
+                "id": "dl.files>soft.labels",
+                "from": {
+                    "node": "dl",
+                    "port": "files"
+                },
+                "to": {
+                    "node": "soft",
+                    "port": "labels"
+                }
+            },
+            {
+                "id": "dl.files>soft.scans",
+                "from": {
+                    "node": "dl",
+                    "port": "files"
+                },
+                "to": {
+                    "node": "soft",
+                    "port": "scans"
+                }
+            },
+            {
+                "id": "mesh.models>anatomy.scene",
+                "from": {
+                    "node": "mesh",
+                    "port": "models"
+                },
+                "to": {
+                    "node": "anatomy",
+                    "port": "scene"
+                }
+            },
+            {
+                "id": "soft.model>anatomy.scene",
+                "from": {
+                    "node": "soft",
+                    "port": "model"
+                },
+                "to": {
+                    "node": "anatomy",
+                    "port": "scene"
+                }
+            },
+            {
+                "id": "soft.table>tissues.data",
+                "from": {
+                    "node": "soft",
+                    "port": "table"
+                },
+                "to": {
+                    "node": "tissues",
+                    "port": "data"
+                }
+            }
+        ],
+        "notes": [],
+        "dash": {
+            "items": []
+        }
+    }
+}

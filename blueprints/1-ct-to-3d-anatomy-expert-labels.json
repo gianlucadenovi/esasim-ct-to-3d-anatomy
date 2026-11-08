@@ -6,7 +6,7 @@
     "name": "1 · CT to 3D anatomy (expert labels)",
     "description": "Three CT cases of the TotalSegmentator dataset, read in place from Zenodo, checked, shown as slices with the anatomy, and turned into 3D models from the experts' labels.",
     "published_version": 2,
-    "updated": "2026-11-08 20:05:12",
+    "updated": "2026-11-08 20:22:32",
     "graph": {
         "nodes": [
             {
@@ -20,7 +20,7 @@
                     "keep": "*.nii.gz",
                     "inside": "",
                     "case_file": "ct.nii.gz",
-                    "cases": "3",
+                    "cases": "s1400",
                     "also": "meta.csv",
                     "per_folder": 0,
                     "max_files": 0,
@@ -29,7 +29,7 @@
                     "licence": "CC-BY-4.0",
                     "credit": "TotalSegmentator dataset v2.0.1 (small subset), Zenodo, doi:10.5281/zenodo.10047263. Wasserthal J., Breit H.-C., Meyer M.T., et al. TotalSegmentator: Robust Segmentation of 104 Anatomic Structures in CT Images. Radiology: Artificial Intelligence 2023; 5(5): e230024."
                 },
-                "title": "TotalSegmentator dataset (Zenodo, 3 cases)"
+                "title": "TotalSegmentator dataset (Zenodo): case s1400"
             },
             {
                 "id": "rd",
@@ -88,6 +88,8 @@
                 "params": {
                     "environment": "night",
                     "quality": "high",
+                    "floor": false,
+                    "models": "one at a time",
                     "grid": false,
                     "mouse_mode": "The model"
                 },

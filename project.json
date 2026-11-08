@@ -14,6 +14,12 @@
             "file": "blueprints/1-ct-to-3d-anatomy-expert-labels.json",
             "published_version": 2,
             "nodes": 7
+        },
+        {
+            "name": "2 · Soft tissue under gravity",
+            "file": "blueprints/2-soft-tissue-under-gravity.json",
+            "published_version": 1,
+            "nodes": 5
         }
     ],
     "blocks": []
