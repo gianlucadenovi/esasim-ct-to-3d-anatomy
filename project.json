@@ -18,7 +18,7 @@
         {
             "name": "2 · Soft tissue under gravity",
             "file": "blueprints/2-soft-tissue-under-gravity.json",
-            "published_version": 1,
+            "published_version": 2,
             "nodes": 5
         }
     ],
