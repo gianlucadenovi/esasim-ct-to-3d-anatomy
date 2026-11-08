@@ -74,6 +74,6 @@ An [EsaSim](https://esacode.com/) project of the workspace Gianluca De Novi's wo
 ### Blueprints in this repository
 
 - [1 · CT to 3D anatomy (expert labels)](blueprints/1-ct-to-3d-anatomy-expert-labels.json) · 7 blocks · version 2
-- [2 · Soft tissue under gravity](blueprints/2-soft-tissue-under-gravity.json) · 5 blocks · version 2
+- [2 · Soft tissue under gravity](blueprints/2-soft-tissue-under-gravity.json) · 5 blocks · version 3
 
 Keys pasted in blocks (secret settings) are not saved here. Datasets, results and the team stay in EsaSim.

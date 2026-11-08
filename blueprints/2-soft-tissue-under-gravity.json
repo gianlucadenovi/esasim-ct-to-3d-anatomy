@@ -5,7 +5,7 @@
     },
     "name": "2 · Soft tissue under gravity",
     "description": "The same CT case as a soft-tissue model (metaball method of G. De Novi): organs sag, sway and push each other as the body turns, held by the fixed skeleton and contained by the skin.",
-    "published_version": 2,
+    "published_version": 3,
     "updated": "2026-11-08 23:15:48",
     "graph": {
         "nodes": [
