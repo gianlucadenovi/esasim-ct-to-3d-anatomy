@@ -1,0 +1,190 @@
+{
+    "esasim": {
+        "kind": "blueprint",
+        "flow_id": 18
+    },
+    "name": "1 · CT to 3D anatomy (expert labels)",
+    "description": "Three CT cases of the TotalSegmentator dataset, read in place from Zenodo, checked, shown as slices with the anatomy, and turned into 3D models from the experts' labels.",
+    "published_version": 1,
+    "updated": "2026-11-08 19:51:31",
+    "graph": {
+        "nodes": [
+            {
+                "id": "dl",
+                "type": "download-files",
+                "x": 0,
+                "y": 160,
+                "params": {
+                    "sources": "https://zenodo.org/records/10047263",
+                    "fetch": "*.zip",
+                    "keep": "*.nii.gz",
+                    "inside": "",
+                    "case_file": "ct.nii.gz",
+                    "cases": "3",
+                    "also": "meta.csv",
+                    "per_folder": 0,
+                    "max_files": 0,
+                    "seed": 1,
+                    "remote_zip": "auto",
+                    "licence": "CC-BY-4.0",
+                    "credit": "TotalSegmentator dataset v2.0.1 (small subset), Zenodo, doi:10.5281/zenodo.10047263. Wasserthal J., Breit H.-C., Meyer M.T., et al. TotalSegmentator: Robust Segmentation of 104 Anatomic Structures in CT Images. Radiology: Artificial Intelligence 2023; 5(5): e230024."
+                },
+                "title": "TotalSegmentator dataset (Zenodo, 3 cases)"
+            },
+            {
+                "id": "rd",
+                "type": "medical-read",
+                "x": 420,
+                "y": -60,
+                "params": {
+                    "window": "CT soft tissue",
+                    "skip": "segmentations, segmentation, masks, mask, labels, label",
+                    "convert": true
+                },
+                "title": "Read and check the scans"
+            },
+            {
+                "id": "mesh",
+                "type": "labels-to-meshes",
+                "x": 420,
+                "y": 320,
+                "params": {
+                    "structures": "",
+                    "min_ml": 1,
+                    "smooth": 15,
+                    "triangles": 20000,
+                    "scene_triangles": 300000,
+                    "step": 1,
+                    "largest": false,
+                    "formats": "glb + stl"
+                },
+                "title": "Expert labels to 3D models"
+            },
+            {
+                "id": "slices",
+                "type": "image-view",
+                "x": 860,
+                "y": -160,
+                "params": {
+                    "size": "large"
+                },
+                "title": "Slices, with the anatomy over them"
+            },
+            {
+                "id": "scans",
+                "type": "table-view",
+                "x": 860,
+                "y": 60,
+                "params": {
+                    "rows": 50
+                },
+                "title": "The scans"
+            },
+            {
+                "id": "anatomy",
+                "type": "viewer-3d",
+                "x": 860,
+                "y": 280,
+                "params": {
+                    "environment": "night",
+                    "quality": "high",
+                    "grid": false
+                },
+                "title": "3D anatomy"
+            },
+            {
+                "id": "models",
+                "type": "table-view",
+                "x": 860,
+                "y": 520,
+                "params": {
+                    "rows": 50
+                },
+                "title": "Every model: volume, and ready to print?"
+            }
+        ],
+        "edges": [
+            {
+                "id": "dl.files>rd.scans",
+                "from": {
+                    "node": "dl",
+                    "port": "files"
+                },
+                "to": {
+                    "node": "rd",
+                    "port": "scans"
+                }
+            },
+            {
+                "id": "dl.files>rd.labels",
+                "from": {
+                    "node": "dl",
+                    "port": "files"
+                },
+                "to": {
+                    "node": "rd",
+                    "port": "labels"
+                }
+            },
+            {
+                "id": "dl.files>mesh.labels",
+                "from": {
+                    "node": "dl",
+                    "port": "files"
+                },
+                "to": {
+                    "node": "mesh",
+                    "port": "labels"
+                }
+            },
+            {
+                "id": "rd.previews>slices.images",
+                "from": {
+                    "node": "rd",
+                    "port": "previews"
+                },
+                "to": {
+                    "node": "slices",
+                    "port": "images"
+                }
+            },
+            {
+                "id": "rd.table>scans.data",
+                "from": {
+                    "node": "rd",
+                    "port": "table"
+                },
+                "to": {
+                    "node": "scans",
+                    "port": "data"
+                }
+            },
+            {
+                "id": "mesh.models>anatomy.scene",
+                "from": {
+                    "node": "mesh",
+                    "port": "models"
+                },
+                "to": {
+                    "node": "anatomy",
+                    "port": "scene"
+                }
+            },
+            {
+                "id": "mesh.table>models.data",
+                "from": {
+                    "node": "mesh",
+                    "port": "table"
+                },
+                "to": {
+                    "node": "models",
+                    "port": "data"
+                }
+            }
+        ],
+        "notes": [],
+        "dash": {
+            "items": []
+        }
+    }
+}
