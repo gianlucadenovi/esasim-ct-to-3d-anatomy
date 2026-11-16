@@ -7,6 +7,8 @@
     "name": "CT to 3D anatomy",
     "description": "CT scans become coloured 3D models of every organ, bone and vessel: to look at in the browser, cut through, and print. For research and teaching, not for clinical use.",
     "type": "medical",
+    "cover": "upload",
+    "cover_file": "assets/cover.jpg",
     "readme": "README.md",
     "blueprints": [
         {
