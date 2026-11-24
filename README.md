@@ -80,6 +80,10 @@ An [EsaSim](https://esacode.com/) project of the workspace Gianluca De Novi's wo
 - [1 · CT to 3D anatomy (expert labels)](blueprints/1-ct-to-3d-anatomy-expert-labels.json) · 7 blocks · version 2
 - [2 · Soft tissue under gravity](blueprints/2-soft-tissue-under-gravity.json) · 5 blocks · version 3
 
+### Workspace blocks it uses
+
+- [3D view (stable soft tissue)](blocks/ws-3d-view-stable-soft-tissue) · version 2
+
 ### Assets
 
 The files the project's views draw with (3D models, textures, sounds), in [assets/](assets/):

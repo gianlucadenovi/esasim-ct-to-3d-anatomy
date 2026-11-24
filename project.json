@@ -24,5 +24,11 @@
             "nodes": 5
         }
     ],
-    "blocks": []
+    "blocks": [
+        {
+            "id": "ws-3d-view-stable-soft-tissue",
+            "version": 2,
+            "name": "3D view (stable soft tissue)"
+        }
+    ]
 }

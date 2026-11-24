@@ -6,7 +6,7 @@
     "name": "1 · CT to 3D anatomy (expert labels)",
     "description": "Three CT cases of the TotalSegmentator dataset, read in place from Zenodo, checked, shown as slices with the anatomy, and turned into 3D models from the experts' labels.",
     "published_version": 2,
-    "updated": "2026-11-09 01:55:26",
+    "updated": "2026-11-24 18:14:35",
     "graph": {
         "nodes": [
             {
@@ -82,7 +82,7 @@
             },
             {
                 "id": "anatomy",
-                "type": "viewer-3d",
+                "type": "ws-3d-view-stable-soft-tissue",
                 "x": 860,
                 "y": 280,
                 "params": {
