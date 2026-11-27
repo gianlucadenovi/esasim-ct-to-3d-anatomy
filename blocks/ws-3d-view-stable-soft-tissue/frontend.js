@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 5 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 6 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -3015,6 +3015,7 @@ function render(ctx) {
     if (!SOFT) return;
     SOFT.binds.forEach(function (b) { b.mesh.geometry.attributes.position.array.set(b.base); b.mesh.geometry.attributes.position.needsUpdate = true; });
     ballsDrop();
+    if (pokeTip) pokeTip.visible = false;
     SOFT = null; if (softEl) softEl.style.display = 'none';
     if (lookEl) lookEl.querySelector('.lk-balls-l').style.display = 'none';
   }
