@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 33 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 34 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -3399,7 +3399,15 @@ function render(ctx) {
     if (m.skin && m.skin.mesh && m.skin.mesh.positions) {                                       // the skin, drawn see-through
       var g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(m.skin.mesh.positions, 3));
-      g.setIndex(m.skin.mesh.faces); g.computeVertexNormals();
+      // its normals must point outward (the opacity rule depends on it): if the triangles are wound inside-out (negative
+      // signed volume), they are turned round
+      var sfa = Array.from(m.skin.mesh.faces), spa = m.skin.mesh.positions, svol = 0;
+      for (var st = 0; st + 2 < sfa.length; st += 3) {
+        var a0 = 3 * sfa[st], a1 = 3 * sfa[st + 1], a2 = 3 * sfa[st + 2];
+        svol += spa[a0] * (spa[a1 + 1] * spa[a2 + 2] - spa[a1 + 2] * spa[a2 + 1]) - spa[a0 + 1] * (spa[a1] * spa[a2 + 2] - spa[a1 + 2] * spa[a2]) + spa[a0 + 2] * (spa[a1] * spa[a2 + 1] - spa[a1 + 1] * spa[a2]);
+      }
+      if (svol < 0) for (var sw = 0; sw + 2 < sfa.length; sw += 3) { var tmp = sfa[sw + 1]; sfa[sw + 1] = sfa[sw + 2]; sfa[sw + 2] = tmp; }
+      g.setIndex(sfa); g.computeVertexNormals();
       // matte skin with a white sheen where the light that follows the camera glances off it (a broad soft lobe and a small
       // bright core); see-through where you look straight in, denser at the edges; the sheen shows however see-through it is
       // the skin: clear where it faces you, gradually opaque as it turns away (the edges) and on the far side of the body
@@ -3417,15 +3425,14 @@ function render(ctx) {
           .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nif (esOn > 0.5) { normal = esBump(-vViewPosition, normal, esK.x * 0.0005, faceDirection); roughnessFactor = max(roughnessFactor, min(0.6, length(fwidth(normal)) * 0.9)); }')
           .replace('#include <opaque_fragment>', '#include <opaque_fragment>\n{ vec3 esV = normalize( vViewPosition ), esN = normalize( normal );\n'
             // s: 1 facing you, 0 at the edge, -1 on the far side (a back face seen through the front)
-            // the angle between the skin and the line of sight: up to 45 degrees clear, from 45 to 90 gradually solid
-            + 'float esF = dot( esN, esV ) * faceDirection, esTh = acos( clamp( abs( esF ), 0.0, 1.0 ) );\n'
-            + 'float esT = clamp( ( esTh - 0.7854 ) / 0.7854, 0.0, 1.0 ); esT = esT * esT * ( 3.0 - 2.0 * esT );\n'
-            // the front: clear up to 45 degrees; the far side of the body (seen through the front): nearly opaque, a backdrop
-            + 'float esA = esF < 0.0 ? mix( 0.85, 1.0, esT ) : mix( 0.02, 1.0, esT ); esA = clamp( esA + esK.y * esT * ( 1.0 - esA ) * 0.4, 0.0, 1.0 );\n'
+            // opacity = (n . v + 1) / 2: n the outward normal, v the direction of view (from the eye into the scene):
+            // -1 (facing you) fully clear, 0 (side-on) half, +1 (the far side, facing away) fully opaque
+            + 'float esF = dot( esN, esV ) * faceDirection;\n'
+            + 'float esA = clamp( 0.5 - 0.5 * esF, 0.0, 1.0 );\n'
             + 'vec3 esHv = normalize( normalize( vec3( 0.4, 0.6, 1.0 ) ) + esV ); float esNH = max( dot( esN, esHv ), 0.0 );\n'
             + 'float esS = 0.12 * pow( esNH, 9.0 ) + 0.18 * pow( esNH, 80.0 );\n'
             + 'if ( esF < 0.0 ) gl_FragColor.rgb += diffuseColor.rgb * vec3( 1.0, 0.75, 0.65 ) * 0.22 * ( -esF );\n'
-            + 'gl_FragColor.rgb += vec3( esS ); gl_FragColor.a = clamp( max( esA, esS * 0.9 ), 0.0, 1.0 ); }');
+            + 'gl_FragColor.rgb += vec3( esS ) * esA; gl_FragColor.a = esA; }');
       };
       skinMat.customProgramCacheKey = function () { return 'esasim-skin-2'; };
       var skin = new THREE.Mesh(g, skinMat);
