@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 28 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 29 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -614,6 +614,13 @@ function render(ctx) {
     var bar = LOADEL.querySelector('.ld-b');
     if (frac == null) { bar.style.width = '35%'; bar.style.opacity = '0.5'; } else { bar.style.width = Math.round(100 * Math.max(0, Math.min(1, frac))) + '%'; bar.style.opacity = '1'; }
   }
+  // the model is built: its shaders are compiled (the pause after the download) with the panel still up, then it goes
+  function loadingDone() {
+    loadingUi(true, 'Preparing the tissue textures', 1);
+    var done = false, go = function () { if (done) return; done = true; setTimeout(function () { loadingUi(false); }, 60); };
+    try { if (renderer.compileAsync) { renderer.compileAsync(scene, camera).then(go, go); setTimeout(go, 20000); return; } } catch (e) { }
+    setTimeout(go, 60);
+  }
   function sampleShow(on) {
     if (STG.sample) { scene.remove(STG.sample); STG.sample = null; }
     loadingUi(on, on ? 'Starting' : null, on ? 0 : null);
@@ -658,9 +665,10 @@ function render(ctx) {
     var onP = function (loaded, total, waiting) {
       if (mySeq !== FILES.seq) return;
       ctx.status(waiting ? 'Waiting for the worker to send ' + f.name + '…' : f.name + ' · ' + MB(loaded) + (total ? ' of ' + MB(total) + ' (' + Math.round(loaded / total * 100) + '%)' : ''));
+      loadingUi(true, waiting ? 'Waiting for the machine to send ' + f.name : 'Downloading ' + f.name + ' · ' + MB(loaded) + (total ? ' of ' + MB(total) : ''), waiting ? null : (total ? 0.9 * loaded / total : null));
     };
     return ctx.files.buffer(f, onP).then(function (buf) {
-      if (mySeq === FILES.seq) ctx.status('Reading ' + f.name + '…');
+      if (mySeq === FILES.seq) { ctx.status('Reading ' + f.name + '…'); loadingUi(true, 'Building the model from ' + f.name, 0.92); }
       var ext = ctx.files.ext(f), obj = null;
       if (ext === 'glb' || ext === 'gltf') return new Promise(function (res, rej) {
         var gl = new A.GLTFLoader();
@@ -761,7 +769,8 @@ function render(ctx) {
     })).then(function (objs) {
       if (seq !== FILES.seq) return;                       // another model was chosen meanwhile
       modelState(FILES.state.name, true);
-      if (objs.some(function (o) { return o; })) { ctx.status(''); sampleShow(false); }
+      if (objs.some(function (o) { return o; })) ctx.status('');
+      else loadingUi(false);
       // animated files play their first animation in a loop, as in the 3D view (WebGPU)
       objs.forEach(function (o) {
         var clips = o && o.userData && o.userData.clips;
@@ -789,6 +798,7 @@ function render(ctx) {
       fitBox(new THREE.Box3().setFromObject(root), 0.3); // models alone: frame them closely, small ones too
       stageFiles(root);                                  // Stage: the model on the EsaSim stage, as the render sees it
       enhanceApply();                                    // Enhance: shadows and bloom, if on
+      loadingDone();
       // a soft-body model of the same case (s1400_softbody.json for s1400_anatomy.glb): the tissue moves under gravity
       var shown = objs.filter(function (o) { return o; })[0], soft = shown && (FILES.soft || []).filter(function (sf) { return shortName(sf.name).replace(/[._-]?softbody(\.json)?$/i, '') === shortName(shown.userData.file || ''); })[0];
       if (!soft && shown && (FILES.soft || []).length === 1 && objs.length === 1) soft = FILES.soft[0];
