@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Score segmentation against experts (ws-score-segmentation-against-experts) · version 1 · worker block, Python: def run(ctx)
+# Score segmentation against experts (ws-score-segmentation-against-experts) · version 2 · worker block, Python: def run(ctx)
 # Compares automatic masks with expert masks of the same cases, structure by structure: Dice, volumes and their difference, and a mean per group.
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-27
@@ -40,9 +40,14 @@ def run(ctx):
     min_ml = float(ctx.params.get("min_ml") if ctx.params.get("min_ml") is not None else 0.5)
     auto, expert = masks_of(ctx.inputs.get("auto", [])), masks_of(ctx.inputs.get("experts", []))
     cases = sorted(set(auto) & set(expert))
-    if not cases:
-        raise RuntimeError("No case on both sides: automatic cases %s, expert cases %s (they are matched by folder name)."
-                           % (sorted(auto)[:5], sorted(expert)[:5]))
+    if not cases:                       # your own scans: nothing to compare with, and that is fine
+        ctx.log("No expert labels for these cases (segmented: %s; with expert labels: %s): nothing to score."
+                % (", ".join(sorted(auto)[:5]) or "none", ", ".join(sorted(expert)[:5]) or "none"))
+        with open(ctx.output("table", "score.csv"), "w", newline="", encoding="utf-8") as fh:
+            csv.writer(fh).writerow(["case", "structure", "group", "dice", "expert_ml", "auto_ml", "volume_diff_pct", "note"])
+        summary = {"cases": 0, "structures": 0, "note": "no expert labels for the segmented cases"}
+        ctx.write_json("summary", "summary.json", summary)
+        return summary
     rows = []
     for ci, case in enumerate(cases):
         names = sorted(set(auto[case]) | set(expert[case]))

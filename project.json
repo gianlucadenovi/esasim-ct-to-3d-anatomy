@@ -58,7 +58,7 @@
         },
         {
             "id": "ws-score-segmentation-against-experts",
-            "version": 1,
+            "version": 2,
             "name": "Score segmentation against experts"
         }
     ]
