@@ -112,6 +112,7 @@ An [EsaSim](https://esacode.com/) project of the workspace Gianluca De Novi's wo
 
 - [1 · CT to 3D anatomy (expert labels)](blueprints/1-ct-to-3d-anatomy-expert-labels.json) · 9 blocks · version 5
 - [2 · Soft tissue under gravity](blueprints/2-soft-tissue-under-gravity.json) · 5 blocks · version 6
+- [3 · Segment any CT automatically (TotalSegmentator)](blueprints/3-segment-any-ct-automatically-totalsegmentator.json) · 0 blocks
 
 ### Workspace blocks it uses
 

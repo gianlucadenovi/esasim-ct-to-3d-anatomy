@@ -22,6 +22,12 @@
             "file": "blueprints/2-soft-tissue-under-gravity.json",
             "published_version": 6,
             "nodes": 5
+        },
+        {
+            "name": "3 · Segment any CT automatically (TotalSegmentator)",
+            "file": "blueprints/3-segment-any-ct-automatically-totalsegmentator.json",
+            "published_version": 0,
+            "nodes": 0
         }
     ],
     "blocks": [
