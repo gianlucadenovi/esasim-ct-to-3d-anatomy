@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 13 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 14 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -772,6 +772,7 @@ function render(ctx) {
       if (!root.children.length) return;                 // none could be read: the material table stays
       fitBox(new THREE.Box3().setFromObject(root), 0.3); // models alone: frame them closely, small ones too
       stageFiles(root);                                  // Stage: the model on the EsaSim stage, as the render sees it
+      enhanceApply();                                    // Enhance: shadows and bloom, if on
       // a soft-body model of the same case (s1400_softbody.json for s1400_anatomy.glb): the tissue moves under gravity
       var shown = objs.filter(function (o) { return o; })[0], soft = shown && (FILES.soft || []).filter(function (sf) { return shortName(sf.name).replace(/[._-]?softbody(\.json)?$/i, '') === shortName(shown.userData.file || ''); })[0];
       if (!soft && shown && (FILES.soft || []).length === 1 && objs.length === 1) soft = FILES.soft[0];
@@ -3863,7 +3864,9 @@ function render(ctx) {
     if (MediaRecorder.isTypeSupported(v[0]) && !VID.some(function (x) { return x[1].split(' ')[0] === v[1].split(' ')[0] && x[0].indexOf('codecs') > 0; })) VID.push(v);
   });
   var opt = function (list, sel) { return list.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === sel ? ' selected' : '') + '>' + o[1] + '</option>'; }).join(''); };
-  panel.innerHTML = '<b style="font-size:12.5px">Pictures and videos</b>'
+  panel.innerHTML = '<b style="font-size:12.5px">Look</b>'
+    + '<label class="c-enh-l" title="3D models: soft shadows from the light at the camera across the model, and a soft glow on the brightest highlights (heavier for the graphics card)"><input type="checkbox" class="c-enh" style="margin:0;accent-color:#7b8cff">Enhance: shadows and bloom</label>'
+    + '<b style="font-size:12.5px;margin-top:4px">Pictures and videos</b>'
     + '<label>Picture<select class="c-img" style="' + selCss + '">' + opt([['image/png', 'PNG'], ['image/jpeg', 'JPEG'], ['image/webp', 'WebP']], 'image/png') + '</select></label>'
     + '<label>Record<select class="c-mode" style="' + selCss + '">' + opt([['live', 'What I see, in real time'], ['replay', 'The replay of this run, frame by frame']], 'live') + '</select></label>'
     + '<label>Video format<select class="c-vid" style="' + selCss + '"></select></label>'
@@ -3872,8 +3875,54 @@ function render(ctx) {
     + '<label style="flex:1">Quality<select class="c-q" style="' + selCss + '">' + opt([['0.08', 'Standard'], ['0.16', 'High'], ['0.32', 'Best']], '0.16') + '</select></label></div>'
     + '<div class="c-note" style="color:#9aa3b2;font-size:11.5px"></div>';
   panel.querySelectorAll('label').forEach(function (l) { l.style.cssText = 'display:flex;flex-direction:column;gap:3px;color:#c9d1dc;font-size:11.5px'; });
+  panel.querySelector('.c-enh-l').style.cssText = 'display:flex;flex-direction:row;gap:7px;align-items:center;color:#c9d1dc;font-size:11.5px;cursor:pointer';
   ui.appendChild(panel);
   var cq = function (c) { return panel.querySelector(c); };
+  // Enhance (3D files): the light that moves with the camera casts soft shadows across the model (fitted around the
+  // model every frame, so they stay sharp; see-through parts cast none), and a soft bloom makes the brightest wet
+  // highlights glow, with FXAA for the edges. On by default (not at the fast quality); remembered with the view.
+  var ENH = { on: (ctx.state || {}).enhance != null ? !!(ctx.state || {}).enhance : quality !== 'fast', mine: false, bloom: null, c: null, r: 1, seq: -1 };
+  cq('.c-enh').checked = ENH.on;
+  cq('.c-enh').onchange = function () { ENH.on = this.checked; enhanceApply(); keepView(true); };
+  function enhanceApply() {
+    var on = ENH.on && mode === 'files' && !!FILES.root;
+    if (headLight) {
+      headLight.castShadow = on && renderer.shadowMap.enabled;
+      if (on) {
+        var ms = quality === 'high' ? 4096 : 2048;
+        if (headLight.shadow.mapSize.x !== ms) { headLight.shadow.mapSize.set(ms, ms); if (headLight.shadow.map) { headLight.shadow.map.dispose(); headLight.shadow.map = null; } }
+        headLight.shadow.bias = -0.0005; headLight.shadow.normalBias = 0.002;
+        if (headLight.target.parent !== scene) scene.add(headLight.target);
+      }
+    }
+    if (FILES.root) FILES.root.traverse(function (o) {
+      if (!o.isMesh) return;
+      if (!o.userData.sh0) o.userData.sh0 = [o.castShadow, o.receiveShadow];
+      var see = o.name === 'skin' || o === (PARTS && PARTS.cap) || (o.material && o.material.transparent);
+      o.castShadow = on ? !see : o.userData.sh0[0]; o.receiveShadow = on ? true : o.userData.sh0[1];
+    });
+    if (on && FILES.root) {                                       // the model's sphere, in the model's own frame
+      var b = new THREE.Box3().setFromObject(FILES.root), sp = b.getBoundingSphere(new THREE.Sphere());
+      ENH.c = FILES.root.worldToLocal(sp.center.clone()); ENH.r = Math.max(0.05, sp.radius); ENH.seq = FILES.seq;
+    }
+    if (on && !composer && quality !== 'fast') {
+      composer = new A.EffectComposer(renderer); composer.addPass(new A.RenderPass(scene, camera)); composer.addPass(cleanPass());
+      ENH.bloom = new A.UnrealBloomPass(new THREE.Vector2(256, 256), 0.32, 0.5, 0.92); composer.addPass(ENH.bloom);
+      composer.addPass(new A.OutputPass()); composer.addPass(fxaaPass()); ENH.mine = true; resize();
+    } else if (!on && ENH.mine) {
+      if (composer && composer.dispose) composer.dispose();
+      composer = null; ENH.mine = false; ENH.bloom = null;
+    }
+  }
+  var enhV = new THREE.Vector3();
+  function enhanceTick() {
+    if (!ENH.on || !headLight || !headLight.castShadow || !FILES.root || !ENH.c) return;
+    if (ENH.seq !== FILES.seq) { enhanceApply(); if (!ENH.c) return; }
+    var c = FILES.root.localToWorld(ENH.c.clone()), r = ENH.r;
+    headLight.target.position.copy(c); headLight.target.updateMatrixWorld();
+    var d = headLight.getWorldPosition(enhV).distanceTo(c), sc = headLight.shadow.camera;
+    sc.left = -r; sc.right = r; sc.top = r; sc.bottom = -r; sc.near = Math.max(0.01, d - 1.5 * r); sc.far = d + 1.5 * r; sc.updateProjectionMatrix();
+  }
   function vidFormats() {
     var live = cq('.c-mode').value === 'live', list = [];
     if (live) list = window.VideoEncoder ? [['mp4', 'MP4 (H.264)'], ['webm-vp9', 'WebM (VP9)']] : VID.slice();
@@ -12018,7 +12067,8 @@ function render(ctx) {
       applyMouse(dt);
       if (mode === 'files') { softStep(dt); if (FILES.mixers) FILES.mixers.forEach(function (m) { m.update(dt); }); }
       advance(dt, false);
-      if (mode === 'files') partsPlaneTick();          // the cut turns with the model
+      if (mode === 'files') { partsPlaneTick(); enhanceTick(); }   // the cut turns with the model; the shadows follow it
+      else if (ENH.mine) enhanceApply();               // left the 3D files: their bloom goes
       draw();
     } catch (err) {
       // errors in the animation loop would reach the page only as "Script error." (the frame is sandboxed): say what it is
@@ -12078,7 +12128,7 @@ function render(ctx) {
     if (!ctx.saveState) return;
     if (!now && performance.now() - saveAt < 1000) return;
     saveAt = performance.now();
-    ctx.saveState({ cam: { p: camera.position.toArray(), t: controls.target.toArray(), q: camera.quaternion.toArray(), flying: flying }, speed: speed, model: FILES.sel, partsMin: PARTS.min,
+    ctx.saveState({ cam: { p: camera.position.toArray(), t: controls.target.toArray(), q: camera.quaternion.toArray(), flying: flying }, speed: speed, model: FILES.sel, partsMin: PARTS.min, enhance: ENH.on,
       fleet: { routes: FLEET.routes, heat: FLEET.heat, cine: FLEET.cine, labels: FLEET.labels }, rkcam: RK.cam, crcam: CR.cam, vgcam: VG.cam, hmcam: HM.camPicked || 'director', sound: AUD.on, voice: AUD.voice, voiceName: AUD.voiceName || null });
   }
   controls.addEventListener('end', function () { keepView(true); });
