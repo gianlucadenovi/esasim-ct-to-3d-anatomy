@@ -65,9 +65,9 @@ Any CT, loaded from your computer, a worker or a dataset, segmented by a neural 
 
 | Block | What it does |
 |---|---|
-| **Load a CT** (on the View) | The loading dialog: drop or choose a folder from your computer, see its series, tick the ones to segment, press **Load**. Also: a folder on a worker, or the wired files. |
+| **Load a CT** (on the View) | The loading dialog: press **▶ Start**, drop or choose a folder from your computer, tick the series, press **Send**. Also: a folder on a worker, or the wired files. |
 | **Demo scans** | Case s1400 of the TotalSegmentator dataset (Zenodo), with the experts' labels: what the flow loads when you press Run in the editor. |
-| **Load the CT scans** | Finds the scans in whatever it is given (a disc's DICOMDIR / DICOM / IHE_PDI folders, loose DICOM, NIfTI, NRRD, MHA, zips), groups DICOM images into series, chooses the series and writes each as `<case>/ct.nii.gz` in Hounsfield units, without patient tags. |
+| **Load the CT scans** | Finds the scans in whatever it is given (a disc's DICOMDIR / DICOM / IHE_PDI folders, loose DICOM, NIfTI, NRRD, MHA, zips), groups DICOM images into series, chooses the series and writes each as `<case>/ct.nii.gz` in Hounsfield units, without patient tags. With **Upload from the View** it waits for the files the panel sends. |
 | **Series found in the scans** | Every series on the disc, and what was done with it (loaded, localiser, report, too few images…). |
 | **Segment the CT automatically (TotalSegmentator)** | Runs the network on every scan and writes `<case>/segmentations/<structure>.nii.gz`, the layout every block after it reads. |
 | **Network labels to 3D models**, **The CT, for the cut**, **The skin (no physics)** | The same blocks as flow 1, fed with the network's masks. |
@@ -83,7 +83,7 @@ Three ways, all in flow 3. The first is the usual one.
 | | From this computer | From a worker's folder | From a dataset |
 |---|---|---|---|
 | **Where the scans are** | On the computer with the browser (a disc, a USB stick, Downloads) | On a worker's disk or a share it sees | In a dataset of the project (Data › Datasets) |
-| **How** | **Load a CT** on the View: drop the folder, tick, **Load** | **Load a CT** › *From a worker's folder*: give the path | Wire a **Dataset** block to the loader, then **Load a CT** › *Wired files* (or Run in the editor) |
+| **How** | **Load a CT** on the View: **▶ Start**, drop the folder, tick, **Send** | **Load a CT** › *From a worker's folder*: give the path | Wire a **Dataset** block to the loader, then **Load a CT** › *Wired files* (or Run in the editor) |
 | **The files travel** | Only the ticked series, compressed, browser → worker | Not at all: read in place | As the dataset is kept |
 | **Keep the page open** | Yes, until the files are sent | No | No |
 
@@ -113,25 +113,27 @@ CT2013/
 
 You do not need to find the right folder or to remove anything: **give the whole `CT2013` folder**.
 
+**Why Start comes first:** when a run starts, EsaSim shows the views again, and the browser forgets any folder chosen before. So the panel starts the run first, and you choose the folder once, while the run waits for it.
+
 1. **Copy the disc to your computer** (optional but faster than reading from the drive), for example to `Documents\CT2013`.
-2. **Open flow 3's View** and find the **Load a CT** panel, tab **From this computer**.
-3. **Drop the `CT2013` folder** on the dashed box, or press **Choose a folder…** and pick `CT2013` (the browser asks to confirm that the page may read the folder: it is read here, in your browser). **Choose files…** works too, for loose files.
-4. **Look at the table.** The panel reads only the start of each file (the DICOM tags that say which study, series and position an image belongs to; never patient names or IDs) and lists one row per series:
+2. **Open flow 3's View** and find the **Load a CT** panel, tab **From this computer**. (If it shows a button *Load N series and segment* and no **▶ Start**, the browser kept an old copy of the panel: reload the page with **Ctrl+Shift+R**.)
+3. **① Choose the segmentation and press ▶ Start.** **Task** (`total` for the 117 structures), **Resolution** (*1.5 mm* best; *3 mm* several times faster, fine for large organs), **Run on** (*auto*: a worker with an NVIDIA GPU; *CPU*: any worker). The run starts on a worker; in a few seconds the panel says **The worker is waiting: drop the folder with the scans here**. The run waits up to 30 minutes.
+4. **② Drop the `CT2013` folder** on the highlighted box, or press **Choose a folder…** and pick `CT2013` (the browser asks to confirm that the page may read the folder: it is read here, in your browser). **Choose files…** works too, for loose files.
+5. **Look at the table.** The panel reads only the start of each file (the DICOM tags that say which study, series and position an image belongs to; never patient names or IDs) and lists one row per series:
    - Series are named like `A_S3_Abdomen_1.5_B30f`: study **A** (a letter per study on the disc), series number **3**, and its description from the scanner.
    - Images of one series are put together wherever they are (a series split over `47658214` and `47661610` is one row), and the copies in `IHE_PDI` are counted once.
    - Greyed and not tickable: **localisers** (the scout images), **dose reports** and other non-image series, structured reports.
    - **Images**, **Slices** (thickness), **Covers** (how much of the body, in mm) and **Size** help you choose.
    - The **best CT series of each study** is ticked and marked *best*: axial, slices of 3 mm or thinner, covering the most of the body. Tick or untick others as you like: each ticked series becomes one case. A series marked *few images* (under 20) is usually not a whole scan.
-5. **Choose the segmentation:** **Task** (`total` for the 117 structures), **Resolution** (*1.5 mm* best; *3 mm* several times faster, fine for large organs), **Run on** (*auto*: a worker with an NVIDIA GPU; *CPU*: any worker).
-6. **Press Load N series and segment.** The panel shows the steps:
-   1. *Start the run*: the run starts on a worker; its loader waits for the files.
+6. **③ Press Send N series and segment.** The panel shows the steps:
+   1. *Start the run* (done).
    2. *Send the scans*: only the images of the ticked series go to the worker, compressed (a bar shows files and MB). **Keep the page open until this step is done.** Files that do not arrive are sent again by themselves.
    3. *Read the series*: the worker groups the images, puts them in order and writes each series as one scan in HU.
    4. *Segment and build the models*: the network, then the 3D models, the CT for the cut and the skin. Follow the run's progress; you can close the page now.
    5. *Done*: the 3D anatomy lists the cases (`A_S3_Abdomen_1.5_B30f`…): choose one in its list.
 7. **Check the result** on **Slices** (the network's colours over the scan), **Structures the network found** (volumes in ml), **3D anatomy** and **Every model**. The masks, STL files and the scans in NIfTI are under the run's **Results**.
 
-If the page reloads when the run starts, the panel says so: **choose the same folder again** and the series you ticked go on their own.
+**To look at the series before starting:** drop the folder first (without Start): the table shows what the disc holds. **Start and send** then starts the run; as the browser forgets the folder, choose it once more when the panel asks, and press **③ Send**.
 
 How long: reading the headers takes seconds for a few thousand files. Sending depends on your connection: a 500-image series of 512×512 is about 250 MB, often half that compressed. Segmenting takes 1 to 3 minutes a case on an NVIDIA GPU, 12 to 15 minutes on a CPU at 1.5 mm (a few minutes at 3 mm).
 
@@ -175,23 +177,25 @@ The CT is written in **Hounsfield units**, 16-bit. MR scans are kept when **Moda
 
 | What you see | Why, and what to do |
 |---|---|
+| No **▶ Start** button; the panel says *Load N series and segment* | The browser kept an old copy of the panel: reload the page with **Ctrl+Shift+R**. |
+| After Start, the panel stays on *The run started: waiting for the loader…* | The run waits for a worker, or the demo case is being read first (a few seconds). Check the run's log; with **Run on** *auto* the run needs a worker with an NVIDIA GPU online. |
 | The panel lists **no series** | The folder holds no DICOM images (only pictures or a viewer): look for the `DICOM` folder of the disc, or for `.dcm` files. |
 | Every series is greyed | Only localisers or reports were found, or all series are MR (tick them and choose the task `total_mr`). |
-| *A run is already going* | Wait for it to end, or stop it on the run page, then press Load again. |
-| *The page reloaded…: choose the same folder again* | The run's start reloaded the page: pick the folder again; the ticked series are sent by themselves. |
-| *Sending stopped* | The run ended or the connection dropped: press Load again. |
-| *No scans arrived from the view in 30 minutes* (run log) | The run started but nothing was sent: open the View and press Load while the run is going. |
+| *A run is already going* | Wait for it to end, or stop it with **Stop** at the top of the page, then press **▶ Start** again. |
+| *The run is waiting for your scans: drop the folder…* after choosing it | The page showed the views again when the run started (you chose the folder before **Start**): choose it once more and press **③ Send**. |
+| *Sending stopped* | The run ended or the connection dropped: if the run is still waiting, press **③ Send** again; else **▶ Start** again. |
+| *No scans arrived from the view in 30 minutes* (run log) | The run started but nothing was sent: press **▶ Start** again and drop the folder while the panel says the worker is waiting. |
 | *The folder … does not exist on this worker* | The path is wrong, or the run went to another worker: choose the worker in the run panel. |
 | *No scan to segment* | Every series was skipped: **Series found in the scans** says why for each. With *Only these series*, check **Series to load**. |
 | *not evenly spaced (missing images?)* | Images of the series are missing on the disc: the scan is still made, but check the slices. |
 | *no value below …: not in Hounsfield units?* | The scan was exported as pictures, not CT values: export it again as DICOM. |
-| *No CUDA GPU seen by PyTorch: segmenting on the CPU* | The worker's GPU cannot be used by PyTorch; the next lines give the CUDA error and the driver (`nvidia-smi`). The run goes on, slower. |
+| *No CUDA GPU seen by PyTorch: segmenting on the CPU*, with *nvidia-smi: … insufficient permissions* | The EsaSim worker runs under an account that may not use the GPU (a Windows service or a restricted user). Run the worker as the signed-in user, or give its account access to the NVIDIA driver (run as administrator); then the log says *Segmenting on the GPU*. The run goes on meanwhile, on the CPU. |
 | *TotalSegmentator stopped on …* | Its message follows. Most often: no internet on the first run (the weights, about 1.2 GB, are downloaded once into the worker's `~/.totalsegmentator`), or not enough memory for a very large scan: try *3 mm (fast)*. |
 | Network vs experts is empty | Your scans have no expert labels: normal. |
 
 ## What you need
 
-- A machine with the EsaSim worker (Project › Compute). Flows 1 and 2: any machine, no GPU needed. Flow 3: a worker with an NVIDIA GPU for **Run on** *auto* or *NVIDIA GPU*, or any worker with *CPU*.
+- A machine with the EsaSim worker (Project › Compute). Flows 1 and 2: any machine, no GPU needed. Flow 3: a worker with an NVIDIA GPU for **Run on** *auto* or *NVIDIA GPU*, the worker running under an account allowed to use the GPU; or any worker with *CPU*.
 - Internet access on that machine: the demo case is read from Zenodo the first time and kept in its cache; flow 3 also downloads the network's weights once (about 1.2 GB). Your own scans are never sent anywhere by the network, and TotalSegmentator's usage statistics are turned off.
 - Python packages, installed by the worker the first time: `SimpleITK`, `numpy`, `scipy`, `scikit-image`, `trimesh`, `fast-simplification`, `pillow`, `requests`; for flow 3 also `pydicom`, `TotalSegmentator` and `torch` (a CUDA build for the GPU).
 - A computer with a recent browser (Chrome, Edge or Firefox; WebGL 2) to open the 3D view and, for **Load a CT**, to read a folder: the CT on the cut and, in flow 2, the simulation run on the computer that shows it.
