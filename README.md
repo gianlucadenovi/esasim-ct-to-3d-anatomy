@@ -116,7 +116,7 @@ An [EsaSim](https://esacode.com/) project of the workspace Gianluca De Novi's wo
 ### Workspace blocks it uses
 
 - [CT volume for the 3D view](blocks/ws-ct-volume-for-the-3d-view) · version 1
-- [3D view (stable soft tissue)](blocks/ws-3d-view-stable-soft-tissue) · version 17
+- [3D view (stable soft tissue)](blocks/ws-3d-view-stable-soft-tissue) · version 18
 
 ### Assets
 

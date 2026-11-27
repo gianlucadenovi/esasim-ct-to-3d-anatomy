@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 17 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 18 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2673,8 +2673,8 @@ function render(ctx) {
   var TISSUE_KINDS = [  // [kind, words in the structure's name, bump height (m), second colour (fat, slate, pale crests)]
     [1, ['liver'], 0.0003, null], [2, ['spleen'], 0.0003, null], [3, ['kidney', 'gallbladder', 'bladder'], 0.0002, null],
     [4, ['stomach', 'bowel', 'colon', 'duodenum', 'esophagus', 'rectum'], 0.0022, [0.98, 0.84, 0.76]],
-    [6, ['heart', 'atrial', 'myocard'], 0.0012, [0.95, 0.87, 0.66]], [7, ['lung'], 0.0008, [0.09, 0.085, 0.1]],
-    [8, ['aorta', 'artery', 'arteries', 'vein', 'vena', 'trunk', 'portal', 'trachea', 'bronch'], 0.00025, null],
+    [6, ['heart', 'atrial', 'myocard'], 0.0012, [0.95, 0.87, 0.66]], [7, ['lung'], 0.0008, [1.0, 0.72, 0.7]], [12, ['trachea', 'bronch'], 0.0012, [0.97, 0.88, 0.85]],
+    [8, ['aorta', 'artery', 'arteries', 'vein', 'vena', 'trunk', 'portal'], 0.00025, null],
     [5, ['gluteus', 'iliopsoas', 'autochthon', 'psoas', 'muscle'], 0.0009, [0.93, 0.88, 0.8]],
     [10, ['pancreas', 'adrenal', 'thyroid', 'prostate', 'gland'], 0.0007, [0.93, 0.82, 0.55]]
   ];
@@ -2746,15 +2746,19 @@ function render(ctx) {
     // the lungs: polygonal lobules (1 to 2.5 cm, slightly warped) outlined by thin septa, where dark carbon pigment
     // gathers in patches, with small dark specks; under the glossy pleura a fine bubbly alveolar texture; the colour
     // varies softly between pink and grey
-    '  else if (k < 7.5) { vec3 lw = vec3(esFbm(p * 20.0), esFbm(p * 20.0 + 3.1), esFbm(p * 20.0 + 6.7)); vec2 L = esCell(p * 60.0 + 0.6 * lw);',
-    '    float sept = esFade(px, 120.0) * (1.0 - smoothstep(0.0, 0.07, L.y - L.x));',
-    '    float alv = esFade(px, 900.0) * smoothstep(0.0, 0.5, esCell(p * 450.0).x);',
-    '    float soot = smoothstep(0.48, 0.72, esFbm(p * 25.0 + 4.0));',
-    '    float dots = esFade(px, 440.0) * (1.0 - smoothstep(0.05, 0.13, esCell(p * 220.0 + 7.0).x)) * smoothstep(0.42, 0.7, esFbm(p * 30.0 + 9.0));',
-    '    h = 0.55 * alv + 0.45 * (1.0 - sept);',
-    '    c = 0.84 + 0.26 * lo + 0.06 * alv - 0.06 * sept;',
-    '    m = clamp(sept * (0.25 + 0.6 * soot) + 0.75 * dots + 0.12 * smoothstep(0.55, 0.8, esFbm(p * 12.0 + 2.0)), 0.0, 0.9);',
-    '    r = 0.9 + 0.12 * sept; }',
+    // a healthy lung: salmon pink; the lobules outlined by fine, slightly darker and sunken lines, irregular like cracks
+    // and broken up so they branch (about 1.8 cm, and finer ones about 7 mm, fainter); a finely pitted, bumpy surface;
+    // soft lighter patches (the second colour); no pigment
+    '  else if (k < 7.5) { vec3 lw = vec3(esFbm(p * 20.0), esFbm(p * 20.0 + 3.1), esFbm(p * 20.0 + 6.7));',
+    '    vec2 L = esCell(p * 55.0 + 0.7 * lw), L2 = esCell(p * 140.0 + 1.2 * lw);',
+    '    float sept = esFade(px, 110.0) * (1.0 - smoothstep(0.0, 0.06, L.y - L.x)) * smoothstep(0.25, 0.55, esFbm(p * 30.0 + 1.7));',
+    '    float sept2 = 0.6 * esFade(px, 280.0) * (1.0 - smoothstep(0.0, 0.05, L2.y - L2.x)) * smoothstep(0.4, 0.7, esFbm(p * 45.0 + 6.1));',
+    '    float sl = max(sept, sept2), pit = esFade(px, 1400.0) * (1.0 - smoothstep(0.08, 0.3, esCell(p * 700.0).x));',
+    '    float bmp = esFade(px, 2400.0) * esFbm(p * 300.0);',
+    '    h = 0.55 + 0.25 * bmp - 0.45 * pit - 0.55 * sl;',
+    '    c = (0.9 + 0.18 * lo + 0.06 * (bmp - 0.5)) * (1.0 - 0.28 * sl - 0.12 * pit);',
+    '    m = 0.3 * smoothstep(0.5, 0.8, esFbm(p * 12.0 + 2.0)) * (1.0 - sl);',
+    '    r = 0.85 + 0.15 * sl; }',
     '  else if (k < 8.5) { float a = esFade(px, 350.0), n = esNoise(vec3(p.x * 350.0, p.y * 25.0, p.z * 350.0)); h = 0.4 * a * n; c = 0.94 + 0.06 * lo + 0.08 * a * n; }',
     // bone: a little noise; darker and yellowish where the surface is hollow or folded (its shape, measured on the mesh)
     '  else if (k < 9.5) { float a = esFade(px, 500.0), cav = clamp(cv.x, 0.0, 1.0), cx = clamp(cv.y, 0.0, 1.0);',
@@ -2762,13 +2766,17 @@ function render(ctx) {
     '    h = 0.5 + 0.5 * a * esFbm(p * 500.0); c = 0.93 + 0.1 * esFbm(p * 40.0) - 0.3 * dirt; m = 0.8 * dirt; r = 1.0 + 0.25 * dirt; }',
     '  else if (k < 10.5) { float a = esFade(px, 110.0); vec2 w = esCell(p * 110.0 + lo); float e = w.y - w.x, sep = a * (1.0 - smoothstep(0.0, 0.12, e));',
     '    h = a * (0.8 * smoothstep(0.0, 0.35, e) + 0.2 * esFbm(p * 600.0)); c = 0.88 + 0.16 * lo - 0.1 * sep; m = 0.35 * sep; }',
+    // the trachea and bronchi: pale cartilage rings about 4 mm apart across their axis (esAxis), raised, slightly wavy
+    '  else if (k > 11.5) { float a = esFade(px, 500.0), s = dot(p, normalize(esAxis)) + 0.0006 * esFbm(p * 60.0);',
+    '    float band = a * smoothstep(0.25, 0.75, 0.5 + 0.5 * cos(s * 6.2831853 * 250.0));',
+    '    h = band + 0.15 * esFade(px, 2400.0) * esFbm(p * 300.0); c = 0.9 + 0.1 * lo + 0.06 * band; m = 0.65 * band; r = 0.9 - 0.1 * band; }',
     '  else { float a = esFade(px, 250.0); h = 0.6 * a * esFbm(p * 250.0); c = 0.9 + 0.16 * lo; }',
     '  return vec4(h, c, r, m); }',
     // small surface vessels on the organs: arterioles (two sizes, red) and venules (purplish), ridges of a warped noise
     // broken up so they branch; x: arteriole amount, y: venule amount, z: their height (m). Not on the heart (its own
     // coronaries), the big vessels or bone; fewer on the liver and the lungs.
     'vec3 esVessels(vec3 p, float k, float px) {',
-    '  if ((k > 5.5 && k < 6.5) || (k > 7.5 && k < 9.5)) return vec3(0.0);',
+    '  if ((k > 5.5 && k < 9.5) || k > 11.5) return vec3(0.0);',
     '  float dens = k < 1.5 ? 0.7 : ((k > 6.5 && k < 7.5) ? 0.5 : 1.0);',
     '  vec3 w = vec3(esFbm(p * 18.0 + 2.1), esFbm(p * 18.0 + 7.3), esFbm(p * 18.0 + 5.9));',
     '  float a1 = 1.0 - abs(2.0 * esFbm(p * 45.0 + 2.0 * w) - 1.0);',
@@ -2789,7 +2797,8 @@ function render(ctx) {
     var t = tissueOf(mesh.name, mesh.parent && mesh.parent.name), g = mesh.geometry;
     if (t[0] === 6 && mat.color) mat.color.setRGB(0.42, 0.035, 0.045);
     // the lungs: solid (the model file makes them see-through), pinkish grey as a living adult lung (linear RGB)
-    if (t[0] === 7) { mat.transparent = false; mat.opacity = 1; mat.depthWrite = true; if (mat.color) mat.color.setRGB(0.6, 0.3, 0.3); mat.needsUpdate = true; }
+    if (t[0] === 7) { mat.transparent = false; mat.opacity = 1; mat.depthWrite = true; if (mat.color) mat.color.setRGB(0.7, 0.2, 0.19); mat.needsUpdate = true; }
+    if (t[0] === 12) { mat.transparent = false; mat.opacity = 1; mat.depthWrite = true; if (mat.color) mat.color.setRGB(0.72, 0.3, 0.28); mat.needsUpdate = true; }
     // where the surface was, in metres in the file's frame (the texture stays on the tissue as it deforms). The positions of
     // a compact GLB are 16-bit integers scaled by the part's node: read raw, every texture was thousands of times too fine
     // (per-pixel noise, sparkling), so they are put in metres with the part's own transform.
@@ -2867,7 +2876,7 @@ function render(ctx) {
     obj.traverse(function (o) {
       if (!o.isMesh || !o.geometry || !o.geometry.attributes.esRest || !o.material || !o.material.userData || !o.material.userData.es) return;
       var k = o.material.userData.es.esKind.value;
-      if (k === 9) bones.push(o); else if (k === 5) muscles.push(o);
+      if (k === 9) bones.push(o); else if (k === 5 || k === 12) muscles.push(o);   // (the trachea: its axis too, for its rings)
     });
     if (!muscles.length) return;
     var cell = 0.017, grid = new Map();                              // (at least the attachment's reach, 16 mm: the 27 cells around cover it)
