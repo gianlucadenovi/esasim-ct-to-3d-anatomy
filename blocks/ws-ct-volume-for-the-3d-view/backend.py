@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# CT volume for the 3D view (ws-ct-volume-for-the-3d-view) · version 2 · worker block, Python: def run(ctx)
+# CT volume for the 3D view (ws-ct-volume-for-the-3d-view) · version 3 · worker block, Python: def run(ctx)
 # Resamples a CT scan into the 3D models' own frame (as Labels to 3D models writes them) as a compact volume, so the 3D view can show the real CT on a cut.
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-27
@@ -97,26 +97,29 @@ def run(ctx):
         mlist = masks.get(case) or (masks.get("") if len(files) == 1 else None) or []
         labvol, names = None, []
         if mlist:
-            found = []
+            labvol = np.zeros(arr.shape, np.uint8)
+            sizes = [np.inf]                                             # label 0 (nothing): any structure takes it
             for mf in mlist:
+                if len(names) >= 254:
+                    break
                 try:
                     mi = sitk.ReadImage(mf.path)
                     if mi.GetSize() != img.GetSize():
                         continue
                     m = sitk.GetArrayFromImage(mi) > 0
                     cnt = int(m.sum())
-                    if cnt:
-                        found.append((cnt, stem(mf.name), m))
+                    if not cnt:
+                        continue
+                    li = len(names) + 1
+                    idx = np.nonzero(m)
+                    cur = labvol[idx]
+                    take = np.asarray(sizes, float)[cur] > cnt               # a smaller structure over a larger one
+                    labvol[tuple(a[take] for a in idx)] = li
+                    names.append(stem(mf.name)); sizes.append(cnt)
                 except Exception:
                     pass
-            found.sort(key=lambda t: -t[0])
-            found = found[:254]
-            if found:
-                labvol = np.zeros(arr.shape, np.uint8)
-                for li, (cnt, nm, m) in enumerate(found):
-                    labvol[m] = li + 1
-                    names.append(nm)
-                found = None
+            if not names:
+                labvol = None
             ctx.log("%s: %d structures for the colours on the cut." % (case, len(names)))
         lab = np.zeros((nz, ny, nx), np.uint8) if labvol is not None else None
         X, Y = np.meshgrid(xs, ys)                                       # (ny, nx)

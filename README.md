@@ -116,7 +116,7 @@ An [EsaSim](https://esacode.com/) project of the workspace Gianluca De Novi's wo
 ### Workspace blocks it uses
 
 - [Expert labels to 3D models (clean)](blocks/ws-expert-labels-to-3d-models-clean) · version 2
-- [CT volume for the 3D view](blocks/ws-ct-volume-for-the-3d-view) · version 2
+- [CT volume for the 3D view](blocks/ws-ct-volume-for-the-3d-view) · version 3
 - [Soft body model (skin inside)](blocks/ws-soft-body-model-skin-inside) · version 5
 - [3D view (stable soft tissue)](blocks/ws-3d-view-stable-soft-tissue) · version 60
 
