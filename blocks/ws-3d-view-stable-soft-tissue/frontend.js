@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 21 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 22 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2664,7 +2664,7 @@ function render(ctx) {
     partsDraw();
   }
   // Anatomy (models grouped as organs, vessels, skeleton…) looks wet: a clear coat that catches the light, as living tissue does
-  var WET = { 'organs': [0.42, 0.7, 0.12], 'vessels': [0.38, 0.75, 0.1], 'heart': [0.34, 0.95, 0.05], 'lungs and airways': [0.45, 0.8, 0.08], 'muscles': [0.5, 0.45, 0.2], 'skeleton': [0.62, 0.2, 0.35] }, headLight = null;
+  var WET = { 'organs': [0.42, 0.7, 0.12], 'vessels': [0.38, 0.75, 0.1], 'heart': [0.34, 0.95, 0.05], 'lungs and airways': [0.45, 0.8, 0.08], 'muscles': [0.5, 0.45, 0.2], 'skeleton': [0.45, 0.22, 0.32] }, headLight = null;
   // Tissue textures: each tissue gets its own surface, computed on the graphics card from the model's own coordinates
   // (solid noise: no texture coordinates needed, no seams, and it stays on the tissue as it deforms): liver lobules,
   // the fine grain of the spleen, bowel folds, muscle fibres, the heart's fibres and fat, the lung's air sacs, vessel
@@ -2681,7 +2681,7 @@ function render(ctx) {
   function tissueOf(name, group) {
     var n = String(name || '').toLowerCase();
     if (/cartilage|costal|disc|menisc/.test(n)) return [13, 0.00025, null];
-    if (group === 'skeleton') return [9, 0.0006, [0.8, 0.66, 0.4]];
+    if (group === 'skeleton') return [9, 0.0009, [0.8, 0.66, 0.4]];
     for (var i = 0; i < TISSUE_KINDS.length; i++) if (TISSUE_KINDS[i][1].some(function (w) { return n.indexOf(w) >= 0; })) return [TISSUE_KINDS[i][0], TISSUE_KINDS[i][2], TISSUE_KINDS[i][3]];
     if (group === 'muscles') return [5, 0.0009, [0.93, 0.88, 0.8]];
     if (group === 'vessels') return [8, 0.00025, null];
@@ -2689,6 +2689,8 @@ function render(ctx) {
   }
   var TISSUE_GLSL = [
     'varying vec3 vEsP; varying vec2 vEsC;',
+    // ambient occlusion of a tissue (1: open, lower: pores, hollows, crevices), set by esTissue for the pixel
+    'float esAOv = 1.0;',
     'uniform float esOn; uniform float esKind; uniform float esBumpH; uniform vec3 esSecond; uniform vec3 esAxis;',
     'float esH(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }',
     'float esNoise(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);',
@@ -2770,7 +2772,10 @@ function render(ctx) {
     '    float dirt = smoothstep(0.12, 0.8, clamp(max(cav, 0.75 * cx) + (esFbm(p * 60.0) - 0.5) * 0.4, 0.0, 1.0));',
     '    float n1 = esFbmP(p, px, 90.0), n2 = esFbmP(p + 3.3, px, 400.0), pore = esFade(px, 1600.0) * (1.0 - smoothstep(0.05, 0.25, esCell(p * 800.0).x));',
     '    h = 0.5 + 0.35 * (n1 - 0.5) + 0.35 * (n2 - 0.5) - 0.35 * pore;',
-    '    c = 0.95 + 0.16 * (esFbm(p * 25.0) - 0.5) + 0.12 * (n1 - 0.5) + 0.08 * (n2 - 0.5) - 0.08 * pore - 0.3 * dirt; m = 0.8 * dirt; r = 1.0 + 0.25 * dirt + 0.1 * pore; }',
+    '    c = 0.95 + 0.16 * (esFbm(p * 25.0) - 0.5) + 0.12 * (n1 - 0.5) + 0.08 * (n2 - 0.5) - 0.08 * pore - 0.3 * dirt; m = 0.8 * dirt;',
+    // its gloss varies: smooth bone a little shiny, pores and hollows matte; its occlusion: pores, hollows, low relief
+    '    r = 0.85 + 0.35 * dirt + 0.3 * pore - 0.25 * (n2 - 0.5) + 0.15 * (esFbm(p * 18.0 + 4.0) - 0.5);',
+    '    esAOv = clamp(1.0 - 0.55 * dirt - 0.4 * pore - 0.25 * (0.5 - n2), 0.25, 1.0); }',
     '  else if (k < 10.5) { float a = esFade(px, 110.0); vec2 w = esCell(p * 110.0 + lo); float e = w.y - w.x, sep = a * (1.0 - smoothstep(0.0, 0.12, e));',
     '    h = a * (0.8 * smoothstep(0.0, 0.35, e) + 0.2 * esFbm(p * 600.0)); c = 0.88 + 0.16 * lo - 0.1 * sep; m = 0.35 * sep; }',
     // the trachea and bronchi: pale cartilage rings about 4 mm apart across their axis (esAxis), raised, slightly wavy
@@ -2807,8 +2812,13 @@ function render(ctx) {
     if (t[0] === 6 && mat.color) mat.color.setRGB(0.42, 0.035, 0.045);
     // the lungs: solid (the model file makes them see-through), pinkish grey as a living adult lung (linear RGB)
     if (t[0] === 7) { mat.transparent = false; mat.opacity = 1; mat.depthWrite = true; if (mat.color) mat.color.setRGB(0.7, 0.2, 0.19); mat.needsUpdate = true; }
-    if (t[0] === 9 && mat.color) mat.color.setRGB(0.72, 0.58, 0.36);    // bone: warm ivory, a little yellow (linear RGB)
-    if (t[0] === 13) { if (mat.color) mat.color.setRGB(0.2, 0.19, 0.215); mat.roughness = 0.45; mat.clearcoat = 0.3; mat.clearcoatRoughness = 0.4; }   // cartilage: darker, pearly, satin
+    // bone: warm ivory, a little yellow (linear RGB), with a faint sheen (its gloss varies over the surface, in the texture)
+    if (t[0] === 9) { if (mat.color) mat.color.setRGB(0.72, 0.58, 0.36); mat.roughness = 0.42; mat.clearcoat = 0.22; mat.clearcoatRoughness = 0.32; mat.specularIntensity = 0.6; }
+    // cartilage: darker, pearly, satin and a little translucent: light goes into it and comes out tinted pearly pink
+    if (t[0] === 13) {
+      if (mat.color) mat.color.setRGB(0.26, 0.245, 0.27); mat.roughness = 0.45; mat.clearcoat = 0.3; mat.clearcoatRoughness = 0.4;
+      mat.transmission = 0.35; mat.thickness = 0.006; mat.ior = 1.38; mat.attenuationColor = new THREE.Color(0.9, 0.72, 0.76); mat.attenuationDistance = 0.012;
+    }
     if (t[0] === 12) { mat.transparent = false; mat.opacity = 1; mat.depthWrite = true; if (mat.color) mat.color.setRGB(0.72, 0.3, 0.28); mat.needsUpdate = true; }
     // where the surface was, in metres in the file's frame (the texture stays on the tissue as it deforms). The positions of
     // a compact GLB are 16-bit integers scaled by the part's node: read raw, every texture was thousands of times too fine
@@ -2826,13 +2836,15 @@ function render(ctx) {
       var u = mat.userData.es; for (var k in u) sh.uniforms[k] = u[k];
       sh.vertexShader = 'attribute vec3 esRest;\nattribute vec2 esCurv;\nvarying vec3 vEsP;\nvarying vec2 vEsC;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvEsP = esRest; vEsC = esCurv;');
       sh.fragmentShader = TISSUE_GLSL + '\n' + sh.fragmentShader
-        .replace('#include <color_fragment>', '#include <color_fragment>\nvec4 esT = vec4(0.0, 1.0, 1.0, 0.0); float esHt = 0.0;\nif (esOn * esKind > 0.5) { float esPx = length(fwidth(vEsP)); esT = esTissue(vEsP, esKind, esPx, vEsC); diffuseColor.rgb = mix(diffuseColor.rgb, esSecond, clamp(esT.w, 0.0, 1.0)) * esT.y;\n'
+        .replace('#include <color_fragment>', '#include <color_fragment>\nvec4 esT = vec4(0.0, 1.0, 1.0, 0.0); float esHt = 0.0, esAO = 1.0;\nif (esOn * esKind > 0.5) { float esPx = length(fwidth(vEsP)); esT = esTissue(vEsP, esKind, esPx, vEsC); esAO = esAOv; diffuseColor.rgb = mix(diffuseColor.rgb, esSecond, clamp(esT.w, 0.0, 1.0)) * esT.y;\n'
           + '  vec3 esV = esVessels(vEsP, esKind, esPx); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.3, 0.025, 0.04), esV.x); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.14, 0.05, 0.15), esV.y);\n'
           + '  esHt = esT.x * esBumpH + esV.z + esMicro(vEsP, esPx); }')
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor * esT.z, 0.04, 1.0);')
         .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nif (esOn * esKind > 0.5) normal = esBump(-vViewPosition, normal, esHt, faceDirection);')
         // the wet clear coat has a normal of its own (the smooth surface's): it follows the relief too, a little softened,
         // so the reflections break up over the tissue's detail instead of sliding over a smooth shell
+        // ambient occlusion: the room's light (diffuse, and most of its reflection) does not reach into pores and hollows
+        .replace('#include <aomap_fragment>', '#include <aomap_fragment>\nif (esOn * esKind > 0.5) { reflectedLight.indirectDiffuse *= esAO; reflectedLight.indirectSpecular *= mix(1.0, esAO, 0.7); }')
         .replace('#include <clearcoat_normal_fragment_maps>', '#include <clearcoat_normal_fragment_maps>\nif (esOn * esKind > 0.5) clearcoatNormal = esBump(-vViewPosition, clearcoatNormal, esHt * 0.75, faceDirection);');
     };
     mat.customProgramCacheKey = function () { return 'esasim-tissue'; };
