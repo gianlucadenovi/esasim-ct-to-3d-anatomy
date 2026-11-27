@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 53 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 54 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2892,7 +2892,7 @@ function render(ctx) {
     // the lungs: solid (the model file makes them see-through), pinkish grey as a living adult lung (linear RGB)
     if (t[0] === 7) { mat.transparent = false; mat.opacity = 1; mat.depthWrite = true; if (mat.color) mat.color.setRGB(0.7, 0.2, 0.19); mat.needsUpdate = true; }
     // bone: warm ivory, a little yellow (linear RGB), with a faint sheen (its gloss varies over the surface, in the texture)
-    if (t[0] === 9) { if (mat.color) mat.color.setRGB(0.72, 0.58, 0.36); mat.roughness = 0.36; mat.clearcoat = 0.4; mat.clearcoatRoughness = 0.22; mat.specularIntensity = 0.85; }
+    if (t[0] === 9) { if (mat.color) mat.color.setRGB(0.72, 0.58, 0.36); mat.roughness = 0.52; mat.clearcoat = 0.15; mat.clearcoatRoughness = 0.4; mat.specularIntensity = 0.7; }
     // cartilage: darker, pearly, satin and a little translucent: light goes into it and comes out tinted pearly pink
     if (t[0] === 13) {
       // costal cartilage as it looks: warm, translucent amber-salmon, waxy and wet-glossy (light goes into it and comes
