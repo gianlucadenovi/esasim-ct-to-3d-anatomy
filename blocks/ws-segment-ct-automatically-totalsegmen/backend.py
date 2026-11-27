@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Segment CT automatically (TotalSegmentator) (ws-segment-ct-automatically-totalsegmen) · version 8 · worker block, Python: def run(ctx)
+# Segment CT automatically (TotalSegmentator) (ws-segment-ct-automatically-totalsegmen) · version 9 · worker block, Python: def run(ctx)
 # Segments organs, bones, vessels and muscles in any CT (NIfTI, NRRD, MHA or DICOM series) with TotalSegmentator, and writes each case as <case>/ct.nii.gz + <case>/segmentations/<structure>.nii.gz, the
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-27
@@ -100,7 +100,7 @@ def run(ctx):
             ctx.log("%s: the scan could not be read (%s): skipped." % (case, e))
             continue
         arr = sitk.GetArrayFromImage(img)[::4, ::4, ::4]
-        if arr.dtype.kind in "iu" and len(np.unique(arr)) < 64:
+        if arr.dtype.kind in "iu" and arr.min() >= 0 and len(np.unique(arr)) < 64:   # (a CT has air, below 0)
             ctx.log("%s: looks like a label map, not a scan: skipped." % case)
             os.remove(ct_out)
             continue

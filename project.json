@@ -26,7 +26,7 @@
         {
             "name": "3 · Segment any CT automatically (TotalSegmentator)",
             "file": "blueprints/3-segment-any-ct-automatically-totalsegmentator.json",
-            "published_version": 3,
+            "published_version": 4,
             "nodes": 16
         }
     ],
@@ -58,7 +58,7 @@
         },
         {
             "id": "ws-segment-ct-automatically-totalsegmen",
-            "version": 8,
+            "version": 9,
             "name": "Segment CT automatically (TotalSegmentator)"
         },
         {
