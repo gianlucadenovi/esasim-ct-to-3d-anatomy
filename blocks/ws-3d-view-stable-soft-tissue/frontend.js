@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 51 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 52 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2897,10 +2897,10 @@ function render(ctx) {
     if (t[0] === 13) {
       // costal cartilage as it looks: warm, translucent amber-salmon, waxy and wet-glossy (light goes into it and comes
       // back out warmer; at its thin edges more of what is behind shows through)
-      if (mat.color) mat.color.setRGB(0.9, 0.62, 0.5); mat.roughness = 0.3; mat.clearcoat = 0.9; mat.clearcoatRoughness = 0.1;
+      if (mat.color) mat.color.setRGB(0.88, 0.66, 0.38); mat.roughness = 0.45; mat.clearcoat = 0.35; mat.clearcoatRoughness = 0.3;
       // real translucency: light passes through it (blurred by its roughness) and is tinted warm by the thickness it crosses
-      if ('transmission' in mat) { mat.transmission = 0.75; mat.thickness = 0.012; mat.ior = 1.4; mat.attenuationColor = new THREE.Color(0.95, 0.6, 0.38); mat.attenuationDistance = 0.012; }
-      if ('sheen' in mat) { mat.sheen = 0.35; mat.sheenColor = new THREE.Color(1.0, 0.72, 0.55); mat.sheenRoughness = 0.45; }
+      if ('transmission' in mat) { mat.transmission = 0.75; mat.thickness = 0.012; mat.ior = 1.4; mat.attenuationColor = new THREE.Color(0.95, 0.72, 0.36); mat.attenuationDistance = 0.012; }
+      if ('sheen' in mat) { mat.sheen = 0.15; mat.sheenColor = new THREE.Color(1.0, 0.72, 0.55); mat.sheenRoughness = 0.45; }
       // translucent the cheap way: no transmission pass (a second render of the scene), but drawn last, blended over what
       // is already drawn behind it; the light scattered inside it is added in its shader
       mat.transparent = false; mat.opacity = 1; mat.depthWrite = true; mat.side = THREE.DoubleSide;
