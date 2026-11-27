@@ -53,7 +53,7 @@
         },
         {
             "id": "ws-segment-ct-automatically-totalsegmen",
-            "version": 1,
+            "version": 2,
             "name": "Segment CT automatically (TotalSegmentator)"
         },
         {

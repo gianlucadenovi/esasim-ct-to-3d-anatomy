@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Segment CT automatically (TotalSegmentator) (ws-segment-ct-automatically-totalsegmen) · version 1 · worker block, Python: def run(ctx)
+# Segment CT automatically (TotalSegmentator) (ws-segment-ct-automatically-totalsegmen) · version 2 · worker block, Python: def run(ctx)
 # Segments organs, bones, vessels and muscles in any CT (NIfTI, NRRD, MHA or DICOM series) with TotalSegmentator, and writes each case as <case>/ct.nii.gz + <case>/segmentations/<structure>.nii.gz, the
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-27
@@ -236,6 +236,11 @@ def segment(ctx, runner, args, case):
     with open(cfg, "w", encoding="utf-8") as fh:
         json.dump(args, fh)
     env = dict(os.environ, PYTHONUNBUFFERED="1", PYTHONIOENCODING="utf-8")
+    # the worker installs packages in a folder of its own, on this process's sys.path: the child needs it too
+    paths = [x for x in sys.path if x and os.path.isdir(x)]
+    if env.get("PYTHONPATH"):
+        paths.append(env["PYTHONPATH"])
+    env["PYTHONPATH"] = os.pathsep.join(dict.fromkeys(paths))
     proc = subprocess.Popen([sys.executable, runner, cfg], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             env=env, cwd=ctx.folder, text=True, encoding="utf-8", errors="replace", bufsize=1)
     tail, ok = [], False
