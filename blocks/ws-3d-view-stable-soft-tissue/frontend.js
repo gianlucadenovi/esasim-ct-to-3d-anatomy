@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 55 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 56 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -3222,7 +3222,8 @@ function render(ctx) {
     }
     partsPlaneTick();
     try { var bad = PARTS.list.filter(function (p) { var g = p.mesh.geometry; if (!g.boundingBox) g.computeBoundingBox(); var b = g.boundingBox; return !(isFinite(b.min.x) && isFinite(b.max.x) && isFinite(b.min.y) && isFinite(b.max.y) && isFinite(b.min.z) && isFinite(b.max.z)); }).map(function (p) { return p.name; });
-      ctx.status('CUTDBG ' + axis + ' box ' + (box ? [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z].map(function (v) { return v.toFixed(3); }).join(',') : 'none') + ' at ' + PARTS.at + ' plane ' + PARTS.plane.normal.toArray().map(function (v) { return v.toFixed(2); }).join(',') + ' / ' + PARTS.plane.constant.toFixed(3) + ' bad ' + bad.slice(0, 5).join(',') + ' n ' + bad.length); } catch (e) { ctx.status('CUTDBG error ' + e.message); }
+      var dbg = document.createElement('div'); dbg.style.cssText = 'position:absolute;left:220px;top:60px;z-index:99;color:#ff0;font:11px monospace;max-width:480px;background:#000a;padding:4px'; dbg.className = 'cutdbg'; var od = el.querySelector('.cutdbg'); if (od) od.remove(); el.appendChild(dbg);
+      dbg.textContent = ('CUTDBG ' + axis + ' box ' + (box ? [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z].map(function (v) { return v.toFixed(3); }).join(',') : 'none') + ' at ' + PARTS.at + ' plane ' + PARTS.plane.normal.toArray().map(function (v) { return v.toFixed(2); }).join(',') + ' / ' + PARTS.plane.constant.toFixed(3) + ' bad ' + bad.slice(0, 5).join(',') + ' n ' + bad.length + ' cam ' + camera.position.toArray().map(function (v) { return v.toFixed(2); }).join(',') + ' ref ' + (PARTS.ref ? PARTS.ref.name + ' ' + PARTS.ref.matrixWorld.elements.slice(12, 15).map(function (v) { return v.toFixed(2); }).join(',') + ' s ' + PARTS.ref.matrixWorld.elements[0].toFixed(3) : '-')); } catch (e) { var d2 = document.createElement('div'); d2.style.cssText = 'position:absolute;left:220px;top:60px;z-index:99;color:#f55'; d2.textContent = 'CUTDBG error ' + e.message; el.appendChild(d2); }
     partsWinShow();
     partsCap();
     PARTS.list.forEach(function (p) {
