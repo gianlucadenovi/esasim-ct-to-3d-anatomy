@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 4 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 5 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -3335,6 +3335,7 @@ function render(ctx) {
       }
       var gT0 = null;
       if (S.grab) { gT.copy(S.grab.t).applyMatrix4(MI.copy(Mw).invert()); gT0 = gT; }
+      var pk0 = softPokeTick(S, dt, Mw), PKR = S.poke ? S.poke.reach : 0;
       S.acc = Math.min(S.acc + dt, 0.034);
       var f = S.f || (S.f = new Float32Array(3 * n)), tStart = performance.now(), done = 0, cnt = S.cnt || (S.cnt = new Float32Array(n)), P = S.pairs, ref = S.nbRef;
       while (S.acc >= h) {
@@ -3381,6 +3382,17 @@ function render(ctx) {
         if (gT0) {
           var gi = S.grab.i, kg = 0.08 * S.mass[gi] / (h * h);
           f[3 * gi] += kg * (gT0.x - xb[3 * gi]); f[3 * gi + 1] += kg * (gT0.y - xb[3 * gi + 1]); f[3 * gi + 2] += kg * (gT0.z - xb[3 * gi + 2]);
+        }
+        if (pk0) {                                                     // the fingertip pushes out every particle it reaches
+          for (var ip = 0; ip < n; ip++) {
+            if (!im[ip]) continue;
+            var o3 = 3 * ip, ex1 = xb[o3] - pk0.x, ey1 = xb[o3 + 1] - pk0.y, ez1 = xb[o3 + 2] - pk0.z, d21 = ex1 * ex1 + ey1 * ey1 + ez1 * ez1;
+            if (d21 >= PKR * PKR) continue;
+            var d1 = Math.sqrt(d21) || 1e-6, mp = S.mass[ip], F1 = 0.12 * mp / (h * h) * (PKR - d1) / d1;
+            var vn1 = (vb[o3] * ex1 + vb[o3 + 1] * ey1 + vb[o3 + 2] * ez1) / d1;
+            if (vn1 < 0) F1 -= 0.5 * S.damp * mp / h * vn1 / d1;
+            f[o3] += F1 * ex1; f[o3 + 1] += F1 * ey1; f[o3 + 2] += F1 * ez1;
+          }
         }
         var moved = 0;
         for (var i2 = 0; i2 < n; i2++) {
@@ -3501,7 +3513,8 @@ function render(ctx) {
     if (!softEl) {
       softEl = document.createElement('div');
       softEl.style.cssText = 'display:flex;flex-direction:column;gap:5px;padding:0 10px 8px;border-bottom:1px solid #2a303b;margin-bottom:4px';
-      softEl.innerHTML = '<div style="display:flex;gap:6px;align-items:center"><b style="flex:1">Soft tissue</b><button class="pt-b sf-run" title="Pause or go on">Pause</button><button class="pt-b sf-reset" title="Back to the scan\'s shape">Reset</button><button class="pt-b sf-pull" title="Drag an organ to pull it">Pull</button></div>'
+      softEl.innerHTML = '<div style="display:flex;gap:6px;align-items:center"><b style="flex:1">Soft tissue</b><button class="pt-b sf-run" title="Pause or go on">Pause</button><button class="pt-b sf-reset" title="Back to the scan\'s shape">Reset</button><button class="pt-b sf-pull" title="Drag an organ to pull it">Pull</button><button class="pt-b sf-poke" title="Click the body or an organ to poke it with a fingertip: hold to press, let go to see it spring back">Poke</button></div>'
+        + '<label class="sf-pokerow" style="display:none;gap:6px;align-items:center;font-size:11.5px">Poke depth<input class="sf-pd" type="range" min="5" max="60" value="30" style="flex:1;accent-color:#7b8cff"><span class="sf-pdv" style="width:34px;text-align:right">3 cm</span></label>'
         + '<label style="display:flex;gap:6px;align-items:center;font-size:11.5px">Gravity<input class="sf-g" type="range" min="0" max="300" value="100" style="flex:1;accent-color:#7b8cff"><span class="sf-gv" style="width:34px;text-align:right">1 g</span></label>'
         + '<label style="display:flex;gap:6px;align-items:center;font-size:11.5px">Softness<input class="sf-s" type="range" min="-200" max="200" value="0" style="flex:1;accent-color:#7b8cff"><span class="sf-sv" style="width:34px;text-align:right">×1</span></label>'
         + '<label style="display:flex;gap:6px;align-items:center;font-size:11.5px">Damping<input class="sf-d" type="range" min="5" max="100" value="45" style="flex:1;accent-color:#7b8cff"><span class="sf-dv" style="width:34px;text-align:right">0.45</span></label>'
@@ -3513,14 +3526,18 @@ function render(ctx) {
         var t = e.target; if (!SOFT) return;
         if (t.closest('.sf-run')) { SOFT.on = !SOFT.on; t.textContent = SOFT.on ? 'Pause' : 'Go on'; }
         if (t.closest('.sf-reset')) softPlace(SOFT, true);
-        if (t.closest('.sf-pull')) { SOFT.pull = !SOFT.pull; t.style.background = SOFT.pull ? '#2f4ae0' : ''; renderer.domElement.style.cursor = SOFT.pull ? 'grab' : ''; }
+        if (t.closest('.sf-pull')) { SOFT.pull = !SOFT.pull; if (SOFT.pull) SOFT.pokeOn = false; softToolUi(); }
+        if (t.closest('.sf-poke')) { SOFT.pokeOn = !SOFT.pokeOn; if (SOFT.pokeOn) SOFT.pull = false; softToolUi(); }
       });
       softEl.querySelector('.sf-g').addEventListener('input', function () { if (SOFT) SOFT.gravity = +this.value / 100; softEl.querySelector('.sf-gv').textContent = (+this.value / 100).toFixed(1).replace(/\.0$/, '') + ' g'; });
       softEl.querySelector('.sf-s').addEventListener('input', function () { var k = Math.pow(2, +this.value / 100); if (SOFT) SOFT.softTarget = k; softEl.querySelector('.sf-sv').textContent = '×' + (k < 1 ? k.toFixed(2) : k.toFixed(1)).replace(/\.0+$/, ''); });
       softEl.querySelector('.sf-scan').addEventListener('change', function () { if (SOFT) SOFT.scanG = this.checked; });
       softEl.querySelector('.sf-d').addEventListener('input', function () { if (SOFT) { SOFT.damp = +this.value / 100; softStiffness(); } softEl.querySelector('.sf-dv').textContent = (+this.value / 100).toFixed(2).replace(/0$/, ''); });
       softEl.querySelector('.sf-drag').addEventListener('change', function () { if (SOFT) SOFT.dragTurn = this.checked; });
+      softEl.querySelector('.sf-pd').addEventListener('input', function () { if (SOFT) SOFT.pokeDepth = +this.value / 1000; softEl.querySelector('.sf-pdv').textContent = (+this.value / 10).toFixed(1).replace(/\.0$/, '') + ' cm'; });
     }
+    SOFT.pokeDepth = +softEl.querySelector('.sf-pd').value / 1000; SOFT.pokeOn = false; SOFT.poke = null;
+    softToolUi();
     softEl.style.display = 'flex';
     softEl.querySelector('.sf-run').textContent = 'Pause';
     SOFT.gravity = +softEl.querySelector('.sf-g').value / 100; SOFT.softness = Math.pow(2, +softEl.querySelector('.sf-s').value / 100); SOFT.scanG = softEl.querySelector('.sf-scan').checked;
@@ -3536,8 +3553,57 @@ function render(ctx) {
     var real = Math.round(100 * (SOFT.rate || 0) * SOFT_DT);
     softEl.querySelector('.sf-rate').textContent = nb + ' soft structures, ' + SOFT.n + ' particles, ' + SOFT.la.length + ' links · ' + (SOFT.rate || 0) + ' steps/s' + (SOFT.rate && real < 90 ? ' (' + real + ' % of real time on this computer)' : '');
   }
+  // the Pull and Poke buttons (one at a time), the depth slider and the pointer
+  function softToolUi() {
+    if (!softEl || !SOFT) return;
+    softEl.querySelector('.sf-pull').style.background = SOFT.pull ? '#2f4ae0' : '';
+    softEl.querySelector('.sf-poke').style.background = SOFT.pokeOn ? '#2f4ae0' : '';
+    softEl.querySelector('.sf-pokerow').style.display = SOFT.pokeOn ? 'flex' : 'none';
+    renderer.domElement.style.cursor = SOFT.pull ? 'grab' : SOFT.pokeOn ? 'crosshair' : '';
+  }
+  // Poke: a fingertip (a rigid sphere) presses into the tissue along the line of sight where you click. Held, it goes
+  // in to the poke depth in 0.15 s and stays; let go, it comes out as fast and the tissue springs back and wobbles.
+  // Every particle it touches is pushed out of it (a stiff contact with damping): the springs, the links and the
+  // contacts carry the push to the neighbouring tissue and organs.
+  var POKE_FINGER = 0.012, POKE_REACH = 0.027, pokeTip = null, pkC = new THREE.Vector3(), pkMI = new THREE.Matrix4();
+  function pokeTipShow(w, r) {
+    if (!pokeTip) {
+      pokeTip = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), new THREE.MeshStandardMaterial({ color: 0xf0c8b4, roughness: 0.45, metalness: 0, transparent: true, opacity: 0.6, depthWrite: false }));
+      pokeTip.renderOrder = 6; scene.add(pokeTip);
+    }
+    pokeTip.position.copy(w); pokeTip.scale.setScalar(r); pokeTip.visible = true;
+  }
+  function softPokeTick(S, dt, Mw) {
+    var K = S.poke;
+    if (!K) { if (pokeTip) pokeTip.visible = false; return null; }
+    var sp = K.max / 0.15;
+    if (K.held) K.d = Math.min(K.max, K.d + sp * dt); else K.d -= sp * dt;
+    if (!K.held && K.d <= -2 * K.finger) { S.poke = null; if (pokeTip) pokeTip.visible = false; return null; }
+    var w = K.p.clone().addScaledVector(K.dir, K.d - K.finger);       // the finger's centre: it touches the surface at d = 0
+    pokeTipShow(w, K.finger);
+    return pkC.copy(w).applyMatrix4(pkMI.copy(Mw).invert());          // in the body's frame, as the particles
+  }
+  function pokeHit(ev) {
+    var rc = renderer.domElement.getBoundingClientRect();
+    sfM.set(((ev.clientX - rc.left) / rc.width) * 2 - 1, -((ev.clientY - rc.top) / rc.height) * 2 + 1);
+    sfRay.setFromCamera(sfM, camera);
+    var hits = sfRay.intersectObjects(PARTS.list.filter(function (p) { return p.mesh.visible; }).map(function (p) { return p.mesh; }), false);
+    for (var h = 0; h < hits.length; h++) {
+      if (PARTS.axis !== 'off' && PARTS.plane.distanceToPoint(hits[h].point) < 0) continue;   // cut away
+      return hits[h];                                                  // the first surface: the skin too, then what is under it moves with it
+    }
+    return null;
+  }
   // Pull: drag an organ; its nearest particle follows the pointer on a plane facing the camera
   var sfRay = new THREE.Raycaster(), sfM = new THREE.Vector2();
+  renderer.domElement.addEventListener('pointerdown', function (ev) {
+    if (!SOFT || !SOFT.pokeOn || mode !== 'files' || ev.button !== 0) return;
+    var hit = pokeHit(ev); if (!hit) return;                           // (a click beside the body turns it, as usual)
+    var dir = hit.point.clone().sub(camera.position).normalize();
+    SOFT.poke = { p: hit.point.clone(), dir: dir, d: 0, max: SOFT.pokeDepth || 0.03, finger: POKE_FINGER, reach: POKE_REACH, held: true };
+    controls.enabled = false; ev.stopImmediatePropagation();
+  }, true);
+  window.addEventListener('pointerup', function () { if (SOFT && SOFT.poke && SOFT.poke.held) { SOFT.poke.held = false; controls.enabled = true; } });
   function sfPoint(ev, plane) {
     var rc = renderer.domElement.getBoundingClientRect();
     sfM.set(((ev.clientX - rc.left) / rc.width) * 2 - 1, -((ev.clientY - rc.top) / rc.height) * 2 + 1);
