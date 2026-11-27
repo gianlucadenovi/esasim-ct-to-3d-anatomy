@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Segment CT automatically (TotalSegmentator) (ws-segment-ct-automatically-totalsegmen) · version 4 · worker block, Python: def run(ctx)
+# Segment CT automatically (TotalSegmentator) (ws-segment-ct-automatically-totalsegmen) · version 5 · worker block, Python: def run(ctx)
 # Segments organs, bones, vessels and muscles in any CT (NIfTI, NRRD, MHA or DICOM series) with TotalSegmentator, and writes each case as <case>/ct.nii.gz + <case>/segmentations/<structure>.nii.gz, the
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-27
@@ -99,8 +99,8 @@ def run(ctx):
         except Exception as e:                                    # one bad case does not stop the others
             ctx.log("%s: the scan could not be read (%s): skipped." % (case, e))
             continue
-        arr = sitk.GetArrayViewFromImage(img)
-        if arr.dtype.kind in "iu" and len(np.unique(arr[::4, ::4, ::4])) < 64:
+        arr = sitk.GetArrayFromImage(img)[::4, ::4, ::4]
+        if arr.dtype.kind in "iu" and len(np.unique(arr)) < 64:
             ctx.log("%s: looks like a label map, not a scan: skipped." % case)
             os.remove(ct_out)
             continue
@@ -128,7 +128,7 @@ def run(ctx):
         found = 0
         for i, m in enumerate(masks):
             path = os.path.join(out_dir, m)
-            count = int((sitk.GetArrayViewFromImage(sitk.ReadImage(path)) > 0).sum())
+            count = int(np.count_nonzero(sitk.GetArrayFromImage(sitk.ReadImage(path))))   # a copy: a view of a freed image crashes
             if count == 0 and not keep_empty:
                 continue
             name = m[:-7]
@@ -158,12 +158,17 @@ def run(ctx):
 
 
 def pick_device(choice, log):
+    # asked of a child process: this one never loads torch (torch and SimpleITK in one process can crash on Windows)
+    code = ("import torch, json; c = torch.cuda.is_available(); print(json.dumps([c, torch.cuda.get_device_name(0) if c else '', "
+            "torch.__version__, torch.version.cuda]))")
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(dict.fromkeys([x for x in sys.path if x and os.path.isdir(x)] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])))
     try:
-        import torch
-        cuda = bool(torch.cuda.is_available())
-        name = torch.cuda.get_device_name(0) if cuda else ""
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, timeout=300)
+        cuda, name, ver, cver = json.loads(out.stdout.strip().splitlines()[-1])
+        log("PyTorch %s (%s)." % (ver, "CUDA %s" % cver if cver else "a CPU-only build"))
     except Exception as e:
-        log("PyTorch could not be loaded here (%s): the CPU is used." % e)
+        log("PyTorch could not be checked (%s): the CPU is used." % e)
         cuda, name = False, ""
     if choice == "NVIDIA GPU":
         if not cuda:
