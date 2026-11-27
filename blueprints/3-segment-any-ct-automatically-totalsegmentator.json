@@ -5,11 +5,350 @@
     },
     "name": "3 · Segment any CT automatically (TotalSegmentator)",
     "description": "Any CT (NIfTI, NRRD, MHA or DICOM) segmented by the TotalSegmentator network into organs, bones, vessels and muscles, turned into the same 3D anatomy as flow 1, and scored against expert labels when the dataset has them.",
-    "published_version": 0,
-    "updated": "2026-11-27 20:16:15",
+    "published_version": 1,
+    "updated": "2026-11-27 20:16:31",
     "graph": {
-        "nodes": [],
-        "edges": [],
-        "notes": []
+        "nodes": [
+            {
+                "id": "dl",
+                "type": "download-files",
+                "x": 0,
+                "y": 200,
+                "params": {
+                    "sources": "https://zenodo.org/records/10047263",
+                    "fetch": "*.zip",
+                    "keep": "*.nii.gz",
+                    "inside": "",
+                    "case_file": "ct.nii.gz",
+                    "cases": "s1400",
+                    "also": "meta.csv",
+                    "per_folder": 0,
+                    "max_files": 0,
+                    "seed": 1,
+                    "remote_zip": "auto",
+                    "licence": "CC-BY-4.0",
+                    "credit": "TotalSegmentator dataset v2.0.1 (small subset), Zenodo, doi:10.5281/zenodo.10047263. Wasserthal J., Breit H.-C., Meyer M.T., et al. TotalSegmentator: Robust Segmentation of 104 Anatomic Structures in CT Images. Radiology: Artificial Intelligence 2023; 5(5): e230024."
+                },
+                "title": "CT scans: TotalSegmentator dataset (Zenodo), case s1400 · replace with your own "
+            },
+            {
+                "id": "seg",
+                "type": "ws-segment-ct-automatically-totalsegmen",
+                "x": 380,
+                "y": 200,
+                "params": {
+                    "task": "total",
+                    "resolution": "1.5 mm (best)",
+                    "structures": "",
+                    "device": "auto",
+                    "scan_file": "",
+                    "keep_empty": false
+                },
+                "title": "Segment the CT automatically (TotalSegmentator)"
+            },
+            {
+                "id": "rd",
+                "type": "medical-read",
+                "x": 780,
+                "y": -120,
+                "params": {
+                    "window": "CT soft tissue",
+                    "skip": "segmentations, segmentation, masks, mask, labels, label",
+                    "convert": true
+                },
+                "title": "Read and check the scans, with the network's labels"
+            },
+            {
+                "id": "mesh",
+                "type": "ws-expert-labels-to-3d-models-clean",
+                "x": 780,
+                "y": 140,
+                "params": {
+                    "structures": "",
+                    "min_ml": 1,
+                    "smooth": 15,
+                    "triangles": 20000,
+                    "scene_triangles": 900000,
+                    "step": 1,
+                    "largest": false,
+                    "formats": "glb + stl"
+                },
+                "title": "Network labels to 3D models"
+            },
+            {
+                "id": "ctvol",
+                "type": "ws-ct-volume-for-the-3d-view",
+                "x": 780,
+                "y": 380,
+                "params": {
+                    "file": "ct.nii.gz",
+                    "size": 256
+                },
+                "title": "The CT, for the cut in the 3D view"
+            },
+            {
+                "id": "skin",
+                "type": "ws-soft-body-model-skin-inside",
+                "x": 780,
+                "y": 600,
+                "params": {
+                    "structures": "",
+                    "spheres": 40,
+                    "coverage": 85,
+                    "skin": true,
+                    "skin_spacing": 40,
+                    "body_hu": -300,
+                    "physics": false
+                },
+                "title": "The skin (no physics)"
+            },
+            {
+                "id": "score",
+                "type": "ws-score-segmentation-against-experts",
+                "x": 780,
+                "y": 820,
+                "params": {
+                    "min_ml": 0.5
+                },
+                "title": "Score the network against the experts"
+            },
+            {
+                "id": "slices",
+                "type": "image-view",
+                "x": 1220,
+                "y": -220,
+                "params": {
+                    "size": "large"
+                },
+                "title": "Slices, with the network's anatomy over them"
+            },
+            {
+                "id": "found",
+                "type": "table-view",
+                "x": 1220,
+                "y": 20,
+                "params": {
+                    "rows": 50
+                },
+                "title": "Structures the network found"
+            },
+            {
+                "id": "anatomy",
+                "type": "ws-3d-view-stable-soft-tissue",
+                "x": 1220,
+                "y": 240,
+                "params": {
+                    "environment": "night",
+                    "quality": "high",
+                    "floor": false,
+                    "models": "one at a time",
+                    "grid": false,
+                    "mouse_mode": "The model"
+                },
+                "title": "3D anatomy (automatic segmentation)"
+            },
+            {
+                "id": "models",
+                "type": "table-view",
+                "x": 1220,
+                "y": 500,
+                "params": {
+                    "rows": 50
+                },
+                "title": "Every model: volume, and ready to print?"
+            },
+            {
+                "id": "scoretab",
+                "type": "table-view",
+                "x": 1220,
+                "y": 760,
+                "params": {
+                    "rows": 50
+                },
+                "title": "Network vs experts: Dice per structure (worst first)"
+            }
+        ],
+        "edges": [
+            {
+                "id": "dl.files>seg.scans",
+                "from": {
+                    "node": "dl",
+                    "port": "files"
+                },
+                "to": {
+                    "node": "seg",
+                    "port": "scans"
+                }
+            },
+            {
+                "id": "seg.cases>rd.scans",
+                "from": {
+                    "node": "seg",
+                    "port": "cases"
+                },
+                "to": {
+                    "node": "rd",
+                    "port": "scans"
+                }
+            },
+            {
+                "id": "seg.cases>rd.labels",
+                "from": {
+                    "node": "seg",
+                    "port": "cases"
+                },
+                "to": {
+                    "node": "rd",
+                    "port": "labels"
+                }
+            },
+            {
+                "id": "seg.cases>mesh.labels",
+                "from": {
+                    "node": "seg",
+                    "port": "cases"
+                },
+                "to": {
+                    "node": "mesh",
+                    "port": "labels"
+                }
+            },
+            {
+                "id": "seg.cases>ctvol.scans",
+                "from": {
+                    "node": "seg",
+                    "port": "cases"
+                },
+                "to": {
+                    "node": "ctvol",
+                    "port": "scans"
+                }
+            },
+            {
+                "id": "seg.cases>skin.labels",
+                "from": {
+                    "node": "seg",
+                    "port": "cases"
+                },
+                "to": {
+                    "node": "skin",
+                    "port": "labels"
+                }
+            },
+            {
+                "id": "seg.cases>skin.scans",
+                "from": {
+                    "node": "seg",
+                    "port": "cases"
+                },
+                "to": {
+                    "node": "skin",
+                    "port": "scans"
+                }
+            },
+            {
+                "id": "seg.cases>score.auto",
+                "from": {
+                    "node": "seg",
+                    "port": "cases"
+                },
+                "to": {
+                    "node": "score",
+                    "port": "auto"
+                }
+            },
+            {
+                "id": "dl.files>score.experts",
+                "from": {
+                    "node": "dl",
+                    "port": "files"
+                },
+                "to": {
+                    "node": "score",
+                    "port": "experts"
+                }
+            },
+            {
+                "id": "seg.table>found.data",
+                "from": {
+                    "node": "seg",
+                    "port": "table"
+                },
+                "to": {
+                    "node": "found",
+                    "port": "data"
+                }
+            },
+            {
+                "id": "rd.previews>slices.images",
+                "from": {
+                    "node": "rd",
+                    "port": "previews"
+                },
+                "to": {
+                    "node": "slices",
+                    "port": "images"
+                }
+            },
+            {
+                "id": "mesh.models>anatomy.scene",
+                "from": {
+                    "node": "mesh",
+                    "port": "models"
+                },
+                "to": {
+                    "node": "anatomy",
+                    "port": "scene"
+                }
+            },
+            {
+                "id": "ctvol.volume>anatomy.scene",
+                "from": {
+                    "node": "ctvol",
+                    "port": "volume"
+                },
+                "to": {
+                    "node": "anatomy",
+                    "port": "scene"
+                }
+            },
+            {
+                "id": "skin.model>anatomy.scene",
+                "from": {
+                    "node": "skin",
+                    "port": "model"
+                },
+                "to": {
+                    "node": "anatomy",
+                    "port": "scene"
+                }
+            },
+            {
+                "id": "mesh.table>models.data",
+                "from": {
+                    "node": "mesh",
+                    "port": "table"
+                },
+                "to": {
+                    "node": "models",
+                    "port": "data"
+                }
+            },
+            {
+                "id": "score.table>scoretab.data",
+                "from": {
+                    "node": "score",
+                    "port": "table"
+                },
+                "to": {
+                    "node": "scoretab",
+                    "port": "data"
+                }
+            }
+        ],
+        "notes": [],
+        "dash": {
+            "items": []
+        }
     }
 }

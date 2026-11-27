@@ -26,8 +26,8 @@
         {
             "name": "3 · Segment any CT automatically (TotalSegmentator)",
             "file": "blueprints/3-segment-any-ct-automatically-totalsegmentator.json",
-            "published_version": 0,
-            "nodes": 0
+            "published_version": 1,
+            "nodes": 12
         }
     ],
     "blocks": [
@@ -50,6 +50,16 @@
             "id": "ws-3d-view-stable-soft-tissue",
             "version": 62,
             "name": "3D view (stable soft tissue)"
+        },
+        {
+            "id": "ws-segment-ct-automatically-totalsegmen",
+            "version": 1,
+            "name": "Segment CT automatically (TotalSegmentator)"
+        },
+        {
+            "id": "ws-score-segmentation-against-experts",
+            "version": 1,
+            "name": "Score segmentation against experts"
         }
     ]
 }

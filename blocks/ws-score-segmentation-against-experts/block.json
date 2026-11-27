@@ -1,0 +1,79 @@
+{
+    "id": "ws-score-segmentation-against-experts",
+    "version": "1",
+    "name": "Score segmentation against experts",
+    "category": "AI",
+    "icon": "check",
+    "side": "backend",
+    "customizable": true,
+    "summary": "Compares automatic masks with expert masks of the same cases, structure by structure: Dice, volumes and their difference, and a mean per group.",
+    "help": "Wire the Segmented cases of Segment CT automatically into Automatic, and the dataset with expert labels (<case>/segmentations/<structure>.nii.gz) into Experts. Cases and structures are matched by name; structures only one side has are listed with Dice 0.",
+    "inputs": [
+        {
+            "id": "auto",
+            "label": "Automatic",
+            "type": "files",
+            "many": true,
+            "formats": [
+                "gz",
+                "nii",
+                "nrrd",
+                "mha"
+            ],
+            "help": "<case>/segmentations/<structure>.nii.gz from the network"
+        },
+        {
+            "id": "experts",
+            "label": "Experts",
+            "type": "files",
+            "many": true,
+            "formats": [
+                "gz",
+                "nii",
+                "nrrd",
+                "mha"
+            ],
+            "help": "<case>/segmentations/<structure>.nii.gz drawn by experts"
+        }
+    ],
+    "outputs": [
+        {
+            "id": "table",
+            "label": "Score per structure",
+            "type": "table",
+            "formats": [
+                "csv"
+            ],
+            "help": "score.csv: case, structure, group, dice, expert_ml, auto_ml, volume_diff_pct, note"
+        },
+        {
+            "id": "summary",
+            "label": "Summary",
+            "type": "metrics",
+            "formats": [
+                "json"
+            ],
+            "help": "summary.json: mean and median Dice, overall and per group"
+        }
+    ],
+    "params": [
+        {
+            "key": "min_ml",
+            "label": "Smallest (ml)",
+            "type": "number",
+            "default": 0.5,
+            "min": 0,
+            "help": "Structures smaller than this on both sides are left out (slivers at the scan's edges)"
+        }
+    ],
+    "hardware": [
+        "cpu"
+    ],
+    "packages": [
+        "numpy",
+        "SimpleITK"
+    ],
+    "esasim": {
+        "version": 1
+    }
+}

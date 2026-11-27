@@ -1,0 +1,132 @@
+{
+    "id": "ws-segment-ct-automatically-totalsegmen",
+    "version": "1",
+    "name": "Segment CT automatically (TotalSegmentator)",
+    "category": "AI",
+    "icon": "brain",
+    "side": "backend",
+    "customizable": true,
+    "summary": "Segments organs, bones, vessels and muscles in any CT (NIfTI, NRRD, MHA or DICOM series) with TotalSegmentator, and writes each case as <case>/ct.nii.gz + <case>/segmentations/<structure>.nii.gz, the ",
+    "help": "Wire any CT scans into Scans: a dataset of NIfTI files (one per case, or <case>/ct.nii.gz), NRRD/MHA volumes, or the files of DICOM series (one series per folder). Masks already in segmentations/ folders and label maps are skipped, so a dataset that comes with expert labels can be wired too. Wire Cases to Expert labels to 3D models, CT volume for the 3D view, Soft body model and Read medical images exactly as the expert labels were wired: they read the same layout. The first run on a worker downloads the network's weights (about 1–2 GB for the total task) into the worker's ~/.totalsegmentator; the next runs use them. An NVIDIA GPU takes about 1–3 minutes a case at 1.5 mm; the CPU 10–30 minutes (3 mm: a few minutes). For research and teaching, not for clinical use. TotalSegmentator (Wasserthal et al., Radiology: AI 2023), Apache-2.0; only its open tasks are offered.",
+    "inputs": [
+        {
+            "id": "scans",
+            "label": "Scans",
+            "type": "files",
+            "many": true,
+            "formats": [
+                "gz",
+                "nii",
+                "nrrd",
+                "nhdr",
+                "mha",
+                "mhd",
+                "dcm"
+            ],
+            "help": "CT volumes (NIfTI, NRRD, MHA) or the files of DICOM series; masks in segmentations/ folders are skipped"
+        }
+    ],
+    "outputs": [
+        {
+            "id": "cases",
+            "label": "Segmented cases",
+            "type": "files",
+            "formats": [
+                "gz"
+            ],
+            "help": "<case>/ct.nii.gz and <case>/segmentations/<structure>.nii.gz (one mask per structure), as the TotalSegmentator dataset lays them out"
+        },
+        {
+            "id": "table",
+            "label": "Structures found",
+            "type": "table",
+            "formats": [
+                "csv"
+            ],
+            "help": "segmentation.csv: case, structure, voxels, volume_ml, task, seconds"
+        }
+    ],
+    "params": [
+        {
+            "key": "task",
+            "label": "Task",
+            "type": "select",
+            "default": "total",
+            "options": [
+                "total",
+                "total_mr",
+                "body",
+                "lung_vessels",
+                "liver_vessels",
+                "liver_segments",
+                "kidney_cysts",
+                "pleural_pericard_effusion",
+                "cerebral_bleed",
+                "hip_implant",
+                "head_glands_cavities",
+                "headneck_bones_vessels",
+                "head_muscles",
+                "headneck_muscles"
+            ],
+            "help": "total: 117 structures of a CT (organs, bones, vessels, muscles); total_mr: for MR scans; the others add detail to one region"
+        },
+        {
+            "key": "resolution",
+            "label": "Resolution",
+            "type": "select",
+            "default": "1.5 mm (best)",
+            "options": [
+                "1.5 mm (best)",
+                "3 mm (fast)",
+                "6 mm (fastest)"
+            ],
+            "help": "total, total_mr and body only. 3 mm is several times faster and fine for big organs; thin structures (ribs, small vessels) lose detail"
+        },
+        {
+            "key": "structures",
+            "label": "Only these structures",
+            "type": "text",
+            "default": "",
+            "help": "total / total_mr: names separated by commas (liver, spleen, kidney_left, aorta…); the network then runs only on the part of the scan it needs. Empty: all"
+        },
+        {
+            "key": "device",
+            "label": "Run on",
+            "type": "select",
+            "default": "auto",
+            "options": [
+                "auto",
+                "NVIDIA GPU",
+                "CPU"
+            ],
+            "help": "auto: the worker's NVIDIA GPU when PyTorch sees one, else the CPU"
+        },
+        {
+            "key": "scan_file",
+            "label": "Scan file name",
+            "type": "text",
+            "default": "",
+            "help": "Which volumes are the scans (a pattern such as ct.nii.gz or *.nrrd); empty: every volume that is not a mask or a label map"
+        },
+        {
+            "key": "keep_empty",
+            "label": "Keep empty masks",
+            "type": "bool",
+            "default": false,
+            "help": "The network writes a mask for every structure of the task, also those outside the scan; off: only the structures it found"
+        }
+    ],
+    "hardware": [
+        "cpu",
+        "nvidia"
+    ],
+    "packages": [
+        "TotalSegmentator",
+        "torch",
+        "SimpleITK",
+        "numpy"
+    ],
+    "esasim": {
+        "version": 1
+    }
+}
