@@ -5,8 +5,8 @@
     },
     "name": "3 · Segment any CT automatically (TotalSegmentator)",
     "description": "Any CT (NIfTI, NRRD, MHA or DICOM) segmented by the TotalSegmentator network into organs, bones, vessels and muscles, turned into the same 3D anatomy as flow 1, and scored against expert labels when the dataset has them.",
-    "published_version": 4,
-    "updated": "2026-11-27 23:37:50",
+    "published_version": 5,
+    "updated": "2026-11-27 23:54:24",
     "graph": {
         "nodes": [
             {
@@ -37,7 +37,7 @@
                 "x": 0,
                 "y": 209,
                 "params": {
-                    "source": "Files wired in",
+                    "source": "Upload from the View, else the wired files",
                     "folder": "",
                     "series": "The best CT series of each study",
                     "only": "",
