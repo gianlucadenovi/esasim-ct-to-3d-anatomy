@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 50 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 51 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2922,12 +2922,17 @@ function render(ctx) {
     mat.userData.es = { esOn: TEX.uOn || (TEX.uOn = { value: TEX.on ? 1 : 0 }), esKind: { value: t[0] }, esBumpH: { value: t[1] }, esSecond: { value: new THREE.Color().fromArray(t[2] || [1, 1, 1]) }, esAxis: { value: new THREE.Vector3(0, 1, 0) }, esNoiseTex: ES_NOISE, esSkinTex: SKINCLIP.tex, esSkinO: SKINCLIP.o, esSkinInv: SKINCLIP.inv, esSkinOn: SKINCLIP.on };
     mat.onBeforeCompile = function (sh) {
       var u = mat.userData.es; for (var k in u) sh.uniforms[k] = u[k];
-      sh.vertexShader = 'attribute vec3 esRest;\nattribute vec2 esCurv;\nvarying vec3 vEsP;\nvarying vec2 vEsC;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvEsP = esRest; vEsC = esCurv;');
+      sh.vertexShader = 'attribute vec3 esRest;\nattribute vec2 esCurv;\nvarying vec3 vEsP;\nvarying vec2 vEsC;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvEsP = esRest; vEsC = esCurv;')
+        .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nif (!(dot(objectNormal, objectNormal) > 1e-12)) objectNormal = vec3(0.0, 0.0, 1.0);');
       sh.fragmentShader = TISSUE_GLSL + '\n' + sh.fragmentShader
         .replace('#include <color_fragment>', '#include <color_fragment>\nif (esSkinOn > 0.5) { vec3 esSu = (vEsP - esSkinO) * esSkinInv; if (any(lessThan(esSu, vec3(0.0))) || any(greaterThan(esSu, vec3(1.0))) || texture(esSkinTex, esSu).r > 0.5) discard; }\nvec4 esT = vec4(0.0, 1.0, 1.0, 0.0); float esHt = 0.0, esAO = 1.0;\nif (esOn * esKind > 0.5) { float esPx = length(fwidth(vEsP)); esT = esTissue(vEsP, esKind, esPx, vEsC); esAO = esAOv; diffuseColor.rgb = mix(diffuseColor.rgb, esSecond, clamp(esT.w, 0.0, 1.0)) * esT.y;\n'
           + '  vec3 esV = esVessels(vEsP, esKind, esPx); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.3, 0.025, 0.04), esV.x); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.14, 0.05, 0.15), esV.y);\n'
           + '  esHt = esT.x * esBumpH + esV.z + esMicro(vEsP, esPx); }')
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor * esT.z, 0.04, 1.0);')
+        // a broken normal (a vertex of tiny triangles only): the triangle's own normal instead
+        .replace('#include <normal_fragment_maps>', 'if (!(abs(dot(normal, normal) - 1.0) < 0.5)) normal = normalize(cross(dFdx(vViewPosition), dFdy(vViewPosition)));\n#include <normal_fragment_maps>')
+        // a pixel that still comes out NaN or infinite is drawn in its own colour (the glow would spread it as black squares)
+        .replace('#include <dithering_fragment>', '#include <dithering_fragment>\nif (any(isnan(gl_FragColor)) || any(isinf(gl_FragColor)) || !(gl_FragColor.r + gl_FragColor.g + gl_FragColor.b < 1e4)) gl_FragColor = vec4(clamp(diffuseColor.rgb, 0.0, 1.0) * 0.5, 1.0);')
         // specular antialiasing: where the relief turns faster than a pixel can show, the highlight is roughened there
         // (it would sparkle otherwise)
         .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nif (esOn * esKind > 0.5) { normal = esBump(-vViewPosition, normal, esHt, faceDirection); roughnessFactor = max(roughnessFactor, min(0.6, length(fwidth(normal)) * 0.9)); }')
@@ -3956,7 +3961,7 @@ function render(ctx) {
         for (var v = 0; v < bd.nv; v++) {
           if (!NT[idx[4 * v]] && !NT[idx[4 * v + 1]]) continue;
           var px = arr[3 * v], py = arr[3 * v + 1], pz = arr[3 * v + 2];
-          if (!skinNearest(S, SP, px, py, pz, 0.006)) continue;
+          if (!skinNearest(S, SP, px, py, pz, 0.05)) continue;
           var H = SKH, side = (px - H.x) * H.nx + (py - H.y) * H.ny + (pz - H.z) * H.nz;
           if (side < -0.001) continue;
           var dx = -H.nx, dy = -H.ny, dz = -H.nz;
@@ -3996,7 +4001,7 @@ function render(ctx) {
       for (i = 0; i < S.n; i++) {
         if (!S.im[i] || (S.isSkin && S.isSkin[i])) continue;
         var dd = 0.16;
-        for (var rr = 0.04; rr <= 0.16; rr *= 2) if (skinNearest(S, P, S.x0[3 * i], S.x0[3 * i + 1], S.x0[3 * i + 2], rr)) { dd = SKH.d; break; }
+        for (var rr = 0.04; rr <= 0.16; rr *= 2) if (skinNearest(S, P, S.x0[3 * i], S.x0[3 * i + 1], S.x0[3 * i + 2], rr)) { dd = SKH.d * ((S.x0[3 * i] - SKH.x) * SKH.nx + (S.x0[3 * i + 1] - SKH.y) * SKH.ny + (S.x0[3 * i + 2] - SKH.z) * SKH.nz > 0 ? -1 : 1); break; }
         S.triRest[i] = dd;
       }
     }
@@ -4059,8 +4064,9 @@ function render(ctx) {
       NT[i] = 0;
       if (!im[i] || S.isSkin[i]) continue;
       var o = 3 * i, px = xb[o], py = xb[o + 1], pz = xb[o + 2], rx = px - x0[o], ry = py - x0[o + 1], rz = pz - x0[o + 2];
-      if (TR && TR[i] - Math.sqrt(rx * rx + ry * ry + rz * rz) - mv > r[i] + 0.02) continue;     // too deep to reach it
-      if (!skinNearest(S, P, px, py, pz, r[i] + 0.02)) continue;
+      var reach = 1.8 * r[i] + 0.05;                                      // its whole field: its drawn surface can reach that far
+      if (TR && TR[i] - Math.sqrt(rx * rx + ry * ry + rz * rz) - mv > reach) continue;     // too deep to reach it
+      if (!skinNearest(S, P, px, py, pz, reach)) continue;
       NT[i] = 1;
       var H = SKH, side = (px - H.x) * H.nx + (py - H.y) * H.ny + (pz - H.z) * H.nz;
       if (side < 0 && H.d >= r[i]) continue;                            // wholly inside
