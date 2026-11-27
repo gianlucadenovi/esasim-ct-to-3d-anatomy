@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 31 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 32 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2849,12 +2849,11 @@ function render(ctx) {
     'vec4 esSkin(vec3 p, float px) {',
     // pores, about 0.8 mm apart; fine furrows crossing in two directions (the skin's microrelief), a little warped
     '  float mid = esFbmP(p + 2.0, px, 35.0);',
-    '  float crs = esFade(px, 160.0) * smoothstep(0.88, 0.98, 1.0 - abs(2.0 * esNoise(vec3(p.x * 25.0, p.y * 90.0, p.z * 25.0) + 1.5 * vec3(esNoise(p * 12.0), esNoise(p * 12.0 + 4.0), 0.0)) - 1.0));',
+    '  float crs = 0.0;',
     '  float pore = esFade(px, 2400.0) * (1.0 - smoothstep(0.06, 0.22, esCell(p * 1200.0).x));',
     '  vec3 w = vec3(esNoise(p * 60.0), esNoise(p * 60.0 + 7.0), esNoise(p * 60.0 + 13.0));',
-    '  float l1 = 1.0 - abs(2.0 * esNoise(vec3((p.x + p.y) * 500.0, p.z * 60.0, p.y * 60.0) + 2.0 * w) - 1.0);',
-    '  float l2 = 1.0 - abs(2.0 * esNoise(vec3((p.x - p.z) * 500.0, p.y * 60.0, p.x * 60.0) + 2.0 * w + 5.0) - 1.0);',
-    '  float fur = esFade(px, 1000.0) * max(smoothstep(0.9, 0.99, l1), smoothstep(0.9, 0.99, l2));',
+    // the skin's microrelief: a fine polygonal network of shallow furrows (no preferred direction), a little warped
+    '  vec2 cc = esCell(p * 450.0 + 0.8 * w); float fur = esFade(px, 900.0) * (1.0 - smoothstep(0.0, 0.08, cc.y - cc.x));',
     '  float bmp = esFbmP(p, px, 300.0);',
     '  float h = 0.5 + 1.2 * (mid - 0.5) - 0.5 * crs + 0.35 * (bmp - 0.5) - 0.6 * pore - 0.5 * fur;',
     '  float rough = 1.0 + 0.5 * (esFbm(p * 15.0) - 0.5) + 0.2 * pore + 0.15 * fur;',
@@ -3418,8 +3417,10 @@ function render(ctx) {
           .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nif (esOn > 0.5) { normal = esBump(-vViewPosition, normal, esK.x * 0.0005, faceDirection); roughnessFactor = max(roughnessFactor, min(0.6, length(fwidth(normal)) * 0.9)); }')
           .replace('#include <opaque_fragment>', '#include <opaque_fragment>\n{ vec3 esV = normalize( vViewPosition ), esN = normalize( normal );\n'
             // s: 1 facing you, 0 at the edge, -1 on the far side (a back face seen through the front)
-            + 'float esF = dot( esN, esV ) * faceDirection, esT = clamp( 0.5 - 0.5 * esF, 0.0, 1.0 );\n'
-            + 'float esA = mix( 0.05, 0.92, pow( esT, 0.75 ) ); esA = clamp( esA + esK.y * ( 1.0 - esA ) * 0.6, 0.0, 1.0 );\n'
+            // the angle between the skin and the line of sight: up to 45 degrees clear, from 45 to 90 gradually solid
+            + 'float esF = dot( esN, esV ) * faceDirection, esTh = acos( clamp( abs( esF ), 0.0, 1.0 ) );\n'
+            + 'float esT = clamp( ( esTh - 0.7854 ) / 0.7854, 0.0, 1.0 ); esT = esT * esT * ( 3.0 - 2.0 * esT );\n'
+            + 'float esA = mix( 0.02, 1.0, esT ); esA = clamp( esA + esK.y * esT * ( 1.0 - esA ) * 0.4, 0.0, 1.0 );\n'
             + 'vec3 esHv = normalize( normalize( vec3( 0.4, 0.6, 1.0 ) ) + esV ); float esNH = max( dot( esN, esHv ), 0.0 );\n'
             + 'float esS = 0.12 * pow( esNH, 9.0 ) + 0.18 * pow( esNH, 80.0 );\n'
             + 'if ( esF < 0.0 ) gl_FragColor.rgb += diffuseColor.rgb * vec3( 1.0, 0.75, 0.65 ) * 0.22 * ( -esF );\n'
