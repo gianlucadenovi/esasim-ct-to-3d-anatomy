@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 37 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 38 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2723,8 +2723,22 @@ function render(ctx) {
     t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping; t.wrapR = THREE.RepeatWrapping; t.unpackAlignment = 1; t.generateMipmaps = false; t.needsUpdate = true;
     return { value: t };
   })();
+  // The skin's inside (its signed distance map, 8-bit: -5..+5 cm) as a 3D texture: while the skin shows, the tissues are
+  // not drawn where they are outside it (bones above its open top as well)
+  var SKINCLIP = { tex: { value: null }, o: { value: new THREE.Vector3() }, inv: { value: new THREE.Vector3(1, 1, 1) }, on: { value: 0 } };
+  function skinClipTex(G) {
+    if (!G) return;
+    var N = G.d.length, b = new Uint8Array(N);
+    for (var i = 0; i < N; i++) b[i] = Math.max(0, Math.min(255, Math.round(127.5 + G.d[i] / 0.05 * 127.5)));
+    var D3 = THREE.Data3DTexture || THREE.DataTexture3D; if (!D3) return;
+    var t = new D3(b, G.nx, G.ny, G.nz);
+    t.format = THREE.RedFormat; t.type = THREE.UnsignedByteType; t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter; t.unpackAlignment = 1; t.generateMipmaps = false; t.needsUpdate = true;
+    if (SKINCLIP.tex.value) SKINCLIP.tex.value.dispose();
+    SKINCLIP.tex.value = t; SKINCLIP.o.value.set(G.o[0], G.o[1], G.o[2]); SKINCLIP.inv.value.set(1 / (G.nx * G.c), 1 / (G.ny * G.c), 1 / (G.nz * G.c));
+  }
   var TISSUE_GLSL = [
     'varying vec3 vEsP; varying vec2 vEsC;',
+    'uniform highp sampler3D esSkinTex; uniform vec3 esSkinO; uniform vec3 esSkinInv; uniform float esSkinOn;',
     'uniform highp sampler3D esNoiseTex;',
     // ambient occlusion of a tissue (1: open, lower: pores, hollows, crevices), set by esTissue for the pixel
     'float esAOv = 1.0;',
@@ -2898,12 +2912,12 @@ function render(ctx) {
     }
     // the surface's shape (hollow, folded) for bone (darker in its hollows) and the heart (fat in its grooves and creases)
     if (!g.attributes.esCurv) g.setAttribute('esCurv', new THREE.BufferAttribute(t[0] === 9 || t[0] === 6 ? surfaceShape(g) : new Float32Array(2 * g.attributes.position.count), 2));
-    mat.userData.es = { esOn: TEX.uOn || (TEX.uOn = { value: TEX.on ? 1 : 0 }), esKind: { value: t[0] }, esBumpH: { value: t[1] }, esSecond: { value: new THREE.Color().fromArray(t[2] || [1, 1, 1]) }, esAxis: { value: new THREE.Vector3(0, 1, 0) }, esNoiseTex: ES_NOISE };
+    mat.userData.es = { esOn: TEX.uOn || (TEX.uOn = { value: TEX.on ? 1 : 0 }), esKind: { value: t[0] }, esBumpH: { value: t[1] }, esSecond: { value: new THREE.Color().fromArray(t[2] || [1, 1, 1]) }, esAxis: { value: new THREE.Vector3(0, 1, 0) }, esNoiseTex: ES_NOISE, esSkinTex: SKINCLIP.tex, esSkinO: SKINCLIP.o, esSkinInv: SKINCLIP.inv, esSkinOn: SKINCLIP.on };
     mat.onBeforeCompile = function (sh) {
       var u = mat.userData.es; for (var k in u) sh.uniforms[k] = u[k];
       sh.vertexShader = 'attribute vec3 esRest;\nattribute vec2 esCurv;\nvarying vec3 vEsP;\nvarying vec2 vEsC;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvEsP = esRest; vEsC = esCurv;');
       sh.fragmentShader = TISSUE_GLSL + '\n' + sh.fragmentShader
-        .replace('#include <color_fragment>', '#include <color_fragment>\nvec4 esT = vec4(0.0, 1.0, 1.0, 0.0); float esHt = 0.0, esAO = 1.0;\nif (esOn * esKind > 0.5) { float esPx = length(fwidth(vEsP)); esT = esTissue(vEsP, esKind, esPx, vEsC); esAO = esAOv; diffuseColor.rgb = mix(diffuseColor.rgb, esSecond, clamp(esT.w, 0.0, 1.0)) * esT.y;\n'
+        .replace('#include <color_fragment>', '#include <color_fragment>\nif (esSkinOn > 0.5) { vec3 esSu = (vEsP - esSkinO) * esSkinInv; if (any(lessThan(esSu, vec3(0.0))) || any(greaterThan(esSu, vec3(1.0))) || texture(esSkinTex, esSu).r > 0.5) discard; }\nvec4 esT = vec4(0.0, 1.0, 1.0, 0.0); float esHt = 0.0, esAO = 1.0;\nif (esOn * esKind > 0.5) { float esPx = length(fwidth(vEsP)); esT = esTissue(vEsP, esKind, esPx, vEsC); esAO = esAOv; diffuseColor.rgb = mix(diffuseColor.rgb, esSecond, clamp(esT.w, 0.0, 1.0)) * esT.y;\n'
           + '  vec3 esV = esVessels(vEsP, esKind, esPx); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.3, 0.025, 0.04), esV.x); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.14, 0.05, 0.15), esV.y);\n'
           + '  esHt = esT.x * esBumpH + esV.z + esMicro(vEsP, esPx); }')
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor * esT.z, 0.04, 1.0);')
@@ -3244,6 +3258,7 @@ function render(ctx) {
     SOFT.binds.forEach(function (b) { b.mesh.geometry.attributes.position.array.set(b.base); b.mesh.geometry.attributes.position.needsUpdate = true; });
     ballsDrop();
     if (pokeTip) pokeTip.visible = false;
+    SKINCLIP.on.value = 0;
     SOFT = null; if (softEl) softEl.style.display = 'none';
     if (lookEl) lookEl.querySelector('.lk-balls-l').style.display = 'none';
   }
@@ -3445,7 +3460,7 @@ function render(ctx) {
       meshes.push(skin); byName.skin = m.skin.body;
       // what is inside the skin (a signed distance map of it), and which particles are the skin's own: while the skin
       // shows, no other tissue gets outside it
-      S.skinMesh = skin; S.skinSdf = skinSdfBuild(m.skin.mesh.positions, sfa);
+      S.skinMesh = skin; S.skinSdf = skinSdfBuild(m.skin.mesh.positions, sfa); skinClipTex(S.skinSdf);
       S.isSkin = new Uint8Array(S.n);
       m.bodies.forEach(function (bb) { if (bb.name === 'skin') for (var q = 0; q < bb.spheres.length; q++) S.isSkin[bb.first + q] = 1; });
     }
@@ -3806,6 +3821,7 @@ function render(ctx) {
       });
     }
     var bg = S.boneGrid, SGv = S.skinSdf && S.skinMesh && S.skinMesh.visible ? S.skinSdf : null;
+    SKINCLIP.on.value = SGv && SKINCLIP.tex.value ? 1 : 0;              // the tissues are cut at the skin while it shows
     S.binds.forEach(function (bd) {
       if (!bd.mesh.visible) return;
       if (SGv && !bd.nearSkin && bd.mesh !== S.skinMesh) {             // vertices within 4 cm of the skin in the scan: the only ones that can reach it
