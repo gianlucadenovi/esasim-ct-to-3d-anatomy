@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 12 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 13 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2715,17 +2715,16 @@ function render(ctx) {
     // ends (cv.y), with an irregular edge; the fibres show through the tendon, paler
     '    vec3 ax = normalize(esAxis), u = normalize(cross(ax, abs(ax.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0))), v = cross(ax, u);',
     '    float s = dot(p, ax), x1 = dot(p, u), x2 = dot(p, v), wav = esFbm(vec3(x1 * 40.0, x2 * 40.0, s * 6.0));',
-    '    float ab = esFade(px, 260.0), af = esFade(px, 900.0);',
-    '    float bun = esNoise(vec3(x1 * 260.0, x2 * 260.0, s * 7.0) + wav * 2.0);',
-    '    float fib = esNoise(vec3(x1 * 900.0, x2 * 900.0, s * 25.0) + wav * 3.0);',
-    '    float sheath = ab * smoothstep(0.88, 0.975, 1.0 - abs(2.0 * bun - 1.0));',
-    '    float fine = af * smoothstep(0.82, 0.97, 1.0 - abs(2.0 * fib - 1.0));',
-    '    float tw = smoothstep(0.3, 0.75, max(cv.x, cv.y) + (esFbm(p * 40.0 + vec3(5.0)) - 0.5) * 0.45);',
-    '    float mh = 0.5 * ab * smoothstep(0.15, 0.85, bun) + 0.35 * af * fib - 0.35 * sheath;',
-    '    h = mix(mh, 0.3 + 0.25 * af * fib, tw);',
-    '    c = mix(0.76 + 0.14 * lo + 0.14 * af * (fib - 0.5) + 0.1 * ab * (bun - 0.5), 0.92 + 0.08 * af * fib, tw);',
-    '    m = max(max(0.75 * sheath, 0.35 * fine), tw);',
-    '    r = mix(0.85 - 0.1 * af * fib, 0.65, tw); }',
+    '    float ab = esFade(px, 600.0), af = esFade(px, 2000.0);',
+    '    float bun = esNoise(vec3(x1 * 600.0, x2 * 600.0, s * 14.0) + wav * 2.0);',
+    '    float fib = esNoise(vec3(x1 * 2000.0, x2 * 2000.0, s * 70.0) + wav * 3.0);',
+    '    float sheath = ab * smoothstep(0.93, 0.99, 1.0 - abs(2.0 * bun - 1.0));',
+    '    float tw = smoothstep(0.45, 0.85, max(cv.x, cv.y) + (esFbm(p * 40.0 + vec3(5.0)) - 0.5) * 0.35);',
+    '    float mh = 0.55 * ab * smoothstep(0.1, 0.9, bun) + 0.3 * af * fib - 0.25 * sheath;',
+    '    h = mix(mh, 0.3 + 0.2 * af * fib, tw);',
+    '    c = mix(0.8 + 0.14 * lo + 0.06 * af * (fib - 0.5) + 0.05 * ab * (bun - 0.5), 0.92 + 0.06 * af * fib, tw);',
+    '    m = max(0.22 * sheath, tw);',
+    '    r = mix(0.85 - 0.08 * af * fib, 0.65, tw); }',
     // the heart: smooth, glossy red muscle with soft mottling; whitish, lobulated fat where the surface is hollow or
     // sharply creased (the grooves between the chambers, round the base of the great vessels: measured on the mesh), with
     // an irregular edge; the coronary vessels over it, branching trunks and finer branches, raised and darker red, over
@@ -2898,8 +2897,8 @@ function render(ctx) {
           for (var q = 0; q < l2.length; q += 3) { var ex = l2[q] - px, ey = l2[q + 1] - py, ez = l2[q + 2] - pz, d2 = ex * ex + ey * ey + ez * ez; if (d2 < best) best = d2; }
         }
         var sN = ((px * ax.x + py * ax.y + pz * ax.z) - lo) / span;
-        out[2 * i] = 1 - sstep(0.003, 0.011, Math.sqrt(best));
-        out[2 * i + 1] = 0.85 * Math.max(1 - sstep(0.0, 0.09, sN), sstep(0.91, 1.0, sN));
+        out[2 * i] = 1 - sstep(0.0015, 0.006, Math.sqrt(best));
+        out[2 * i + 1] = 0.85 * Math.max(1 - sstep(0.0, 0.07, sN), sstep(0.93, 1.0, sN));
       }
       cv.needsUpdate = true;
       m.material.userData.es.esAxis.value.copy(ax);
