@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 16 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 17 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2912,8 +2912,10 @@ function render(ctx) {
   function wetLook(obj) {
     var any = false;
     obj.traverse(function (o) {
-      if (!o.isMesh || !o.parent || !WET[o.parent.name] || !o.material || o.material.isMeshPhysicalMaterial) return;
-      var m = o.material, w = WET[o.parent.name];
+      // (the glTF loader turns spaces in names into _: "lungs and airways" arrives as lungs_and_airways)
+      var gname = o.parent ? String(o.parent.name || '').replace(/_/g, ' ') : '';
+      if (!o.isMesh || !o.parent || !WET[gname] || !o.material || o.material.isMeshPhysicalMaterial) return;
+      var m = o.material, w = WET[gname];
       o.material = new THREE.MeshPhysicalMaterial({ color: m.color, roughness: w[0], metalness: 0, clearcoat: w[1], clearcoatRoughness: w[2], specularIntensity: 0.8,
         transparent: m.transparent, opacity: m.opacity, side: m.side, depthWrite: m.depthWrite, name: m.name });
       tissueShader(o.material, o);
@@ -2933,10 +2935,12 @@ function render(ctx) {
     lookEl = document.createElement('div');
     lookEl.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap;padding:0 10px 6px;font-size:11.5px';
     lookEl.innerHTML = '<label style="display:flex;gap:5px;align-items:center"><input class="lk-tex" type="checkbox"' + (TEX.on ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Tissue textures</label>'
-      + '<label class="lk-balls-l" style="display:none;gap:5px;align-items:center" title="The spheres of the soft-body model, moving with the tissue"><input class="lk-balls" type="checkbox"' + (BALLS.on ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Metaballs</label>';
+      + '<label class="lk-balls-l" style="display:none;gap:5px;align-items:center" title="The spheres of the soft-body model, moving with the tissue"><input class="lk-balls" type="checkbox"' + (BALLS.on ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Metaballs</label>'
+      + '<label style="display:flex;gap:5px;align-items:center" title="Soft shadows from the light at the camera across the model, and a soft glow on the brightest highlights (heavier for the graphics card)"><input class="lk-enh" type="checkbox"' + (ENH.on ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Enhance (shadows, bloom)</label>';
     var body = partsEl.querySelector('.pt-body'); body.insertBefore(lookEl, body.firstChild);
     lookEl.querySelector('.lk-tex').addEventListener('change', function () { texturesOn(this.checked); });
     lookEl.querySelector('.lk-balls').addEventListener('change', function () { ballsShow(this.checked); });
+    lookEl.querySelector('.lk-enh').addEventListener('change', function () { ENH.on = this.checked; cq('.c-enh').checked = ENH.on; enhanceApply(); keepView(true); });
   }
   function partKey(p) { return (PARTS.files > 1 ? p.file.replace(/\.(glb|gltf)$/i, '').replace(/_anatomy$/, '') + ' · ' : '') + (p.group || 'parts'); }
   function nice(n) { return String(n).replace(/_/g, ' '); }
@@ -3886,7 +3890,7 @@ function render(ctx) {
   // highlights glow, with FXAA for the edges. On by default (not at the fast quality); remembered with the view.
   var ENH = { on: (ctx.state || {}).enhance != null ? !!(ctx.state || {}).enhance : quality !== 'fast', mine: false, bloom: null, c: null, r: 1, seq: -1 };
   cq('.c-enh').checked = ENH.on;
-  cq('.c-enh').onchange = function () { ENH.on = this.checked; enhanceApply(); keepView(true); };
+  cq('.c-enh').onchange = function () { ENH.on = this.checked; var lk = lookEl && lookEl.querySelector('.lk-enh'); if (lk) lk.checked = ENH.on; enhanceApply(); keepView(true); };
   function enhanceApply() {
     var on = ENH.on && mode === 'files' && !!FILES.root;
     if (headLight) {
