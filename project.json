@@ -20,7 +20,7 @@
         {
             "name": "2 · Soft tissue under gravity",
             "file": "blueprints/2-soft-tissue-under-gravity.json",
-            "published_version": 4,
+            "published_version": 5,
             "nodes": 5
         }
     ],
@@ -32,7 +32,7 @@
         },
         {
             "id": "ws-3d-view-stable-soft-tissue",
-            "version": 43,
+            "version": 44,
             "name": "3D view (stable soft tissue)"
         },
         {

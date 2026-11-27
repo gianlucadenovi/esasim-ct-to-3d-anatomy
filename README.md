@@ -111,12 +111,12 @@ An [EsaSim](https://esacode.com/) project of the workspace Gianluca De Novi's wo
 ### Blueprints in this repository
 
 - [1 · CT to 3D anatomy (expert labels)](blueprints/1-ct-to-3d-anatomy-expert-labels.json) · 8 blocks · version 3
-- [2 · Soft tissue under gravity](blueprints/2-soft-tissue-under-gravity.json) · 5 blocks · version 4
+- [2 · Soft tissue under gravity](blueprints/2-soft-tissue-under-gravity.json) · 5 blocks · version 5
 
 ### Workspace blocks it uses
 
 - [CT volume for the 3D view](blocks/ws-ct-volume-for-the-3d-view) · version 1
-- [3D view (stable soft tissue)](blocks/ws-3d-view-stable-soft-tissue) · version 43
+- [3D view (stable soft tissue)](blocks/ws-3d-view-stable-soft-tissue) · version 44
 - [Soft body model (skin inside)](blocks/ws-soft-body-model-skin-inside) · version 3
 
 ### Assets

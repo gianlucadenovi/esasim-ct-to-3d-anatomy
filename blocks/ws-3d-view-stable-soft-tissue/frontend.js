@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 43 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 44 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -3775,10 +3775,12 @@ function render(ctx) {
       L[5 * i2] = dl / sw; L[5 * i2 + 1] = J / sw; L[5 * i2 + 2] = nx; L[5 * i2 + 3] = ny; L[5 * i2 + 4] = nz;
     }
     if (first) return;
+    var C = S.skC || (S.skC = new Float32Array(n)); C.fill(0);
+    for (var q1 = 0; q1 < P.length; q1 += 2) { var l1 = 5 * P[q1]; if (W[q1 >> 1] && (L[l1] || L[l1 + 1])) C[P[q1 + 1]]++; }
     for (var q2 = 0; q2 < P.length; q2 += 2) {                       // pass 3: the skin there is pushed out as much, by its share
       var i3 = P[q2], k3 = P[q2 + 1], w3 = W[q2 >> 1], l = 5 * i3;
       if (!w3 || (!L[l] && !L[l + 1]) || !im[k3]) continue;
-      var f = w3 * im[k3], o3 = 3 * k3;
+      var f = w3 * im[k3] / Math.max(1, C[k3]), o3 = 3 * k3;
       xb[o3] += f * L[l] * L[l + 2]; xb[o3 + 1] += f * L[l] * L[l + 3]; xb[o3 + 2] += f * L[l] * L[l + 4];
       vb[o3] += f * L[l + 1] * L[l + 2]; vb[o3 + 1] += f * L[l + 1] * L[l + 3]; vb[o3 + 2] += f * L[l + 1] * L[l + 4];
     }
