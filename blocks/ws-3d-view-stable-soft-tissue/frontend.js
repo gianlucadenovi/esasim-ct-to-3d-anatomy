@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 48 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 49 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2706,7 +2706,7 @@ function render(ctx) {
   ];
   function tissueOf(name, group) {
     var n = String(name || '').toLowerCase();
-    if (/cartilage|costal|disc|menisc/.test(n)) return [13, 0.00025, [0.7, 0.4, 0.13]];
+    if (/cartilage|costal|disc|menisc/.test(n)) return [13, 0.00025, [0.85, 0.52, 0.22]];
     if (group === 'skeleton') return [9, 0.0009, [0.8, 0.66, 0.4]];
     for (var i = 0; i < TISSUE_KINDS.length; i++) if (TISSUE_KINDS[i][1].some(function (w) { return n.indexOf(w) >= 0; })) return [TISSUE_KINDS[i][0], TISSUE_KINDS[i][2], TISSUE_KINDS[i][3]];
     if (group === 'muscles') return [5, 0.0009, [0.93, 0.88, 0.8]];
@@ -2832,7 +2832,7 @@ function render(ctx) {
     // the trachea and bronchi: pale cartilage rings about 4 mm apart across their axis (esAxis), raised, slightly wavy
     // cartilage (the costal cartilages): smooth, pearly, a faint relief (its satin sheen is in its material)
     // cartilage: waxy, faintly lumpy, mottled with deeper amber where it is thicker
-    '  else if (k > 12.5) { float n = esFbmP(p, px, 150.0), mo = esFbm(p * 28.0 + 3.0); h = 0.5 + 0.5 * (n - 0.5) + 0.3 * (mo - 0.5); c = 0.9 + 0.12 * lo + 0.08 * (n - 0.5); m = 0.55 * smoothstep(0.38, 0.78, mo); r = 0.85 + 0.35 * (n - 0.5); }',
+    '  else if (k > 12.5) { float n = esFbmP(p, px, 150.0), mo = esFbm(p * 28.0 + 3.0); h = 0.5 + 0.5 * (n - 0.5) + 0.3 * (mo - 0.5); c = 0.9 + 0.12 * lo + 0.08 * (n - 0.5); m = 0.3 * smoothstep(0.4, 0.8, mo); r = 0.85 + 0.35 * (n - 0.5); }',
     '  else if (k > 11.5) { float a = esFade(px, 500.0), s = dot(p, normalize(esAxis)) + 0.0006 * esFbm(p * 60.0);',
     '    float band = a * smoothstep(0.25, 0.75, 0.5 + 0.5 * cos(s * 6.2831853 * 250.0));',
     '    h = band + 0.15 * esFade(px, 2400.0) * esFbm(p * 300.0); c = 0.9 + 0.1 * lo + 0.06 * band; m = 0.65 * band; r = 0.9 - 0.1 * band; }',
@@ -2894,11 +2894,13 @@ function render(ctx) {
     if (t[0] === 13) {
       // costal cartilage as it looks: warm, translucent amber-salmon, waxy and wet-glossy (light goes into it and comes
       // back out warmer; at its thin edges more of what is behind shows through)
-      if (mat.color) mat.color.setRGB(0.62, 0.3, 0.17); mat.roughness = 0.3; mat.clearcoat = 0.9; mat.clearcoatRoughness = 0.1;
+      if (mat.color) mat.color.setRGB(0.9, 0.62, 0.5); mat.roughness = 0.3; mat.clearcoat = 0.9; mat.clearcoatRoughness = 0.1;
+      // real translucency: light passes through it (blurred by its roughness) and is tinted warm by the thickness it crosses
+      if ('transmission' in mat) { mat.transmission = 0.75; mat.thickness = 0.012; mat.ior = 1.4; mat.attenuationColor = new THREE.Color(0.95, 0.6, 0.38); mat.attenuationDistance = 0.012; }
       if ('sheen' in mat) { mat.sheen = 0.35; mat.sheenColor = new THREE.Color(1.0, 0.72, 0.55); mat.sheenRoughness = 0.45; }
       // translucent the cheap way: no transmission pass (a second render of the scene), but drawn last, blended over what
       // is already drawn behind it; the light scattered inside it is added in its shader
-      mat.transparent = true; mat.opacity = 1; mat.depthWrite = true;
+      mat.transparent = false; mat.opacity = 1; mat.depthWrite = true;
       mat.emissive = new THREE.Color(0, 0, 0);
       mesh.renderOrder = 4;                                            // after the solid anatomy, before the see-through skin (5)
     }
@@ -2935,7 +2937,7 @@ function render(ctx) {
         // cartilage: light scattered inside it comes out warm (more where it is thin, at its edges, and on its lit side),
         // and it is see-through more at the edges than where you look straight in
         .replace('#include <opaque_fragment>', 'if (abs(esKind - 13.0) < 0.5) { float esNV = clamp(abs(dot(normalize(normal), normalize(vViewPosition))), 0.0, 1.0);\n'
-          + '  outgoingLight += diffuseColor.rgb * vec3(1.0, 0.62, 0.4) * (0.35 + 0.9 * pow(1.0 - esNV, 2.0)) * (reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + vec3(0.03));\n'
+          + '  outgoingLight += diffuseColor.rgb * vec3(1.0, 0.7, 0.5) * (0.15 + 0.5 * pow(1.0 - esNV, 2.0)) * (reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + vec3(0.03));\n'
           + '  diffuseColor.a = mix(0.62, 0.9, esNV); }\n#include <opaque_fragment>');
     };
     mat.customProgramCacheKey = function () { return 'esasim-tissue'; };
