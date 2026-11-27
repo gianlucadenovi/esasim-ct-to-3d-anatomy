@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 24 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 25 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2816,11 +2816,13 @@ function render(ctx) {
     if (t[0] === 9) { if (mat.color) mat.color.setRGB(0.72, 0.58, 0.36); mat.roughness = 0.42; mat.clearcoat = 0.22; mat.clearcoatRoughness = 0.32; mat.specularIntensity = 0.6; }
     // cartilage: darker, pearly, satin and a little translucent: light goes into it and comes out tinted pearly pink
     if (t[0] === 13) {
-      if (mat.color) mat.color.setRGB(0.26, 0.245, 0.27); mat.roughness = 0.45; mat.clearcoat = 0.3; mat.clearcoatRoughness = 0.4;
+      // hyaline cartilage: glossy, pearl-grey to blue-white, semitranslucent (its see-through blend over the darker tissue
+      // behind deepens it): a cool bluish pearl, sRGB about (176, 184, 196)
+      if (mat.color) mat.color.setRGB(0.43, 0.47, 0.55); mat.roughness = 0.35; mat.clearcoat = 0.6; mat.clearcoatRoughness = 0.2;
       // translucent the cheap way: no transmission pass (a second render of the scene), but drawn last, blended over what
       // is already drawn behind it, with a faint pearly-pink glow as light scattered inside it
       mat.transparent = true; mat.opacity = 0.8; mat.depthWrite = true;
-      mat.emissive = new THREE.Color(0.045, 0.026, 0.03);
+      mat.emissive = new THREE.Color(0.018, 0.022, 0.032);
       mesh.renderOrder = 4;                                            // after the solid anatomy, before the see-through skin (5)
     }
     if (t[0] === 12) { mat.transparent = false; mat.opacity = 1; mat.depthWrite = true; if (mat.color) mat.color.setRGB(0.72, 0.3, 0.28); mat.needsUpdate = true; }
