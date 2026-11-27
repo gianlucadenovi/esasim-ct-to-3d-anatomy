@@ -26,6 +26,11 @@
     ],
     "blocks": [
         {
+            "id": "ws-expert-labels-to-3d-models-clean",
+            "version": 2,
+            "name": "Expert labels to 3D models (clean)"
+        },
+        {
             "id": "ws-ct-volume-for-the-3d-view",
             "version": 1,
             "name": "CT volume for the 3D view"

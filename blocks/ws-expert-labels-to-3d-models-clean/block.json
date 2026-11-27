@@ -1,0 +1,152 @@
+{
+    "id": "ws-expert-labels-to-3d-models-clean",
+    "version": "1",
+    "name": "Expert labels to 3D models (clean)",
+    "category": "My blocks",
+    "icon": "box",
+    "side": "backend",
+    "customizable": true,
+    "summary": "Turns labelled volumes (a CT segmentation, any label map or masks) into a clean 3D model per structure: one coloured GLB scene per case for the 3D view, and STL files for 3D printing.",
+    "help": "Connect label volumes (NIfTI, NRRD or MHA): a label map per case, where each number is a structure (names from a table: id, name, and optionally group and color), or masks, one file per structure in a folder such as segmentations/ (the file name is the structure, as in the TotalSegmentator dataset). Scans connected by mistake (a CT) are recognised and skipped. Each structure becomes a surface (marching cubes on a slightly softened mask), smoothed without shrinking (Taubin), reduced to at most Triangles, closed at the edges of the scan, and checked: pieces, open edges, watertight, so the table says which models are ready to print. Models are in the patient's frame, in millimetres in STL and metres in GLB (head up, face towards you), grouped as skeleton, organs, vessels, heart, lungs and airways, muscles, and coloured as anatomy atlases do (lungs see-through). Structures picks some by name or group: liver, kidney_*, vessels, skeleton. The 3D scene of a case is kept under Scene triangles (and stored compactly) so it reaches EsaSim and opens quickly; the STL files keep the full detail. Runs on any worker; a full TotalSegmentator case (about 100 structures) takes a minute or two.",
+    "inputs": [
+        {
+            "id": "labels",
+            "label": "Labels",
+            "type": "files",
+            "many": true,
+            "formats": [
+                "gz",
+                "nii",
+                "nrrd",
+                "nhdr",
+                "mha",
+                "mhd"
+            ],
+            "help": "A label map per case, or masks (one file per structure) in a folder such as segmentations/"
+        },
+        {
+            "id": "names",
+            "label": "Names",
+            "type": "table",
+            "many": true,
+            "optional": true,
+            "formats": [
+                "csv",
+                "tsv"
+            ],
+            "help": "For label maps: id, name (and group, color as #rrggbb)"
+        }
+    ],
+    "outputs": [
+        {
+            "id": "models",
+            "label": "3D scenes",
+            "type": "files",
+            "formats": [
+                "glb"
+            ],
+            "help": "<case>/<case>_anatomy.glb: every structure of the case, named, coloured and grouped, for the 3D view"
+        },
+        {
+            "id": "stl",
+            "label": "STL for printing",
+            "type": "files",
+            "formats": [
+                "stl"
+            ],
+            "help": "<case>/<structure>.stl, in millimetres"
+        },
+        {
+            "id": "table",
+            "label": "Models",
+            "type": "table",
+            "formats": [
+                "csv"
+            ],
+            "help": "models.csv: case, structure, group, volume_ml, triangles, pieces, watertight, open_edges, color, note (ready to print or why not)"
+        }
+    ],
+    "params": [
+        {
+            "key": "structures",
+            "label": "Structures",
+            "type": "text",
+            "default": "",
+            "help": "Names or groups, separated by commas (liver, kidney_*, vessels, skeleton); empty: all"
+        },
+        {
+            "key": "min_ml",
+            "label": "Smallest (ml)",
+            "type": "number",
+            "default": 1,
+            "min": 0,
+            "help": "Structures smaller than this are listed but not built"
+        },
+        {
+            "key": "smooth",
+            "label": "Smoothing",
+            "type": "number",
+            "default": 15,
+            "min": 0,
+            "max": 200,
+            "help": "Rounds of smoothing that keep the volume (Taubin); 0: the voxels' steps stay"
+        },
+        {
+            "key": "triangles",
+            "label": "Triangles",
+            "type": "number",
+            "default": 20000,
+            "min": 0,
+            "help": "Most triangles per structure (fewer: a lighter scene); 0: no limit"
+        },
+        {
+            "key": "scene_triangles",
+            "label": "Scene triangles",
+            "type": "number",
+            "default": 300000,
+            "min": 0,
+            "help": "Most triangles in a case's 3D scene (about 3.5 MB at 300,000, so it opens in the browser); the STL files are not reduced. 0: no limit"
+        },
+        {
+            "key": "step",
+            "label": "Step (voxels)",
+            "type": "number",
+            "default": 1,
+            "min": 1,
+            "max": 4,
+            "help": "2 or more: coarser surfaces, built faster"
+        },
+        {
+            "key": "largest",
+            "label": "Largest piece only",
+            "type": "bool",
+            "default": false,
+            "help": "Drop small islands of each structure (not for structures made of pieces)"
+        },
+        {
+            "key": "formats",
+            "label": "Formats",
+            "type": "select",
+            "default": "glb + stl",
+            "options": [
+                "glb + stl",
+                "glb",
+                "stl"
+            ]
+        }
+    ],
+    "hardware": [
+        "cpu"
+    ],
+    "packages": [
+        "numpy",
+        "scipy",
+        "scikit-image",
+        "trimesh",
+        "fast-simplification",
+        "SimpleITK"
+    ],
+    "esasim": {
+        "version": 2
+    }
+}
