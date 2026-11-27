@@ -117,6 +117,7 @@ An [EsaSim](https://esacode.com/) project of the workspace Gianluca De Novi's wo
 
 - [CT volume for the 3D view](blocks/ws-ct-volume-for-the-3d-view) · version 1
 - [3D view (stable soft tissue)](blocks/ws-3d-view-stable-soft-tissue) · version 39
+- [Soft body model (skin inside)](blocks/ws-soft-body-model-skin-inside) · version 3
 
 ### Assets
 

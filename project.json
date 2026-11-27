@@ -34,6 +34,11 @@
             "id": "ws-3d-view-stable-soft-tissue",
             "version": 39,
             "name": "3D view (stable soft tissue)"
+        },
+        {
+            "id": "ws-soft-body-model-skin-inside",
+            "version": 3,
+            "name": "Soft body model (skin inside)"
         }
     ]
 }
