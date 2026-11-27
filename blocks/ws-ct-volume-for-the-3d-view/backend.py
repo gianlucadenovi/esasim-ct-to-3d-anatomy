@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# CT volume for the 3D view (ws-ct-volume-for-the-3d-view) · version 1 · worker block, Python: def run(ctx)
+# CT volume for the 3D view (ws-ct-volume-for-the-3d-view) · version 2 · worker block, Python: def run(ctx)
 # Resamples a CT scan into the 3D models' own frame (as Labels to 3D models writes them) as a compact volume, so the 3D view can show the real CT on a cut.
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-27
@@ -47,11 +47,13 @@ def run(ctx):
     p = ctx.params
     pat = str(p.get("file") or "").strip().lower()
     size = int(max(64, min(512, int(p.get("size") or 256))))
-    files = []
+    files, masks = [], {}
     for f in ctx.inputs.get("scans", []):
         rel = rel_of(f)
         parts = rel.split("/")
         if len(parts) > 1 and parts[-2].lower() in MASK_DIRS:
+            if f.name.lower().endswith((".nii.gz", ".nii", ".nrrd", ".mha", ".mhd")):
+                masks.setdefault(parts[-3] if len(parts) > 2 else "", []).append(f)   # the case's structures, for their colours
             continue
         if not f.name.lower().endswith((".nii.gz", ".nii", ".nrrd", ".mha", ".mhd")):
             continue
@@ -91,6 +93,32 @@ def run(ctx):
         xs = gmin[0] + (np.arange(nx) + 0.5) * h
         ys = gmin[1] + (np.arange(ny) + 0.5) * h
         out = np.empty((nz, ny, nx), np.float32)
+        # the structures: one label per structure (1, 2, ...) in the scan's own voxels, smaller ones over larger ones
+        mlist = masks.get(case) or (masks.get("") if len(files) == 1 else None) or []
+        labvol, names = None, []
+        if mlist:
+            found = []
+            for mf in mlist:
+                try:
+                    mi = sitk.ReadImage(mf.path)
+                    if mi.GetSize() != img.GetSize():
+                        continue
+                    m = sitk.GetArrayFromImage(mi) > 0
+                    cnt = int(m.sum())
+                    if cnt:
+                        found.append((cnt, stem(mf.name), m))
+                except Exception:
+                    pass
+            found.sort(key=lambda t: -t[0])
+            found = found[:254]
+            if found:
+                labvol = np.zeros(arr.shape, np.uint8)
+                for li, (cnt, nm, m) in enumerate(found):
+                    labvol[m] = li + 1
+                    names.append(nm)
+                found = None
+            ctx.log("%s: %d structures for the colours on the cut." % (case, len(names)))
+        lab = np.zeros((nz, ny, nx), np.uint8) if labvol is not None else None
         X, Y = np.meshgrid(xs, ys)                                       # (ny, nx)
         for kz in range(nz):
             Z = gmin[2] + (kz + 0.5) * h
@@ -100,6 +128,12 @@ def run(ctx):
             ijk = pts @ Ainv.T                                           # continuous (i, j, k)
             v = ndimage.map_coordinates(arr, [ijk[:, 2], ijk[:, 1], ijk[:, 0]], order=1, mode="constant", cval=HU_LO)
             out[kz] = v.reshape(ny, nx)
+            if lab is not None:                                          # the nearest voxel's structure
+                ii = np.rint(ijk).astype(np.int64)
+                ok = (ii[:, 0] >= 0) & (ii[:, 0] < ni) & (ii[:, 1] >= 0) & (ii[:, 1] < nj) & (ii[:, 2] >= 0) & (ii[:, 2] < nk)
+                lv = np.zeros(len(ii), np.uint8)
+                lv[ok] = labvol[ii[ok, 2], ii[ok, 1], ii[ok, 0]]
+                lab[kz] = lv.reshape(ny, nx)
             if kz % 16 == 0:
                 ctx.progress(100.0 * (n + kz / nz) / len(files), "%s: resampling %d of %d" % (case, kz, nz))
         # the body: tissue above -400 HU, the largest piece, holes (lungs, bowel gas) filled slice by slice
@@ -115,15 +149,17 @@ def run(ctx):
         q = np.zeros(out.shape, np.uint8)
         q[body] = (1 + np.round((np.clip(out[body], HU_LO, HU_HI) - HU_LO) / (HU_HI - HU_LO) * 254)).astype(np.uint8)
         data = gzip.compress(q.tobytes(order="C"), compresslevel=6)
+        ldata = gzip.compress(lab.tobytes(order="C"), compresslevel=6) if lab is not None else b""
         head = {"format": "esasim.ctvol/1", "case": case, "dims": [nx, ny, nz], "min": [round(float(x), 6) for x in gmin],
-                "max": [round(float(x), 6) for x in gmax], "voxel_m": round(h, 6), "gzip": True,
+                "max": [round(float(x), 6) for x in gmax], "voxel_m": round(h, 6), "gzip": True, "data_bytes": len(data),
+                "label_bytes": len(ldata), "labels": names,
                 "encoding": "0 outside the body; 1..255 = HU %g..%g" % (HU_LO, HU_HI), "hu_lo": HU_LO, "hu_hi": HU_HI,
                 "frame": "glTF of Labels to 3D models: x = left, y = superior, z = anterior, metres", "source": f.name}
         js = json.dumps(head, separators=(",", ":")).encode()
         js += b" " * ((4 - len(js) % 4) % 4)
         path = ctx.output("volume", "%s/%s_ct.ctvol" % (case, case))
         with open(path, "wb") as fh:
-            fh.write(b"ESCTVOL1" + struct.pack("<I", len(js)) + js + data)
+            fh.write(b"ESCTVOL1" + struct.pack("<I", len(js)) + js + data + ldata)
         mb = os.path.getsize(path) / 1e6
         ctx.log("%s: %d x %d x %d voxels of %.1f mm, %.1f%% inside the body, %.1f MB, %.0f s." % (
             case, nx, ny, nz, h * 1000, 100.0 * body.mean(), mb, time.time() - t0))

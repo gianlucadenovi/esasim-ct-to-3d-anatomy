@@ -8,7 +8,7 @@ An [EsaSim](https://esacode.com/) blueprint block: it runs on a worker, in Pytho
 
 | | |
 |---|---|
-| Block | `ws-ct-volume-for-the-3d-view` · version 1 |
+| Block | `ws-ct-volume-for-the-3d-view` · version 2 |
 | Workspace | Gianluca De Novi's workspace |
 | Author | Gianluca De Novi |
 | Runs on | Any worker |
