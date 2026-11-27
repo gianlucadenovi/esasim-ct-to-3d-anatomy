@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 38 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 39 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -3463,6 +3463,15 @@ function render(ctx) {
       S.skinMesh = skin; S.skinSdf = skinSdfBuild(m.skin.mesh.positions, sfa); skinClipTex(S.skinSdf);
       S.isSkin = new Uint8Array(S.n);
       m.bodies.forEach(function (bb) { if (bb.name === 'skin') for (var q = 0; q < bb.spheres.length; q++) S.isSkin[bb.first + q] = 1; });
+      // each particle's nearest skin particle (at rest): the skin moves too, and the tissue is kept inside it where it is now
+      var skinIds = []; for (var q2 = 0; q2 < S.n; q2++) if (S.isSkin[q2]) skinIds.push(q2);
+      S.nearSkinP = new Int32Array(S.n).fill(-1);
+      if (skinIds.length) for (var p2 = 0; p2 < S.n; p2++) {
+        if (S.isSkin[p2]) continue;
+        var qx0 = S.x0[3 * p2], qy0 = S.x0[3 * p2 + 1], qz0 = S.x0[3 * p2 + 2], bdist = 1e9, bid = -1;
+        for (var s5 = 0; s5 < skinIds.length; s5++) { var k5 = 3 * skinIds[s5], e1 = S.x0[k5] - qx0, e2 = S.x0[k5 + 1] - qy0, e3 = S.x0[k5 + 2] - qz0, dd5 = e1 * e1 + e2 * e2 + e3 * e3; if (dd5 < bdist) { bdist = dd5; bid = skinIds[s5]; } }
+        S.nearSkinP[p2] = bid;
+      }
     }
     meshes.forEach(function (mesh) {
       var bi = byName[mesh.name], b = m.bodies[bi], geo = mesh.geometry, pos = geo.attributes.position, nv = pos.count;
@@ -3691,9 +3700,11 @@ function render(ctx) {
             }
           }
           if (SG && !S.isSkin[i2]) {                                                         // the skin contains it: at least half its radius inside
-            var sdv = sdfAt(SG, xb[o], xb[o + 1], xb[o + 2]), lim = -0.5 * S.r[i2];
+            var nsp = S.nearSkinP ? S.nearSkinP[i2] : -1, qx2 = xb[o], qy2 = xb[o + 1], qz2 = xb[o + 2];
+            if (nsp >= 0) { qx2 -= xb[3 * nsp] - x0[3 * nsp]; qy2 -= xb[3 * nsp + 1] - x0[3 * nsp + 1]; qz2 -= xb[3 * nsp + 2] - x0[3 * nsp + 2]; }   // where the skin is now
+            var sdv = sdfAt(SG, qx2, qy2, qz2), lim = -0.5 * S.r[i2];
             if (sdv > lim) {
-              var gq = sdfGrad(SG, xb[o], xb[o + 1], xb[o + 2]), pv = sdv - lim;
+              var gq = sdfGrad(SG, qx2, qy2, qz2), pv = sdv - lim;
               xb[o] -= gq[0] * pv; xb[o + 1] -= gq[1] * pv; xb[o + 2] -= gq[2] * pv;
               var vout = vb[o] * gq[0] + vb[o + 1] * gq[1] + vb[o + 2] * gq[2];
               if (vout > 0) { vb[o] -= vout * gq[0]; vb[o + 1] -= vout * gq[1]; vb[o + 2] -= vout * gq[2]; }
@@ -3824,11 +3835,11 @@ function render(ctx) {
     SKINCLIP.on.value = SGv && SKINCLIP.tex.value ? 1 : 0;              // the tissues are cut at the skin while it shows
     S.binds.forEach(function (bd) {
       if (!bd.mesh.visible) return;
-      if (SGv && !bd.nearSkin && bd.mesh !== S.skinMesh) {             // vertices within 4 cm of the skin in the scan: the only ones that can reach it
-        bd.nearSkin = new Uint8Array(bd.nv);
-        for (var vs = 0; vs < bd.nv; vs++) if (sdfAt(SGv, bd.base[3 * vs], bd.base[3 * vs + 1], bd.base[3 * vs + 2]) > -0.04) bd.nearSkin[vs] = 1;
+      if (SGv && !bd.restSd && bd.mesh !== S.skinMesh) {               // each vertex's depth inside the skin in the scan
+        bd.restSd = new Float32Array(bd.nv);
+        for (var vs = 0; vs < bd.nv; vs++) bd.restSd[vs] = sdfAt(SGv, bd.base[3 * vs], bd.base[3 * vs + 1], bd.base[3 * vs + 2]);
       }
-      var keepIn = SGv && bd.nearSkin && bd.mesh !== S.skinMesh;
+      var keepIn = SGv && bd.restSd && bd.mesh !== S.skinMesh, nsk = S.nearSkinP;
       var arr = bd.mesh.geometry.attributes.position.array, base = bd.base, idx = bd.idx, w = bd.w;
       for (var vtx = 0; vtx < bd.nv; vtx++) {
         var ox = 0, oy = 0, oz = 0, o4 = 4 * vtx;
@@ -3860,9 +3871,15 @@ function render(ctx) {
             var ql = Math.sqrt(qd) || 1e-6; px = cx + qx / ql * br; py = cy + qy / ql * br; pz = cz + qz / ql * br;
           }
         }
-        if (keepIn && bd.nearSkin[vtx]) {                                // the surface stays 1.5 mm inside the skin
-          var sv = sdfAt(SGv, px, py, pz);
-          if (sv > -0.0015) { var gg = sdfGrad(SGv, px, py, pz), pu = sv + 0.0015; px -= gg[0] * pu; py -= gg[1] * pu; pz -= gg[2] * pu; }
+        if (keepIn) {                                                    // the surface stays 1.5 mm inside the skin, where the skin is now
+          var ns = nsk ? nsk[idx[o4]] : -1, sdx = 0, sdy = 0, sdz = 0;
+          if (ns >= 0) { sdx = d[3 * ns]; sdy = d[3 * ns + 1]; sdz = d[3 * ns + 2]; }
+          var mvx = px - base[3 * vtx], mvy = py - base[3 * vtx + 1], mvz = pz - base[3 * vtx + 2];
+          var reach = Math.sqrt(mvx * mvx + mvy * mvy + mvz * mvz) + Math.sqrt(sdx * sdx + sdy * sdy + sdz * sdz);
+          if (bd.restSd[vtx] + reach > -0.0015) {                         // (only a vertex that has moved, or whose skin has, as far as its depth)
+            var qx = px - sdx, qy = py - sdy, qz = pz - sdz, sv = sdfAt(SGv, qx, qy, qz);
+            if (sv > -0.0015) { var gg = sdfGrad(SGv, qx, qy, qz), pu = sv + 0.0015; px -= gg[0] * pu; py -= gg[1] * pu; pz -= gg[2] * pu; }
+          }
         }
         arr[3 * vtx] = px; arr[3 * vtx + 1] = py; arr[3 * vtx + 2] = pz;
       }
