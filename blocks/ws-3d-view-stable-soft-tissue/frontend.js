@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 19 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 20 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2695,9 +2695,6 @@ function render(ctx) {
     '  return mix(mix(mix(esH(i), esH(i + vec3(1,0,0)), f.x), mix(esH(i + vec3(0,1,0)), esH(i + vec3(1,1,0)), f.x), f.y),',
     '             mix(mix(esH(i + vec3(0,0,1)), esH(i + vec3(1,0,1)), f.x), mix(esH(i + vec3(0,1,1)), esH(i + vec3(1,1,1)), f.x), f.y), f.z); }',
     'float esFbm(vec3 p) { float a = 0.5, t = 0.0; for (int i = 0; i < 4; i++) { t += a * esNoise(p); p = p * 2.03 + vec3(1.7, 9.2, 3.1); a *= 0.5; } return t / 0.9375; }',
-    // the same, from a base frequency f (per metre), each octave fading on its own before it gets below a pixel: the
-    // coarser detail stays when the finest has to go
-    'float esFbmP(vec3 p, float px, float f) { float a = 0.5, t = 0.0; for (int i = 0; i < 4; i++) { float k = esFade(px, f); t += a * (k * esNoise(p * f + vec3(1.7, 9.2, 3.1) * float(i)) + (1.0 - k) * 0.5); f *= 2.03; a *= 0.5; } return t / 0.9375; }',
     'vec2 esCell(vec3 p) { vec3 i = floor(p), f = fract(p); float d1 = 8.0, d2 = 8.0;',
     '  for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {',
     '    vec3 g = vec3(float(x), float(y), float(z)), o = vec3(esH(i + g), esH(i + g + 11.3), esH(i + g + 27.1)), r = g + o - f; float d = dot(r, r);',
@@ -2705,6 +2702,9 @@ function render(ctx) {
     '  return vec2(sqrt(d1), sqrt(d2)); }',
     // fine detail fades out where it would be smaller than a pixel or two (no shimmer when far away)
     'float esFade(float px, float f) { return 1.0 - smoothstep(0.2, 0.7, px * f); }',
+    // fbm from a base frequency f (per metre), each octave fading on its own before it gets below a pixel: the coarser
+    // detail stays when the finest has to go
+    'float esFbmP(vec3 p, float px, float f) { float a = 0.5, t = 0.0; for (int i = 0; i < 4; i++) { float k = esFade(px, f); t += a * (k * esNoise(p * f + vec3(1.7, 9.2, 3.1) * float(i)) + (1.0 - k) * 0.5); f *= 2.03; a *= 0.5; } return t / 0.9375; }',
     // x: height (bumps), y: brightness, z: roughness factor, w: amount of the second colour
     'vec4 esTissue(vec3 p, float k, float px, vec2 cv) {',
     '  float h = 0.0, c = 1.0, r = 1.0, m = 0.0, lo = esFbm(p * 30.0);',
@@ -3921,6 +3921,15 @@ function render(ctx) {
         headLight.shadow.bias = -0.0005; headLight.shadow.normalBias = 0.002;
         if (headLight.target.parent !== scene) scene.add(headLight.target);
       }
+    }
+    // darker shadows: less fill (the sky light, the room's reflections, the sun) and a stronger key light at the camera
+    if (on && !ENH.fill) {
+      ENH.fill = { hemi: hemi.intensity, env: scene.environmentIntensity, sun: sun.intensity, head: headLight ? headLight.intensity : 0.75 };
+      hemi.intensity = ENH.fill.hemi * 0.3; scene.environmentIntensity = ENH.fill.env * 0.45; sun.intensity = ENH.fill.sun * 0.4;
+      if (headLight) headLight.intensity = ENH.fill.head * 1.8;
+    } else if (!on && ENH.fill) {
+      hemi.intensity = ENH.fill.hemi; scene.environmentIntensity = ENH.fill.env; sun.intensity = ENH.fill.sun; if (headLight) headLight.intensity = ENH.fill.head;
+      ENH.fill = null;
     }
     if (FILES.root) FILES.root.traverse(function (o) {
       if (!o.isMesh) return;
