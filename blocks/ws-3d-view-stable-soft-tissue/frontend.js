@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 27 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 28 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -595,12 +595,28 @@ function render(ctx) {
   // plain floor, the lights of the Ray-traced render at the same places, its camera, its tone mapping (AgX).
   var STG = { floor: null, sky: null, env: null };
   // The material table (esaSample) while 3D files load: on the stage with Stage set, else framed on the ground.
+  // While 3D files load: a loading panel (a spinner, what it is doing, a progress bar), not the material table's spheres
+  var LOADEL = null;
+  function loadingUi(on, msg, frac) {
+    if (!LOADEL) {
+      LOADEL = document.createElement('div');
+      LOADEL.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);min-width:260px;max-width:80%;padding:18px 22px;border-radius:14px;background:rgba(10,14,22,.82);border:1px solid rgba(255,255,255,.1);color:#e8ecf2;display:none;flex-direction:column;align-items:center;gap:10px;pointer-events:none;z-index:4;text-align:center';
+      LOADEL.innerHTML = '<div class="ld-s" style="width:34px;height:34px;border:3px solid rgba(255,255,255,.15);border-top-color:#7b8cff;border-radius:50%"></div>'
+        + '<b class="ld-t" style="font-size:14px">Loading the 3D model</b><div class="ld-m" style="font-size:12px;color:#9aa3b2"></div>'
+        + '<div style="width:100%;height:5px;border-radius:4px;background:rgba(255,255,255,.1);overflow:hidden"><div class="ld-b" style="height:100%;width:0;background:#7b8cff"></div></div>';
+      ui.appendChild(LOADEL);
+      var sp = LOADEL.querySelector('.ld-s');
+      if (sp.animate) sp.animate([{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }], { duration: 900, iterations: Infinity });
+    }
+    LOADEL.style.display = on ? 'flex' : 'none';
+    if (!on) return;
+    if (msg != null) LOADEL.querySelector('.ld-m').textContent = msg;
+    var bar = LOADEL.querySelector('.ld-b');
+    if (frac == null) { bar.style.width = '35%'; bar.style.opacity = '0.5'; } else { bar.style.width = Math.round(100 * Math.max(0, Math.min(1, frac))) + '%'; bar.style.opacity = '1'; }
+  }
   function sampleShow(on) {
-    if (!on) { if (STG.sample) { scene.remove(STG.sample); STG.sample = null; } return; }
-    if (STG.sample) return;
-    STG.sample = esaSample(THREE); shadow(STG.sample); scene.add(STG.sample); STG.sample.updateMatrixWorld(true);
-    if (String(P.stage || 'off') !== 'off') stageFiles(STG.sample);
-    else fitBox(new THREE.Box3().setFromObject(STG.sample), 0.3);
+    if (STG.sample) { scene.remove(STG.sample); STG.sample = null; }
+    loadingUi(on, on ? 'Starting' : null, on ? 0 : null);
   }
   function stageFiles(root) {
     var look = String(P.stage || 'off');
