@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 34 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 35 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -3415,7 +3415,7 @@ function render(ctx) {
       // fine crossing furrows: a normal map), its gloss (oilier and drier places) and a little extra opacity in the pores
       // and furrows; the white sheen where the light at the camera glances off it, however see-through it is
       g.setAttribute('esRest', new THREE.BufferAttribute(Float32Array.from(m.skin.mesh.positions), 3));
-      var skinMat = new THREE.MeshStandardMaterial({ color: 0xd9a888, roughness: 0.6, metalness: 0, transparent: true, opacity: 1, depthWrite: false, side: THREE.DoubleSide });
+      var skinMat = new THREE.MeshStandardMaterial({ color: 0xd9a888, roughness: 0.38, metalness: 0, envMapIntensity: 1.0, transparent: true, opacity: 1, depthWrite: false, side: THREE.DoubleSide });
       skinMat.onBeforeCompile = function (sh) {
         sh.uniforms.esNoiseTex = ES_NOISE; sh.uniforms.esOn = TEX.uOn || (TEX.uOn = { value: TEX.on ? 1 : 0 });
         sh.vertexShader = 'attribute vec3 esRest;\nvarying vec3 vEsP;\nvarying vec2 vEsC;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvEsP = esRest; vEsC = vec2(0.0);');
@@ -3428,11 +3428,14 @@ function render(ctx) {
             // opacity = (n . v + 1) / 2: n the outward normal, v the direction of view (from the eye into the scene):
             // -1 (facing you) fully clear, 0 (side-on) half, +1 (the far side, facing away) fully opaque
             + 'float esF = dot( esN, esV ) * faceDirection;\n'
-            + 'float esA = clamp( 0.5 - 0.5 * esF, 0.0, 1.0 );\n'
-            + 'vec3 esHv = normalize( normalize( vec3( 0.4, 0.6, 1.0 ) ) + esV ); float esNH = max( dot( esN, esHv ), 0.0 );\n'
-            + 'float esS = 0.12 * pow( esNH, 9.0 ) + 0.18 * pow( esNH, 80.0 );\n'
-            + 'if ( esF < 0.0 ) gl_FragColor.rgb += diffuseColor.rgb * vec3( 1.0, 0.75, 0.65 ) * 0.22 * ( -esF );\n'
-            + 'gl_FragColor.rgb += vec3( esS ) * esA; gl_FragColor.a = esA; }');
+            // and the opacity map (pores, furrows) adds a little to it
+            + 'float esA = clamp( 0.5 - 0.5 * esF + esK.y * 0.35, 0.0, 1.0 );\n'
+            // the reflection (the key light and the room, over the normal and gloss maps) shows however clear the skin is,
+            // as on glass: what is seen = its colour times its opacity, plus the reflection
+            + 'vec3 esDif = totalDiffuse + totalEmissiveRadiance, esSpec = totalSpecular;\n'
+            + 'if ( esF < 0.0 ) esDif += diffuseColor.rgb * vec3( 1.0, 0.75, 0.65 ) * 0.22 * ( -esF );\n'
+            + 'float esAo = clamp( esA + dot( esSpec, vec3( 0.2126, 0.7152, 0.0722 ) ), 0.0, 1.0 );\n'
+            + 'gl_FragColor = vec4( ( esDif * esA + esSpec ) / max( esAo, 0.001 ), esAo ); }');
       };
       skinMat.customProgramCacheKey = function () { return 'esasim-skin-2'; };
       var skin = new THREE.Mesh(g, skinMat);
