@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 41 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 42 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -3553,7 +3553,8 @@ function render(ctx) {
       for (var i1 = 0; i1 < n; i1++) { if (S.im[i1]) continue; var k1 = key(Math.floor(S.x0[3 * i1] / cb), Math.floor(S.x0[3 * i1 + 1] / cb), Math.floor(S.x0[3 * i1 + 2] / cb)); var l1 = cells.get(k1); if (l1) l1.push(i1); else cells.set(k1, [i1]); }
       S.bones = { cell: cb, rmax: rb, cells: cells };
     }
-    var cs = Math.max(0.02, 2 * S.rmax), grid = new Map(), B = S.bones;
+    if (S.skinReach == null) { S.skinReach = 0; if (sk) for (var i9 = 0; i9 < n; i9++) if (sk[i9]) S.skinReach = Math.max(S.skinReach, S.rmax + 1.8 * S.r[i9] + M); }
+    var cs = Math.max(0.02, 2 * S.rmax, S.skinReach), grid = new Map(), B = S.bones;
     for (var i = 0; i < n; i++) { if (!S.im[i]) continue; var k = key(Math.floor(x[3 * i] / cs), Math.floor(x[3 * i + 1] / cs), Math.floor(x[3 * i + 2] / cs)); var l = grid.get(k); if (l) l.push(i); else grid.set(k, [i]); }
     for (var i2 = 0; i2 < n; i2++) {
       if (!S.im[i2]) continue;                                        // only the soft particles look for what they may touch (bones never touch bones)
