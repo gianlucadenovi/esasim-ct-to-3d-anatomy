@@ -6,8 +6,8 @@
     "icon": "brain",
     "side": "backend",
     "customizable": true,
-    "summary": "Segments organs, bones, vessels and muscles in any CT (NIfTI, NRRD, MHA or DICOM series) with TotalSegmentator, and writes each case as <case>/ct.nii.gz + <case>/segmentations/<structure>.nii.gz, the",
-    "help": "Wire any CT scans into Scans: a dataset of NIfTI files (one per case, or <case>/ct.nii.gz), NRRD/MHA volumes, or the files of DICOM series (one series per folder). Masks already in segmentations/ folders and label maps are skipped, so a dataset that comes with expert labels can be wired too. Wire Cases to Expert labels to 3D models, CT volume for the 3D view, Soft body model and Read medical images exactly as the expert labels were wired: they read the same layout. The first run on a worker downloads the network's weights (about 1–2 GB for the total task) into the worker's ~/.totalsegmentator; the next runs use them. An NVIDIA GPU takes about 1–3 minutes a case at 1.5 mm; the CPU 10–30 minutes (3 mm: a few minutes). For research and teaching, not for clinical use. TotalSegmentator (Wasserthal et al., Radiology: AI 2023), Apache-2.0; only its open tasks are offered.",
+    "summary": "Segments organs, bones, vessels and muscles in any CT (NIfTI, NRRD, MHA or DICOM series) with TotalSegmentator, and writes each case as <case>/ct.nii.gz + <case>/segmentations/<structure>.nii.gz, the ",
+    "help": "Wire any CT scans into Scans: a dataset of NIfTI files (one per case, or <case>/ct.nii.gz), NRRD/MHA volumes, or the files of DICOM series (one series per folder). Masks already in segmentations/ folders and label maps are skipped, so a dataset that comes with expert labels can be wired too. Wire Cases to Expert labels to 3D models, CT volume for the 3D view, Soft body model and Read medical images exactly as the expert labels were wired: they read the same layout. The first run on a worker downloads the network's weights (about 1.2 GB for the total task) into the worker's ~/.totalsegmentator; the next runs use them. Run on auto or NVIDIA GPU: the block goes to a worker with an NVIDIA GPU (about 1–3 minutes a case at 1.5 mm); CPU: any worker, about 12–15 minutes a case at 1.5 mm (3 mm: a few minutes). Usage statistics of TotalSegmentator are turned off. For research and teaching, not for clinical use. TotalSegmentator (Wasserthal et al., Radiology: AI 2023), Apache-2.0; only its open tasks are offered.",
     "inputs": [
         {
             "id": "scans",
@@ -99,7 +99,7 @@
                 "NVIDIA GPU",
                 "CPU"
             ],
-            "help": "auto: the worker's NVIDIA GPU when PyTorch sees one, else the CPU"
+            "help": "auto and NVIDIA GPU: the block goes only to a worker with an NVIDIA GPU (auto still falls back to the CPU if PyTorch cannot use it); CPU: any worker, slower"
         },
         {
             "key": "scan_file",
@@ -120,6 +120,20 @@
         "cpu",
         "nvidia"
     ],
+    "hardware_by": {
+        "param": "device",
+        "map": {
+            "CPU": [
+                "cpu"
+            ],
+            "NVIDIA GPU": [
+                "nvidia"
+            ],
+            "auto": [
+                "nvidia"
+            ]
+        }
+    },
     "packages": [
         "torch[cuda]",
         "TotalSegmentator",
@@ -127,6 +141,6 @@
         "numpy"
     ],
     "esasim": {
-        "version": 6
+        "version": 7
     }
 }

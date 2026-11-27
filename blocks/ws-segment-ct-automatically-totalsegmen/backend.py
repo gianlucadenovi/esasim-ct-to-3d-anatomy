@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Segment CT automatically (TotalSegmentator) (ws-segment-ct-automatically-totalsegmen) · version 6 · worker block, Python: def run(ctx)
+# Segment CT automatically (TotalSegmentator) (ws-segment-ct-automatically-totalsegmen) · version 7 · worker block, Python: def run(ctx)
 # Segments organs, bones, vessels and muscles in any CT (NIfTI, NRRD, MHA or DICOM series) with TotalSegmentator, and writes each case as <case>/ct.nii.gz + <case>/segmentations/<structure>.nii.gz, the
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-27
