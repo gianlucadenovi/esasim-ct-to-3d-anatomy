@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 59 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 60 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2665,6 +2665,7 @@ function render(ctx) {
     + '<div style="display:flex;gap:6px;align-items:center;padding:0 10px 6px"><select class="pt-ax" title="Cut through the models" style="background:#1b2029;color:#e8ecf2;border:1px solid #2a303b;border-radius:6px;font:inherit;font-size:11.5px"><option value="off">No cut</option><option value="y">Cut across</option><option value="z">Front to back</option><option value="x">Side to side</option></select>'
     + '<input class="pt-pos" type="range" min="0" max="1000" value="500" disabled style="flex:1;min-width:0;accent-color:#7b8cff"><button class="pt-b pt-flip" title="Keep the other side">⇄</button></div>'
     + '<div class="pt-ctrow" style="display:none;gap:6px;align-items:center;padding:0 10px 6px"><span style="font-size:11.5px;opacity:.75">Cut face</span><select class="pt-win" title="What the cut shows" style="flex:1;background:#1b2029;color:#e8ecf2;border:1px solid #2a303b;border-radius:6px;font:inherit;font-size:11.5px"><option value="soft">CT · soft tissue</option><option value="bone">CT · bone</option><option value="lung">CT · lung</option><option value="off">Inside of the models</option></select><input class="pt-op" type="range" min="10" max="100" value="75" title="How solid the CT slice is: lower to see the models through it" style="width:64px;accent-color:#7b8cff"></div>'
+    + '<div class="pt-colrow" style="display:none;gap:6px;align-items:center;padding:0 10px 6px"><span style="font-size:11.5px;opacity:.75">Colours</span><input class="pt-colv" type="range" min="0" max="100" value="50" title="How strongly each structure shows in its own colour on the slice (0: the CT alone)" style="flex:1;min-width:0;accent-color:#7b8cff"></div>'
     + '<div class="pt-l"></div></div>';
   ui.appendChild(partsEl);
   var ptList = partsEl.querySelector('.pt-l');
@@ -3101,7 +3102,21 @@ function render(ctx) {
     ptList.innerHTML = h.join('');
     ptList.querySelectorAll('[data-mixed]').forEach(function (c) { c.indeterminate = true; });
   }
-  function partsShow(ids, on) { ids.forEach(function (i) { PARTS.list[i].mesh.visible = on; }); partsDraw(); }
+  function partsShow(ids, on) { ids.forEach(function (i) { PARTS.list[i].mesh.visible = on; }); partsDraw(); capPalette(); }
+  // the structures' colours for the slice: entry i is the colour of the structure labelled i in the CT volume (as its
+  // part in the list; none when the part is hidden)
+  function capPalette() {
+    var C = PARTS && PARTS.ct; if (!C || !C.lab) return;
+    var px = C.pal.image.data, byName = {}, col = new THREE.Color();
+    PARTS.list.forEach(function (p) { byName[String(p.name).toLowerCase().replace(/[\s.-]+/g, '_')] = p; });
+    px.fill(0);
+    C.names.forEach(function (n, i) {
+      var p = byName[String(n).toLowerCase().replace(/[\s.-]+/g, '_')]; if (!p || i + 1 > 255) return;
+      col.set(p.color || '#c08080'); var o = 4 * (i + 1);
+      px[o] = Math.round(col.r * 255); px[o + 1] = Math.round(col.g * 255); px[o + 2] = Math.round(col.b * 255); px[o + 3] = p.mesh.visible ? 255 : 0;
+    });
+    C.pal.needsUpdate = true;
+  }
   function partFlash(i) {
     var p = PARTS.list[i]; if (!p) return; PARTS.sel = i; partsDraw();
     var ms = Array.isArray(p.mesh.material) ? p.mesh.material : [p.mesh.material];
@@ -3124,6 +3139,7 @@ function render(ctx) {
   partsEl.querySelector('.pt-pos').addEventListener('input', function () { PARTS.pos = +this.value / 1000; partsCut(PARTS.axis); });
   partsEl.querySelector('.pt-win').addEventListener('change', function () { PARTS.win = this.value; partsCut(PARTS.axis); });
   partsEl.querySelector('.pt-op').addEventListener('input', function () { PARTS.op = +this.value / 100; if (PARTS.cap) PARTS.cap.material.uniforms.op.value = PARTS.op; });
+  partsEl.querySelector('.pt-colv').addEventListener('input', function () { PARTS.colA = +this.value / 100; if (PARTS.cap) PARTS.cap.material.uniforms.colA.value = PARTS.colA; });
   // the models' box in the first model's own frame (the glTF frame of the file): where the cut can go
   function partsLocalBox() {
     var ref = PARTS.ref; if (!ref) return null;
@@ -3146,6 +3162,7 @@ function render(ctx) {
   function partsWinShow() {
     var row = partsEl.querySelector('.pt-ctrow'); if (!row) return;
     row.style.display = PARTS && PARTS.ct && PARTS.axis !== 'off' ? 'flex' : 'none';
+    var crow = partsEl.querySelector('.pt-colrow'); if (crow) crow.style.display = PARTS && PARTS.ct && PARTS.ct.lab && PARTS.axis !== 'off' && PARTS.win !== 'off' ? 'flex' : 'none';
     partsEl.querySelector('.pt-win').value = PARTS ? PARTS.win : 'soft';
     var opEl = partsEl.querySelector('.pt-op'); opEl.value = Math.round((PARTS ? PARTS.op : 0.75) * 100); opEl.style.display = PARTS && PARTS.win === 'off' ? 'none' : '';
   }
@@ -3163,17 +3180,22 @@ function render(ctx) {
       var geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3)); geo.setIndex([0, 1, 2, 0, 2, 3]);
       var mat = new THREE.ShaderMaterial({
-        uniforms: { vol: { value: C.tex }, bmin: { value: C.min.clone() }, bsize: { value: C.max.clone().sub(C.min) }, wlo: { value: -160 }, whi: { value: 240 }, lo: { value: C.lo }, hi: { value: C.hi }, op: { value: PARTS.op } },
+        uniforms: { vol: { value: C.tex }, bmin: { value: C.min.clone() }, bsize: { value: C.max.clone().sub(C.min) }, wlo: { value: -160 }, whi: { value: 240 }, lo: { value: C.lo }, hi: { value: C.hi }, op: { value: PARTS.op },
+          lab: { value: C.lab || C.tex }, pal: { value: C.pal || null }, hasLab: { value: C.lab ? 1 : 0 }, colA: { value: PARTS.colA != null ? PARTS.colA : 0.5 } },
         vertexShader: 'varying vec3 vP;\nvoid main() { vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-        fragmentShader: 'precision highp float;\nprecision highp sampler3D;\nuniform sampler3D vol; uniform vec3 bmin; uniform vec3 bsize; uniform float wlo; uniform float whi; uniform float lo; uniform float hi; uniform float op;\nvarying vec3 vP;\n'
+        fragmentShader: 'precision highp float;\nprecision highp sampler3D;\nuniform sampler3D vol; uniform sampler3D lab; uniform sampler2D pal; uniform float hasLab; uniform float colA; uniform vec3 bmin; uniform vec3 bsize; uniform float wlo; uniform float whi; uniform float lo; uniform float hi; uniform float op;\nvarying vec3 vP;\n'
           + 'void main() {\n  vec3 u = (vP - bmin) / bsize;\n  if (any(lessThan(u, vec3(0.0))) || any(greaterThan(u, vec3(1.0)))) discard;\n  float v = texture(vol, u).r * 255.0;\n  if (v < 0.5) discard;\n'
-          + '  float hu = lo + (max(v, 1.0) - 1.0) * (hi - lo) / 254.0;\n  float g = clamp((hu - wlo) / (whi - wlo), 0.0, 1.0);\n  gl_FragColor = vec4(vec3(g), op);\n}',
+          + '  float hu = lo + (max(v, 1.0) - 1.0) * (hi - lo) / 254.0;\n  float g = clamp((hu - wlo) / (whi - wlo), 0.0, 1.0);\n  vec3 c = vec3(g);\n'
+          // the structure here, in its colour, over the CT (its brightness kept, so the CT detail stays readable)
+          + '  if (hasLab > 0.5) { float li = floor(texture(lab, u).r * 255.0 + 0.5); if (li > 0.5) { vec4 pc = texture(pal, vec2((li + 0.5) / 256.0, 0.5)); c = mix(c, pc.rgb * (0.3 + 0.95 * g), colA * pc.a); } }\n'
+          + '  gl_FragColor = vec4(c, op);\n}',
         // see-through: the models behind the slice stay visible (no depth written, drawn after the solid models)
         side: THREE.DoubleSide, toneMapped: false, transparent: true, depthWrite: false
       });
       PARTS.cap = new THREE.Mesh(geo, mat); PARTS.cap.frustumCulled = false; PARTS.cap.renderOrder = 4;
       PARTS.ref.add(PARTS.cap);
     }
+    capPalette();
     var w = CT_WINDOWS[PARTS.win] || CT_WINDOWS.soft, u = PARTS.cap.material.uniforms;
     u.wlo.value = w[0]; u.whi.value = w[1]; u.op.value = PARTS.op;
     // the quad covers the CT's extent in the two other axes, a hair on the removed side of the plane (no flicker)
@@ -3194,11 +3216,14 @@ function render(ctx) {
     ctx.files.buffer(f).then(function (buf) {
       var ab = buf instanceof ArrayBuffer ? buf : buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
       if (String.fromCharCode.apply(null, new Uint8Array(ab, 0, 8)) !== 'ESCTVOL1') throw new Error('not a CT volume');
-      var hl = new DataView(ab).getUint32(8, true), head = JSON.parse(new TextDecoder().decode(new Uint8Array(ab, 12, hl))), body = new Uint8Array(ab, 12 + hl);
-      var raw = head.gzip ? new Response(new Blob([body]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer() : Promise.resolve(body.slice().buffer);
-      return raw.then(function (rb) {
+      var hl = new DataView(ab).getUint32(8, true), head = JSON.parse(new TextDecoder().decode(new Uint8Array(ab, 12, hl)));
+      // the CT's voxels, then (newer files) the structures' labels on the same grid
+      var nb = head.data_bytes || (ab.byteLength - 12 - hl), body = new Uint8Array(ab, 12 + hl, nb);
+      var lbody = head.label_bytes ? new Uint8Array(ab, 12 + hl + nb, head.label_bytes) : null;
+      var unz = function (b) { return head.gzip ? new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer() : Promise.resolve(b.slice().buffer); };
+      return Promise.all([unz(body), lbody ? unz(lbody) : Promise.resolve(null)]).then(function (rbs) {
         if (seq !== FILES.seq) return;
-        var d = head.dims, data = new Uint8Array(rb);
+        var rb = rbs[0], d = head.dims, data = new Uint8Array(rb);
         if (data.length !== d[0] * d[1] * d[2]) throw new Error('its size does not match its header');
         var tex = new D3(data, d[0], d[1], d[2]);
         tex.format = THREE.RedFormat; tex.type = THREE.UnsignedByteType; tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
@@ -3206,6 +3231,14 @@ function render(ctx) {
         if (PARTS.ct && PARTS.ct.tex) PARTS.ct.tex.dispose();
         capDrop();
         PARTS.ct = { tex: tex, min: new THREE.Vector3().fromArray(head.min), max: new THREE.Vector3().fromArray(head.max), lo: +head.hu_lo || -1024, hi: +head.hu_hi || 1536 };
+        if (rbs[1] && Array.isArray(head.labels) && rbs[1].byteLength === d[0] * d[1] * d[2]) {    // the structures' labels: nearest, not blended
+          var lt = new D3(new Uint8Array(rbs[1]), d[0], d[1], d[2]);
+          lt.format = THREE.RedFormat; lt.type = THREE.UnsignedByteType; lt.minFilter = THREE.NearestFilter; lt.magFilter = THREE.NearestFilter;
+          lt.unpackAlignment = 1; lt.generateMipmaps = false; lt.needsUpdate = true;
+          var pal = new THREE.DataTexture(new Uint8Array(256 * 4), 256, 1, THREE.RGBAFormat);
+          pal.minFilter = THREE.NearestFilter; pal.magFilter = THREE.NearestFilter; pal.needsUpdate = true;
+          PARTS.ct.lab = lt; PARTS.ct.pal = pal; PARTS.ct.names = head.labels;
+        }
         partsCut(PARTS.axis);
       });
     }).catch(function (e) { ctx.status('Could not show the CT on the cut (' + f.name + '): ' + e.message); });
