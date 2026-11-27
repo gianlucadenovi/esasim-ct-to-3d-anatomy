@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 45 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 46 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2706,7 +2706,7 @@ function render(ctx) {
   ];
   function tissueOf(name, group) {
     var n = String(name || '').toLowerCase();
-    if (/cartilage|costal|disc|menisc/.test(n)) return [13, 0.00025, null];
+    if (/cartilage|costal|disc|menisc/.test(n)) return [13, 0.00025, [0.7, 0.4, 0.13]];
     if (group === 'skeleton') return [9, 0.0009, [0.8, 0.66, 0.4]];
     for (var i = 0; i < TISSUE_KINDS.length; i++) if (TISSUE_KINDS[i][1].some(function (w) { return n.indexOf(w) >= 0; })) return [TISSUE_KINDS[i][0], TISSUE_KINDS[i][2], TISSUE_KINDS[i][3]];
     if (group === 'muscles') return [5, 0.0009, [0.93, 0.88, 0.8]];
@@ -2831,7 +2831,8 @@ function render(ctx) {
     '    h = a * (0.8 * smoothstep(0.0, 0.35, e) + 0.2 * esFbm(p * 600.0)); c = 0.88 + 0.16 * lo - 0.1 * sep; m = 0.35 * sep; }',
     // the trachea and bronchi: pale cartilage rings about 4 mm apart across their axis (esAxis), raised, slightly wavy
     // cartilage (the costal cartilages): smooth, pearly, a faint relief (its satin sheen is in its material)
-    '  else if (k > 12.5) { float n = esFbmP(p, px, 150.0); h = 0.5 + 0.4 * (n - 0.5); c = 0.92 + 0.1 * lo + 0.05 * (n - 0.5); m = 0.0; r = 1.0; }',
+    // cartilage: waxy, faintly lumpy, mottled with deeper amber where it is thicker
+    '  else if (k > 12.5) { float n = esFbmP(p, px, 150.0), mo = esFbm(p * 28.0 + 3.0); h = 0.5 + 0.5 * (n - 0.5) + 0.3 * (mo - 0.5); c = 0.9 + 0.12 * lo + 0.08 * (n - 0.5); m = 0.55 * smoothstep(0.38, 0.78, mo); r = 0.85 + 0.35 * (n - 0.5); }',
     '  else if (k > 11.5) { float a = esFade(px, 500.0), s = dot(p, normalize(esAxis)) + 0.0006 * esFbm(p * 60.0);',
     '    float band = a * smoothstep(0.25, 0.75, 0.5 + 0.5 * cos(s * 6.2831853 * 250.0));',
     '    h = band + 0.15 * esFade(px, 2400.0) * esFbm(p * 300.0); c = 0.9 + 0.1 * lo + 0.06 * band; m = 0.65 * band; r = 0.9 - 0.1 * band; }',
@@ -2891,13 +2892,14 @@ function render(ctx) {
     if (t[0] === 9) { if (mat.color) mat.color.setRGB(0.72, 0.58, 0.36); mat.roughness = 0.36; mat.clearcoat = 0.4; mat.clearcoatRoughness = 0.22; mat.specularIntensity = 0.85; }
     // cartilage: darker, pearly, satin and a little translucent: light goes into it and comes out tinted pearly pink
     if (t[0] === 13) {
-      // hyaline cartilage: glossy, pearl-grey to blue-white, semitranslucent (its see-through blend over the darker tissue
-      // behind deepens it): a cool bluish pearl, sRGB about (176, 184, 196)
-      if (mat.color) mat.color.setRGB(0.43, 0.47, 0.55); mat.roughness = 0.35; mat.clearcoat = 0.6; mat.clearcoatRoughness = 0.2;
+      // costal cartilage as it looks: warm, translucent amber-salmon, waxy and wet-glossy (light goes into it and comes
+      // back out warmer; at its thin edges more of what is behind shows through)
+      if (mat.color) mat.color.setRGB(0.62, 0.3, 0.17); mat.roughness = 0.3; mat.clearcoat = 0.9; mat.clearcoatRoughness = 0.1;
+      if ('sheen' in mat) { mat.sheen = 0.35; mat.sheenColor = new THREE.Color(1.0, 0.72, 0.55); mat.sheenRoughness = 0.45; }
       // translucent the cheap way: no transmission pass (a second render of the scene), but drawn last, blended over what
-      // is already drawn behind it, with a faint pearly-pink glow as light scattered inside it
-      mat.transparent = true; mat.opacity = 0.8; mat.depthWrite = true;
-      mat.emissive = new THREE.Color(0.018, 0.022, 0.032);
+      // is already drawn behind it; the light scattered inside it is added in its shader
+      mat.transparent = true; mat.opacity = 1; mat.depthWrite = true;
+      mat.emissive = new THREE.Color(0, 0, 0);
       mesh.renderOrder = 4;                                            // after the solid anatomy, before the see-through skin (5)
     }
     if (t[0] === 12) { mat.transparent = false; mat.opacity = 1; mat.depthWrite = true; if (mat.color) mat.color.setRGB(0.72, 0.3, 0.28); mat.needsUpdate = true; }
@@ -2929,7 +2931,12 @@ function render(ctx) {
         // so the reflections break up over the tissue's detail instead of sliding over a smooth shell
         // ambient occlusion: the room's light (diffuse, and most of its reflection) does not reach into pores and hollows
         .replace('#include <aomap_fragment>', '#include <aomap_fragment>\nif (esOn * esKind > 0.5) { reflectedLight.indirectDiffuse *= esAO; reflectedLight.indirectSpecular *= mix(1.0, esAO, 0.7); }')
-        .replace('#include <clearcoat_normal_fragment_maps>', '#include <clearcoat_normal_fragment_maps>\n#ifdef USE_CLEARCOAT\nif (esOn * esKind > 0.5) clearcoatNormal = esBump(-vViewPosition, clearcoatNormal, esHt * 0.75, faceDirection);\n#endif');
+        .replace('#include <clearcoat_normal_fragment_maps>', '#include <clearcoat_normal_fragment_maps>\n#ifdef USE_CLEARCOAT\nif (esOn * esKind > 0.5) clearcoatNormal = esBump(-vViewPosition, clearcoatNormal, esHt * 0.75, faceDirection);\n#endif')
+        // cartilage: light scattered inside it comes out warm (more where it is thin, at its edges, and on its lit side),
+        // and it is see-through more at the edges than where you look straight in
+        .replace('#include <opaque_fragment>', 'if (abs(esKind - 13.0) < 0.5) { float esNV = clamp(abs(dot(normalize(normal), normalize(vViewPosition))), 0.0, 1.0);\n'
+          + '  outgoingLight += diffuseColor.rgb * vec3(1.0, 0.62, 0.4) * (0.35 + 0.9 * pow(1.0 - esNV, 2.0)) * (reflectedLight.directDiffuse + reflectedLight.indirectDiffuse + vec3(0.03));\n'
+          + '  diffuseColor.a = mix(0.62, 0.9, esNV); }\n#include <opaque_fragment>');
     };
     mat.customProgramCacheKey = function () { return 'esasim-tissue'; };
     TEX.mats.push(mat);
@@ -3367,6 +3374,8 @@ function render(ctx) {
     SOFT.near = new Map();
     softPairs(function (a, b, d, rr) { if (d < rr) SOFT.near.set(a < b ? a * n + b : b * n + a, d); });                // how close they were in the scan
     softBind(obj);
+    // physics off (the model's own setting): the anatomy and its skin as in the scan, nothing moves
+    if (m.physics === false) { SOFT.still = true; SOFT.on = false; return; }
     softUi();
   }
   function softStiffness() {
@@ -3460,7 +3469,7 @@ function render(ctx) {
       meshes.push(skin); byName.skin = m.skin.body;
       // what is inside the skin (a signed distance map of it), and which particles are the skin's own: while the skin
       // shows, no other tissue gets outside it
-      S.skinMesh = skin; S.skinSdf = skinSdfBuild(m.skin.mesh.positions, sfa); skinClipTex(S.skinSdf);
+      S.skinMesh = skin;
       S.isSkin = new Uint8Array(S.n);
       // the skin's metaballs: each one's outward normal and how far out of its centre the skin surface is. With a model
       // whose skin spheres lie inside the skin (touching it from inside), from the model; with an older one (centres on
@@ -3606,7 +3615,7 @@ function render(ctx) {
     return M;
   }
   function softStep(dt) {
-    var S = SOFT; if (!S) return;
+    var S = SOFT; if (!S || S.still) return;
     S.lastDt = Math.max(1e-3, dt);
     if (!S.placed) { softPlace(S, true); S.placed = true; softNeighbours(S); softNbRef(S); S.nbDirty = false; }
     softPlace(S, false);
@@ -3891,7 +3900,7 @@ function render(ctx) {
       });
     }
     var bg = S.boneGrid, SGv = S.skinSdf && S.skinMesh && S.skinMesh.visible ? S.skinSdf : null;
-    SKINCLIP.on.value = SGv && SKINCLIP.tex.value ? 1 : 0;              // the tissues are cut at the skin while it shows
+    SKINCLIP.on.value = 0;                                             // nothing is cut at the skin: every part is drawn whole
     S.binds.forEach(function (bd) {
       if (!bd.mesh.visible) return;
       var arr = bd.mesh.geometry.attributes.position.array, base = bd.base, idx = bd.idx, w = bd.w;

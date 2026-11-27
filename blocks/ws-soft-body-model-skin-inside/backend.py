@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 4 · worker block, Python: def run(ctx)
+# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 5 · worker block, Python: def run(ctx)
 # Turns segmented anatomy into a soft-tissue model the 3D view simulates in real time: organs that sag, sway and push each other under gravity, held by a fixed skeleton and contained by the skin (metaba
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-27
@@ -160,6 +160,7 @@ def run(ctx):
             skin = skin_shell(sitk.ReadImage(scans[0].path), hu, skin_mm, ctx.log)
         model = assemble(bodies, skin, tissues)
         model["case"] = cid
+        model["physics"] = bool(p.get("physics", True))
         path = ctx.output("model", "%s/%s_softbody.json" % (cid, cid))
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(model, fh, separators=(",", ":"))
