@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 7 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 8 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2736,6 +2736,7 @@ function render(ctx) {
   ].join('\n');
   function tissueShader(mat, mesh) {
     var t = tissueOf(mesh.name, mesh.parent && mesh.parent.name), g = mesh.geometry;
+    if (t[0] === 6 && mat.color) mat.color.setRGB(0.42, 0.035, 0.045);
     if (!g.attributes.esRest) g.setAttribute('esRest', new THREE.BufferAttribute(g.attributes.position.array.slice(), 3));   // where the surface was: the texture stays on the tissue
     if (!g.attributes.esCurv) g.setAttribute('esCurv', new THREE.BufferAttribute(t[0] === 9 ? surfaceShape(g) : new Float32Array(2 * g.attributes.position.count), 2));
     mat.userData.es = { esOn: TEX.uOn || (TEX.uOn = { value: TEX.on ? 1 : 0 }), esKind: { value: t[0] }, esBumpH: { value: t[1] }, esSecond: { value: new THREE.Color().fromArray(t[2] || [1, 1, 1]) } };
