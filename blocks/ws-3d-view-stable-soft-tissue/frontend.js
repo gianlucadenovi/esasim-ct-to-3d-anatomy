@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 18 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 19 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2680,7 +2680,8 @@ function render(ctx) {
   ];
   function tissueOf(name, group) {
     var n = String(name || '').toLowerCase();
-    if (group === 'skeleton') return [9, 0.00035, [0.8, 0.66, 0.4]];
+    if (/cartilage|costal|disc|menisc/.test(n)) return [13, 0.00025, null];
+    if (group === 'skeleton') return [9, 0.0006, [0.8, 0.66, 0.4]];
     for (var i = 0; i < TISSUE_KINDS.length; i++) if (TISSUE_KINDS[i][1].some(function (w) { return n.indexOf(w) >= 0; })) return [TISSUE_KINDS[i][0], TISSUE_KINDS[i][2], TISSUE_KINDS[i][3]];
     if (group === 'muscles') return [5, 0.0009, [0.93, 0.88, 0.8]];
     if (group === 'vessels') return [8, 0.00025, null];
@@ -2694,6 +2695,9 @@ function render(ctx) {
     '  return mix(mix(mix(esH(i), esH(i + vec3(1,0,0)), f.x), mix(esH(i + vec3(0,1,0)), esH(i + vec3(1,1,0)), f.x), f.y),',
     '             mix(mix(esH(i + vec3(0,0,1)), esH(i + vec3(1,0,1)), f.x), mix(esH(i + vec3(0,1,1)), esH(i + vec3(1,1,1)), f.x), f.y), f.z); }',
     'float esFbm(vec3 p) { float a = 0.5, t = 0.0; for (int i = 0; i < 4; i++) { t += a * esNoise(p); p = p * 2.03 + vec3(1.7, 9.2, 3.1); a *= 0.5; } return t / 0.9375; }',
+    // the same, from a base frequency f (per metre), each octave fading on its own before it gets below a pixel: the
+    // coarser detail stays when the finest has to go
+    'float esFbmP(vec3 p, float px, float f) { float a = 0.5, t = 0.0; for (int i = 0; i < 4; i++) { float k = esFade(px, f); t += a * (k * esNoise(p * f + vec3(1.7, 9.2, 3.1) * float(i)) + (1.0 - k) * 0.5); f *= 2.03; a *= 0.5; } return t / 0.9375; }',
     'vec2 esCell(vec3 p) { vec3 i = floor(p), f = fract(p); float d1 = 8.0, d2 = 8.0;',
     '  for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {',
     '    vec3 g = vec3(float(x), float(y), float(z)), o = vec3(esH(i + g), esH(i + g + 11.3), esH(i + g + 27.1)), r = g + o - f; float d = dot(r, r);',
@@ -2723,7 +2727,7 @@ function render(ctx) {
     // the attachment ends in fibres: its edge is set fibre by fibre (a pattern fast across the fibres, slow along them),
     // so the white runs out in streaks along the fibre direction, away from the bone
     '    float stk = mix(0.5, 0.7 * esNoise(vec3(x1 * 350.0, x2 * 350.0, s * 4.0)) + 0.3 * esNoise(vec3(x1 * 900.0, x2 * 900.0, s * 10.0)), esFade(px, 900.0));',
-    '    float tw = smoothstep(0.35, 0.6, max(cv.x, cv.y) + (stk - 0.5) * 0.75 + (esFbm(p * 40.0 + vec3(5.0)) - 0.5) * 0.12);',
+    '    float tw = smoothstep(0.08, 0.92, max(cv.x, cv.y) + (stk - 0.5) * 0.5 + (esFbm(p * 40.0 + vec3(5.0)) - 0.5) * 0.12);',
     '    float mh = 0.55 * ab * smoothstep(0.1, 0.9, bun) + 0.3 * af * fib - 0.25 * sheath;',
     '    h = mix(mh, 0.3 + 0.2 * af * fib, tw);',
     '    c = mix(0.8 + 0.14 * lo + 0.06 * af * (fib - 0.5) + 0.05 * ab * (bun - 0.5), 0.92 + 0.06 * af * fib, tw);',
@@ -2761,12 +2765,17 @@ function render(ctx) {
     '    r = 0.85 + 0.15 * sl; }',
     '  else if (k < 8.5) { float a = esFade(px, 350.0), n = esNoise(vec3(p.x * 350.0, p.y * 25.0, p.z * 350.0)); h = 0.4 * a * n; c = 0.94 + 0.06 * lo + 0.08 * a * n; }',
     // bone: a little noise; darker and yellowish where the surface is hollow or folded (its shape, measured on the mesh)
-    '  else if (k < 9.5) { float a = esFade(px, 500.0), cav = clamp(cv.x, 0.0, 1.0), cx = clamp(cv.y, 0.0, 1.0);',
+    // bone: mottled at two scales, fine pores, a stronger relief; darker and yellowish in its hollows
+    '  else if (k < 9.5) { float cav = clamp(cv.x, 0.0, 1.0), cx = clamp(cv.y, 0.0, 1.0);',
     '    float dirt = smoothstep(0.12, 0.8, clamp(max(cav, 0.75 * cx) + (esFbm(p * 60.0) - 0.5) * 0.4, 0.0, 1.0));',
-    '    h = 0.5 + 0.5 * a * esFbm(p * 500.0); c = 0.93 + 0.1 * esFbm(p * 40.0) - 0.3 * dirt; m = 0.8 * dirt; r = 1.0 + 0.25 * dirt; }',
+    '    float n1 = esFbmP(p, px, 90.0), n2 = esFbmP(p + 3.3, px, 400.0), pore = esFade(px, 1600.0) * (1.0 - smoothstep(0.05, 0.25, esCell(p * 800.0).x));',
+    '    h = 0.5 + 0.35 * (n1 - 0.5) + 0.35 * (n2 - 0.5) - 0.35 * pore;',
+    '    c = 0.95 + 0.16 * (esFbm(p * 25.0) - 0.5) + 0.12 * (n1 - 0.5) + 0.08 * (n2 - 0.5) - 0.08 * pore - 0.3 * dirt; m = 0.8 * dirt; r = 1.0 + 0.25 * dirt + 0.1 * pore; }',
     '  else if (k < 10.5) { float a = esFade(px, 110.0); vec2 w = esCell(p * 110.0 + lo); float e = w.y - w.x, sep = a * (1.0 - smoothstep(0.0, 0.12, e));',
     '    h = a * (0.8 * smoothstep(0.0, 0.35, e) + 0.2 * esFbm(p * 600.0)); c = 0.88 + 0.16 * lo - 0.1 * sep; m = 0.35 * sep; }',
     // the trachea and bronchi: pale cartilage rings about 4 mm apart across their axis (esAxis), raised, slightly wavy
+    // cartilage (the costal cartilages): smooth, pearly, a faint relief (its satin sheen is in its material)
+    '  else if (k > 12.5) { float n = esFbmP(p, px, 150.0); h = 0.5 + 0.4 * (n - 0.5); c = 0.92 + 0.1 * lo + 0.05 * (n - 0.5); m = 0.0; r = 1.0; }',
     '  else if (k > 11.5) { float a = esFade(px, 500.0), s = dot(p, normalize(esAxis)) + 0.0006 * esFbm(p * 60.0);',
     '    float band = a * smoothstep(0.25, 0.75, 0.5 + 0.5 * cos(s * 6.2831853 * 250.0));',
     '    h = band + 0.15 * esFade(px, 2400.0) * esFbm(p * 300.0); c = 0.9 + 0.1 * lo + 0.06 * band; m = 0.65 * band; r = 0.9 - 0.1 * band; }',
@@ -2788,7 +2797,7 @@ function render(ctx) {
     '  float art = dens * max(t1, 0.7 * t2), vein = dens * 0.8 * t3;',
     '  return vec3(0.55 * art, 0.5 * vein, 0.00035 * max(art, vein)); }',
     // finer relief for every tissue (a procedural normal map): about 3 mm and 1 mm, each faded before it gets below a pixel
-    'float esMicro(vec3 p, float px) { return 0.00015 * esFade(px, 2400.0) * esFbm(p * 300.0 + 5.0) + 0.00008 * esFade(px, 7200.0) * esFbm(p * 900.0); }',
+    'float esMicro(vec3 p, float px) { return 0.00022 * (esFbmP(p + 5.0, px, 250.0) - 0.5) + 0.00008 * (esFbmP(p, px, 800.0) - 0.5); }',
     'vec3 esBump(vec3 sp, vec3 n, float h, float fd) { vec3 sx = dFdx(sp), sy = dFdy(sp), r1 = cross(sy, n), r2 = cross(n, sx);',
     '  float det = dot(sx, r1) * fd; vec2 dh = vec2(dFdx(h), dFdy(h)); vec3 g = sign(det) * (dh.x * r1 + dh.y * r2);',
     '  return normalize(abs(det) * n - g); }'
@@ -2798,6 +2807,8 @@ function render(ctx) {
     if (t[0] === 6 && mat.color) mat.color.setRGB(0.42, 0.035, 0.045);
     // the lungs: solid (the model file makes them see-through), pinkish grey as a living adult lung (linear RGB)
     if (t[0] === 7) { mat.transparent = false; mat.opacity = 1; mat.depthWrite = true; if (mat.color) mat.color.setRGB(0.7, 0.2, 0.19); mat.needsUpdate = true; }
+    if (t[0] === 9 && mat.color) mat.color.setRGB(0.72, 0.58, 0.36);    // bone: warm ivory, a little yellow (linear RGB)
+    if (t[0] === 13) { if (mat.color) mat.color.setRGB(0.47, 0.46, 0.48); mat.roughness = 0.45; mat.clearcoat = 0.3; mat.clearcoatRoughness = 0.4; }   // cartilage: darker, pearly, satin
     if (t[0] === 12) { mat.transparent = false; mat.opacity = 1; mat.depthWrite = true; if (mat.color) mat.color.setRGB(0.72, 0.3, 0.28); mat.needsUpdate = true; }
     // where the surface was, in metres in the file's frame (the texture stays on the tissue as it deforms). The positions of
     // a compact GLB are 16-bit integers scaled by the part's node: read raw, every texture was thousands of times too fine
@@ -2876,7 +2887,7 @@ function render(ctx) {
     obj.traverse(function (o) {
       if (!o.isMesh || !o.geometry || !o.geometry.attributes.esRest || !o.material || !o.material.userData || !o.material.userData.es) return;
       var k = o.material.userData.es.esKind.value;
-      if (k === 9) bones.push(o); else if (k === 5 || k === 12) muscles.push(o);   // (the trachea: its axis too, for its rings)
+      if (k === 9 || k === 13) bones.push(o); else if (k === 5 || k === 12) muscles.push(o);   // (the trachea: its axis too, for its rings)
     });
     if (!muscles.length) return;
     var cell = 0.017, grid = new Map();                              // (at least the attachment's reach, 16 mm: the 27 cells around cover it)
@@ -3923,7 +3934,7 @@ function render(ctx) {
     }
     if (on && !composer && quality !== 'fast') {
       composer = new A.EffectComposer(renderer); composer.addPass(new A.RenderPass(scene, camera)); composer.addPass(cleanPass());
-      ENH.bloom = new A.UnrealBloomPass(new THREE.Vector2(256, 256), 0.32, 0.5, 0.92); composer.addPass(ENH.bloom);
+      ENH.bloom = new A.UnrealBloomPass(new THREE.Vector2(256, 256), 0.6, 0.6, 0.7); composer.addPass(ENH.bloom);
       composer.addPass(new A.OutputPass()); composer.addPass(fxaaPass()); ENH.mine = true; resize();
     } else if (!on && ENH.mine) {
       if (composer && composer.dispose) composer.dispose();
