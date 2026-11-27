@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 40 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 41 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -3536,7 +3536,12 @@ function render(ctx) {
   // pairs of spheres of different bodies that could meet soon. In the body's frame the skeleton never moves: its spheres
   // go once into a fine grid of their own; only the soft particles are sorted again, when one has moved half the margin.
   function softNeighbours(S) {
-    var n = S.n, x = S.xb || S.x, out = [], lim = [], M = 0.01;
+    var n = S.n, x = S.xb || S.x, out = [], lim = [], M = 0.01, sk = S.isSkin, skOut = [];
+    function skinPair(i2, j) {                                        // an inner sphere near a skin sphere: kept inside the skin's metaballs
+      var a = sk[i2] ? j : i2, b = sk[i2] ? i2 : j; if (!S.im[a]) return;
+      var ex = x[3 * b] - x[3 * a], ey = x[3 * b + 1] - x[3 * a + 1], ez = x[3 * b + 2] - x[3 * a + 2], rr = S.r[a] + 1.8 * S.r[b] + M;
+      if (ex * ex + ey * ey + ez * ez < rr * rr) skOut.push(a, b);
+    }
     var key = function (a, b, c) { return ((a & 511) << 18) | ((b & 511) << 9) | (c & 511); };    // small integers: fast map keys (cells wrap every 512, harmless)
     function pair(i2, j) {
       var ex = x[3 * j] - x[3 * i2], ey = x[3 * j + 1] - x[3 * i2 + 1], ez = x[3 * j + 2] - x[3 * i2 + 2], rr = S.r[i2] + S.r[j] + M;
@@ -3556,7 +3561,11 @@ function render(ctx) {
       var gx = Math.floor(px / cs), gy = Math.floor(py / cs), gz = Math.floor(pz / cs);
       for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) for (var dz = -1; dz <= 1; dz++) {
         var c = grid.get(key(gx + dx, gy + dy, gz + dz)); if (!c) continue;
-        for (var q = 0; q < c.length; q++) { var j = c[q]; if (j <= i2 || S.body[j] === S.body[i2] || S.linked.has(i2 * n + j)) continue; pair(i2, j); }
+        for (var q = 0; q < c.length; q++) {
+          var j = c[q]; if (j <= i2 || S.body[j] === S.body[i2]) continue;
+          if (sk && sk[i2] !== sk[j]) { skinPair(i2, j); continue; }
+          if (S.linked.has(i2 * n + j)) continue; pair(i2, j);
+        }
       }
       if (!B.cells.size) continue;
       var reach = S.r[i2] + B.rmax + M, cb2 = B.cell;
@@ -3565,7 +3574,7 @@ function render(ctx) {
         for (var q2 = 0; q2 < c2.length; q2++) pair(i2, c2[q2]);
       }
     }
-    S.pairs = new Int32Array(out); S.lim = new Float32Array(lim);
+    S.pairs = new Int32Array(out); S.lim = new Float32Array(lim); S.skinPairs = new Int32Array(skOut);
   }
   var SOFT_VMAX = 3.0, SOFT_STRAY = 0.20, SOFT_MARGIN = 0.01;          // safety: m/s in the body; m from its place; contact margin (m)
   var SOFT_W = 6, SOFT_AL = 40, SOFT_A = 2 * 9.81, SOFT_AF = 3 * 9.81;   // the body's motion the tissue feels, at most: rad/s, rad/s², m/s² (and 3 g in all)
@@ -3706,7 +3715,7 @@ function render(ctx) {
           }
           var mx = xb[o] - ref[o], my = xb[o + 1] - ref[o + 1], mz = xb[o + 2] - ref[o + 2], m2 = mx * mx + my * my + mz * mz; if (m2 > moved) moved = m2;
         }
-        if (SG && S.skinPairs && S.skinPairs.length) softSkinContain(S);                  // every inner sphere stays inside the skin's metaballs
+        if (S.skinN && S.skinPairs && S.skinPairs.length) softSkinContain(S);                  // every inner sphere stays inside the skin's metaballs
         if (moved > 0.25 * SOFT_MARGIN * SOFT_MARGIN) S.nbDirty = true;                   // a particle moved half the margin: new neighbours next step
       }
       var ok = true;
@@ -3879,11 +3888,6 @@ function render(ctx) {
     SKINCLIP.on.value = SGv && SKINCLIP.tex.value ? 1 : 0;              // the tissues are cut at the skin while it shows
     S.binds.forEach(function (bd) {
       if (!bd.mesh.visible) return;
-      if (SGv && !bd.restSd && bd.mesh !== S.skinMesh) {               // each vertex's depth inside the skin in the scan
-        bd.restSd = new Float32Array(bd.nv);
-        for (var vs = 0; vs < bd.nv; vs++) bd.restSd[vs] = sdfAt(SGv, bd.base[3 * vs], bd.base[3 * vs + 1], bd.base[3 * vs + 2]);
-      }
-      var keepIn = SGv && bd.restSd && bd.mesh !== S.skinMesh, nsk = S.nearSkinP;
       var arr = bd.mesh.geometry.attributes.position.array, base = bd.base, idx = bd.idx, w = bd.w;
       for (var vtx = 0; vtx < bd.nv; vtx++) {
         var ox = 0, oy = 0, oz = 0, o4 = 4 * vtx;
@@ -3913,16 +3917,6 @@ function render(ctx) {
             var rx = base[3 * vtx] - cx, ry = base[3 * vtx + 1] - cy, rz = base[3 * vtx + 2] - cz;
             if (rx * rx + ry * ry + rz * rz < br * br) continue;            // inside it in the scan already: left alone
             var ql = Math.sqrt(qd) || 1e-6; px = cx + qx / ql * br; py = cy + qy / ql * br; pz = cz + qz / ql * br;
-          }
-        }
-        if (keepIn) {                                                    // the surface stays 1.5 mm inside the skin, where the skin is now
-          var ns = nsk ? nsk[idx[o4]] : -1, sdx = 0, sdy = 0, sdz = 0;
-          if (ns >= 0) { sdx = d[3 * ns]; sdy = d[3 * ns + 1]; sdz = d[3 * ns + 2]; }
-          var mvx = px - base[3 * vtx], mvy = py - base[3 * vtx + 1], mvz = pz - base[3 * vtx + 2];
-          var reach = Math.sqrt(mvx * mvx + mvy * mvy + mvz * mvz) + Math.sqrt(sdx * sdx + sdy * sdy + sdz * sdz);
-          if (bd.restSd[vtx] + reach > -0.0015) {                         // (only a vertex that has moved, or whose skin has, as far as its depth)
-            var qx = px - sdx, qy = py - sdy, qz = pz - sdz, sv = sdfAt(SGv, qx, qy, qz);
-            if (sv > -0.0015) { var gg = sdfGrad(SGv, qx, qy, qz), pu = sv + 0.0015; px -= gg[0] * pu; py -= gg[1] * pu; pz -= gg[2] * pu; }
           }
         }
         arr[3 * vtx] = px; arr[3 * vtx + 1] = py; arr[3 * vtx + 2] = pz;
