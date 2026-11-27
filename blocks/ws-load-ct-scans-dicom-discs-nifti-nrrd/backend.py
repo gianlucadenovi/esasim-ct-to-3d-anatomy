@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Load CT scans (DICOM discs, NIfTI, NRRD, MHA) (ws-load-ct-scans-dicom-discs-nifti-nrrd) · version 2 · worker block, Python: def run(ctx)
+# Load CT scans (DICOM discs, NIfTI, NRRD, MHA) (ws-load-ct-scans-dicom-discs-nifti-nrrd) · version 3 · worker block, Python: def run(ctx)
 # Turns any CT source (a CD/DVD export with DICOMDIR, DICOM/ and IHE_PDI/, loose DICOM, NIfTI, NRRD, MHA, zips) into one volume per case, <case>/ct.nii.gz: series grouped by their DICOM IDs, copies read
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-27
@@ -62,7 +62,8 @@ TAGS = ["SOPClassUID", "SOPInstanceUID", "StudyInstanceUID", "SeriesInstanceUID"
         "SeriesDescription", "ImageType", "ImageOrientationPatient", "ImagePositionPatient", "Rows", "Columns",
         "SliceThickness", "PixelSpacing", "NumberOfFrames", "InstanceNumber", "BodyPartExamined", "ConvolutionKernel"]
 CHANNEL, TELE = "ct-load", "ct_load"
-SOURCES = ("Files wired in", "Folder on the worker", "Upload from the View")
+SOURCES = ("Upload from the View, else the wired files", "Files wired in", "Folder on the worker", "Upload from the View")
+FALLBACK_S = 120          # with the first source: no upload (nobody at the View) in this time, the wired files
 CHOICES = ("The best CT series of each study", "Every CT series", "Only these series")
 
 
@@ -71,9 +72,17 @@ def run(ctx):
     source = str(p.get("source") or SOURCES[0])
     t0 = time.time()
     tell(ctx, "starting", source=source)
-    if source == "Upload from the View":
-        root = receive(ctx, int(float(p.get("wait_minutes") or 30) * 60))
-        items = walk(root, "")
+    wired = [(f.path, rel_of(f)) for f in ctx.inputs.get("files", [])]
+    items = None
+    if source.startswith("Upload from the View"):
+        fallback = FALLBACK_S if (source != "Upload from the View" and wired) else None
+        root = receive(ctx, int(float(p.get("wait_minutes") or 30) * 60), fallback)
+        if root is not None:
+            items = walk(root, "")
+        else:
+            ctx.log("No scans came from the Load a CT view in %d s and no one is at the View: the wired files are loaded "
+                    "(the demo case, unless a Dataset block is wired). To load your own scans, open the View and press Start." % fallback)
+            items = wired
     elif source == "Folder on the worker":
         folder = str(p.get("folder") or "").strip().strip('"')
         if not folder:
@@ -84,8 +93,8 @@ def run(ctx):
                                "to the machine that holds it." % (folder, os.environ.get("COMPUTERNAME") or os.uname()[1]))
         items = walk(folder, "")
         ctx.log("Reading %d files under %s." % (len(items), folder))
-    else:
-        items = [(f.path, rel_of(f)) for f in ctx.inputs.get("files", [])]
+    if items is None:
+        items = wired
         if not items:
             raise RuntimeError("Source is Files wired in, but no files are wired: connect a Dataset block (or a download) "
                                "to Files, or choose another Source.")
@@ -408,7 +417,7 @@ def tell(ctx, state, **extra):
         pass
 
 
-def receive(ctx, wait_s):
+def receive(ctx, wait_s, fallback_s=None):
     """Takes the files the view sends: begin (how many), file (each one's path and size), put (its pieces, base64,
     gzip when gz), end; tells the view what arrived, and which files to send again (missing). Returns the folder."""
     if not hasattr(ctx, "messages"):
@@ -418,6 +427,7 @@ def receive(ctx, wait_s):
     os.makedirs(root, exist_ok=True)
     files, session, ended, count, t_start = {}, None, False, 0, time.time()
     heard = time.time()
+    hold = t_start + (fallback_s or 0)                           # the View keeps the upload open while someone is there
     beat = said = 0.0
     ctx.log("Waiting for the scans from the Load a CT view (up to %d minutes)…" % (wait_s // 60))
     ctx.progress(0, "Waiting for the scans from the View")
@@ -464,7 +474,8 @@ def receive(ctx, wait_s):
                     beat = 0
                 elif cmd == "cancel":
                     raise RuntimeError("The upload was cancelled in the view.")
-                elif cmd == "hello":
+                elif cmd in ("hello", "hold"):
+                    hold = max(hold, time.time() + 60)
                     beat = 0
             except RuntimeError:
                 raise
@@ -480,11 +491,14 @@ def receive(ctx, wait_s):
         now = time.time()
         if now - beat > (0.5 if session else 2.0):                  # (every 2 s while it waits, faster while files come)
             missing = [i for i, ok in got.items() if not ok] if ended else []
+            extra = {"fallback_in": max(0, int(hold - now))} if (fallback_s and not session) else {}
             tell(ctx, "receiving" if session else "waiting", session=session, files=count,
-                 received=sum(got.values()), bytes=have, total=total, missing=missing[:2000])
+                 received=sum(got.values()), bytes=have, total=total, missing=missing[:2000], **extra)
             if session:
                 ctx.progress(30.0 * sum(got.values()) / max(1, count), "Receiving: %d of %d files" % (sum(got.values()), count))
             beat = now
+        if fallback_s and not session and now > hold:
+            return None                                              # nobody at the View: the wired files
         if not session and now - t_start > wait_s:
             raise RuntimeError("No scans arrived from the view in %d minutes: open the View, choose the folder in "
                                "Load a CT, and press Load while the run is going." % (wait_s // 60))

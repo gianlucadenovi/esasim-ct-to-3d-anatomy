@@ -53,7 +53,7 @@
         },
         {
             "id": "ws-load-ct-scans-dicom-discs-nifti-nrrd",
-            "version": 2,
+            "version": 3,
             "name": "Load CT scans (DICOM discs, NIfTI, NRRD, MHA)"
         },
         {
