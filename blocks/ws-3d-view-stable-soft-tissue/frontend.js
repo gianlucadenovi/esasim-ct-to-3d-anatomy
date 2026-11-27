@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 52 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 53 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2819,17 +2819,17 @@ function render(ctx) {
     '  else if (k < 8.5) { float a = esFade(px, 350.0), n = esNoise(vec3(p.x * 350.0, p.y * 25.0, p.z * 350.0)); h = 0.4 * a * n; c = 0.94 + 0.06 * lo + 0.08 * a * n; }',
     // bone: a little noise; darker and yellowish where the surface is hollow or folded (its shape, measured on the mesh)
     // bone: mottled at two scales, fine pores, a stronger relief; darker and yellowish in its hollows
-    '  else if (k < 9.5) { float cav = clamp(2.0 * cv.x, 0.0, 1.0), cx = clamp(1.5 * cv.y, 0.0, 1.0);',
-    '    float dirt = smoothstep(0.1, 0.7, clamp(max(cav, 0.75 * cx) + (esFbm(p * 60.0) - 0.5) * 0.4, 0.0, 1.0));',
+    '  else if (k < 9.5) { float cav = clamp(cv.x, 0.0, 1.0), cx = clamp(cv.y, 0.0, 1.0);',
+    '    float dirt = smoothstep(0.15, 0.85, clamp(max(cav, 0.75 * cx) + (esFbm(p * 60.0) - 0.5) * 0.3, 0.0, 1.0));',
     // patches of a few centimetres: porous, rough, matte bone (ends, attachments) and smooth, glossy compact bone (shafts)
     '    float reg = smoothstep(0.38, 0.68, esFbm(p * 7.0 + 1.3));',
     '    float n1 = esFbmP(p, px, 90.0), n2 = esFbmP(p + 3.3, px, 400.0), pore = esFade(px, 1600.0) * (1.0 - smoothstep(0.05, 0.22 + 0.2 * reg, esCell(p * 800.0).x));',
     '    float pit = esFade(px, 520.0) * reg * (1.0 - smoothstep(0.08, 0.32, esCell(p * 260.0 + 2.0).x));',
     '    h = 0.5 + 0.35 * (n1 - 0.5) + (0.25 + 0.3 * reg) * (n2 - 0.5) - 0.35 * pore - 0.5 * pit;',
-    '    c = 0.97 + 0.16 * (esFbm(p * 25.0) - 0.5) + 0.12 * (n1 - 0.5) + 0.08 * (n2 - 0.5) - 0.08 * pore - 0.14 * pit - 0.08 * reg - 0.35 * dirt; m = 0.8 * dirt + 0.25 * reg;',
+    '    c = 0.96 + 0.1 * (esFbm(p * 25.0) - 0.5) + 0.08 * (n1 - 0.5) + 0.06 * (n2 - 0.5) - 0.05 * pore - 0.05 * pit - 0.02 * reg - 0.1 * dirt; m = 0.35 * dirt + 0.1 * reg;',
     // its gloss varies: smooth bone a little shiny, pores and hollows matte; its occlusion: pores, hollows, low relief
     '    r = 0.7 + 0.55 * reg + 0.35 * dirt + 0.3 * pore + 0.3 * pit - 0.25 * (n2 - 0.5) + 0.12 * (esFbm(p * 18.0 + 4.0) - 0.5);',
-    '    esAOv = clamp(1.0 - 0.7 * dirt - 0.45 * pore - 0.55 * pit - 0.2 * reg - 0.25 * (0.5 - n2), 0.15, 1.0); }',
+    '    esAOv = clamp(1.0 - 0.3 * dirt - 0.35 * pore - 0.35 * pit - 0.05 * reg - 0.15 * (0.5 - n2), 0.5, 1.0); }',
     '  else if (k < 10.5) { float a = esFade(px, 110.0); vec2 w = esCell(p * 110.0 + lo); float e = w.y - w.x, sep = a * (1.0 - smoothstep(0.0, 0.12, e));',
     '    h = a * (0.8 * smoothstep(0.0, 0.35, e) + 0.2 * esFbm(p * 600.0)); c = 0.88 + 0.16 * lo - 0.1 * sep; m = 0.35 * sep; }',
     // the trachea and bronchi: pale cartilage rings about 4 mm apart across their axis (esAxis), raised, slightly wavy
@@ -2940,7 +2940,7 @@ function render(ctx) {
         // the wet clear coat has a normal of its own (the smooth surface's): it follows the relief too, a little softened,
         // so the reflections break up over the tissue's detail instead of sliding over a smooth shell
         // ambient occlusion: the room's light (diffuse, and most of its reflection) does not reach into pores and hollows
-        .replace('#include <aomap_fragment>', '#include <aomap_fragment>\nif (esOn * esKind > 0.5) { reflectedLight.indirectDiffuse *= esAO; reflectedLight.indirectSpecular *= mix(1.0, esAO, 0.7); reflectedLight.directDiffuse *= mix(1.0, esAO, 0.6); reflectedLight.directSpecular *= mix(1.0, esAO, 0.5); }')
+        .replace('#include <aomap_fragment>', '#include <aomap_fragment>\nif (esOn * esKind > 0.5) { reflectedLight.indirectDiffuse *= esAO; reflectedLight.indirectSpecular *= mix(1.0, esAO, 0.7); reflectedLight.directDiffuse *= mix(1.0, esAO, 0.3); reflectedLight.directSpecular *= mix(1.0, esAO, 0.5); }')
         .replace('#include <clearcoat_normal_fragment_maps>', '#include <clearcoat_normal_fragment_maps>\n#ifdef USE_CLEARCOAT\nif (esOn * esKind > 0.5) clearcoatNormal = esBump(-vViewPosition, clearcoatNormal, esHt * 0.75, faceDirection);\n#endif')
         // cartilage: light scattered inside it comes out warm (more where it is thin, at its edges, and on its lit side),
         // and it is see-through more at the edges than where you look straight in
@@ -4377,8 +4377,8 @@ function render(ctx) {
     // darker shadows: less fill (the sky light, the room's reflections, the sun) and a stronger key light at the camera
     if (on && !ENH.fill) {
       ENH.fill = { hemi: hemi.intensity, env: scene.environmentIntensity, sun: sun.intensity, head: headLight ? headLight.intensity : 0.75 };
-      hemi.intensity = ENH.fill.hemi * 0.18; scene.environmentIntensity = ENH.fill.env * 0.3; sun.intensity = ENH.fill.sun * 0.25;
-      if (headLight) headLight.intensity = ENH.fill.head * 2.0;
+      hemi.intensity = ENH.fill.hemi * 0.08; scene.environmentIntensity = ENH.fill.env * 0.16; sun.intensity = ENH.fill.sun * 0.15;
+      if (headLight) headLight.intensity = ENH.fill.head * 1.7;
     } else if (!on && ENH.fill) {
       hemi.intensity = ENH.fill.hemi; scene.environmentIntensity = ENH.fill.env; sun.intensity = ENH.fill.sun; if (headLight) headLight.intensity = ENH.fill.head;
       ENH.fill = null;
@@ -4395,7 +4395,7 @@ function render(ctx) {
     }
     if (on && !composer && quality !== 'fast') {
       composer = new A.EffectComposer(renderer); composer.addPass(new A.RenderPass(scene, camera)); composer.addPass(cleanPass());
-      ENH.bloom = new A.UnrealBloomPass(new THREE.Vector2(256, 256), 0.6, 0.6, 0.7); composer.addPass(ENH.bloom);
+      ENH.bloom = new A.UnrealBloomPass(new THREE.Vector2(256, 256), 0.4, 0.6, 0.75); composer.addPass(ENH.bloom);
       composer.addPass(new A.OutputPass()); composer.addPass(aaPass()); ENH.mine = true; resize();
     } else if (!on && ENH.mine) {
       if (composer && composer.dispose) composer.dispose();
