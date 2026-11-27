@@ -61,13 +61,13 @@ The same case as a soft-tissue model, simulated in the 3D view. The cut turns wi
 
 [**Open the blueprint →**](https://esacode.com/app/projects/6/flows/118)
 
-Any CT, loaded from your computer, a worker or a dataset, segmented by a neural network instead of by hand, and turned into the same 3D anatomy as flow 1. Pressing **Run** in the editor uses the demo case s1400, whose expert labels score the network. To use your own scans, see [Load your own CT scans](#load-your-own-ct-scans).
+Any CT, loaded from your computer, a worker or a dataset, segmented by a neural network instead of by hand, and turned into the same 3D anatomy as flow 1. Every run first waits for scans from the **Load a CT** panel on the View, whether it was started with the panel's **▶ Start** or with **Run** at the top of the page. While the View is open, it waits for you. With no one at the View, after 2 minutes, it loads the demo case s1400, whose expert labels score the network. To use your own scans, see [Load your own CT scans](#load-your-own-ct-scans).
 
 | Block | What it does |
 |---|---|
-| **Load a CT** (on the View) | The loading dialog: press **▶ Start**, drop or choose a folder from your computer, tick the series, press **Send**. Also: a folder on a worker, or the wired files. |
-| **Demo scans** | Case s1400 of the TotalSegmentator dataset (Zenodo), with the experts' labels: what the flow loads when you press Run in the editor. |
-| **Load the CT scans** | Finds the scans in whatever it is given (a disc's DICOMDIR / DICOM / IHE_PDI folders, loose DICOM, NIfTI, NRRD, MHA, zips), groups DICOM images into series, chooses the series and writes each as `<case>/ct.nii.gz` in Hounsfield units, without patient tags. With **Upload from the View** it waits for the files the panel sends. |
+| **Load a CT** (on the View) | The loading dialog: press **▶ Start** (or **Run**), drop or choose a folder from your computer, tick the series, press **③ Send**. Also: a folder on a worker, or the wired files. |
+| **Demo scans** | Case s1400 of the TotalSegmentator dataset (Zenodo), with the experts' labels: loaded when no scans come from the View. |
+| **Load the CT scans** | Waits for the scans the panel sends, else takes the wired files. Finds the scans in whatever it is given (a disc's DICOMDIR / DICOM / IHE_PDI folders, loose DICOM, NIfTI, NRRD, MHA, zips), groups DICOM images into series, chooses the series and writes each as `<case>/ct.nii.gz` in Hounsfield units, without patient tags. |
 | **Series found in the scans** | Every series on the disc, and what was done with it (loaded, localiser, report, too few images…). |
 | **Segment the CT automatically (TotalSegmentator)** | Runs the network on every scan and writes `<case>/segmentations/<structure>.nii.gz`, the layout every block after it reads. |
 | **Network labels to 3D models**, **The CT, for the cut**, **The skin (no physics)** | The same blocks as flow 1, fed with the network's masks. |
@@ -83,7 +83,7 @@ Three ways, all in flow 3. The first is the usual one.
 | | From this computer | From a worker's folder | From a dataset |
 |---|---|---|---|
 | **Where the scans are** | On the computer with the browser (a disc, a USB stick, Downloads) | On a worker's disk or a share it sees | In a dataset of the project (Data › Datasets) |
-| **How** | **Load a CT** on the View: **▶ Start**, drop the folder, tick, **Send** | **Load a CT** › *From a worker's folder*: give the path | Wire a **Dataset** block to the loader, then **Load a CT** › *Wired files* (or Run in the editor) |
+| **How** | **Load a CT** on the View: **▶ Start**, drop the folder, tick, **③ Send** | **Load a CT** › *From a worker's folder*: give the path | Wire a **Dataset** block to the loader, then **Load a CT** › *Wired files* |
 | **The files travel** | Only the ticked series, compressed, browser → worker | Not at all: read in place | As the dataset is kept |
 | **Keep the page open** | Yes, until the files are sent | No | No |
 
@@ -113,11 +113,11 @@ CT2013/
 
 You do not need to find the right folder or to remove anything: **give the whole `CT2013` folder**.
 
-**Why Start comes first:** when a run starts, EsaSim shows the views again, and the browser forgets any folder chosen before. So the panel starts the run first, and you choose the folder once, while the run waits for it.
+**Why Start comes first:** when a run starts, EsaSim shows the views again, and the browser forgets any folder chosen before. So the run starts first, and you choose the folder once, while the run waits for it.
 
 1. **Copy the disc to your computer** (optional but faster than reading from the drive), for example to `Documents\CT2013`.
 2. **Open flow 3's View** and find the **Load a CT** panel, tab **From this computer**. (If it shows a button *Load N series and segment* and no **▶ Start**, the browser kept an old copy of the panel: reload the page with **Ctrl+Shift+R**.)
-3. **① Choose the segmentation and press ▶ Start.** **Task** (`total` for the 117 structures), **Resolution** (*1.5 mm* best; *3 mm* several times faster, fine for large organs), **Run on** (*auto*: a worker with an NVIDIA GPU; *CPU*: any worker). The run starts on a worker; in a few seconds the panel says **The worker is waiting: drop the folder with the scans here**. The run waits up to 30 minutes.
+3. **① Choose the segmentation and press ▶ Start** (or **Run** at the top of the page: it does the same). **Task** (`total` for the 117 structures), **Resolution** (*1.5 mm* best; *3 mm* several times faster, fine for large organs), **Run on** (*auto*: a worker with an NVIDIA GPU; *CPU*: any worker). The run starts on a worker; in a few seconds the panel says **The worker is waiting: drop the folder with the scans here**. It waits as long as the View is open (up to 30 minutes).
 4. **② Drop the `CT2013` folder** on the highlighted box, or press **Choose a folder…** and pick `CT2013` (the browser asks to confirm that the page may read the folder: it is read here, in your browser). **Choose files…** works too, for loose files.
 5. **Look at the table.** The panel reads only the start of each file (the DICOM tags that say which study, series and position an image belongs to; never patient names or IDs) and lists one row per series:
    - Series are named like `A_S3_Abdomen_1.5_B30f`: study **A** (a letter per study on the disc), series number **3**, and its description from the scanner.
@@ -125,9 +125,9 @@ You do not need to find the right folder or to remove anything: **give the whole
    - Greyed and not tickable: **localisers** (the scout images), **dose reports** and other non-image series, structured reports.
    - **Images**, **Slices** (thickness), **Covers** (how much of the body, in mm) and **Size** help you choose.
    - The **best CT series of each study** is ticked and marked *best*: axial, slices of 3 mm or thinner, covering the most of the body. Tick or untick others as you like: each ticked series becomes one case. A series marked *few images* (under 20) is usually not a whole scan.
-6. **③ Press Send N series and segment.** The panel shows the steps:
+6. **③ Press the large Send N series and segment button** under the table. The panel shows the steps:
    1. *Start the run* (done).
-   2. *Send the scans*: only the images of the ticked series go to the worker, compressed (a bar shows files and MB). **Keep the page open until this step is done.** Files that do not arrive are sent again by themselves.
+   2. *Send the scans*: only the images of the ticked series go to the worker, compressed (a bar shows files and MB). **Keep the page open until this step is done.** A message that does not get through is tried again, and files that do not arrive are sent again by themselves.
    3. *Read the series*: the worker groups the images, puts them in order and writes each series as one scan in HU.
    4. *Segment and build the models*: the network, then the 3D models, the CT for the cut and the skin. Follow the run's progress; you can close the page now.
    5. *Done*: the 3D anatomy lists the cases (`A_S3_Abdomen_1.5_B30f`…): choose one in its list.
@@ -135,7 +135,7 @@ You do not need to find the right folder or to remove anything: **give the whole
 
 **To look at the series before starting:** drop the folder first (without Start): the table shows what the disc holds. **Start and send** then starts the run; as the browser forgets the folder, choose it once more when the panel asks, and press **③ Send**.
 
-How long: reading the headers takes seconds for a few thousand files. Sending depends on your connection: a 500-image series of 512×512 is about 250 MB, often half that compressed. Segmenting takes 1 to 3 minutes a case on an NVIDIA GPU, 12 to 15 minutes on a CPU at 1.5 mm (a few minutes at 3 mm).
+How long: reading the headers takes seconds for a few thousand files. Sending is about 250 to 300 images a minute: a disc of 780 images (about 1 GB, about 200 MB compressed) takes about 3 minutes. Segmenting takes 1 to 3 minutes a case on an NVIDIA GPU, 12 to 15 minutes on a CPU at 1.5 mm (a few minutes at 3 mm).
 
 ### From a worker's folder
 
@@ -151,7 +151,7 @@ For scans already on a worker (a disc copied to its disk, a network share), noth
 1. Project › **Data › Datasets**: a new dataset, in *EsaSim storage* (files go to EsaSim's servers) or in a worker's *Storage* folder (they stay on that machine). Upload the scans in any of the layouts below; a whole disc can go as **one zip** (`CT2013.zip`), unpacked by the loader.
 2. In flow 3's editor, add a **Dataset** block (Data), choose the dataset and **Version** `latest`, and connect its **Files** to the **Files** input of **Load the CT scans**, in place of **Demo scans**. Leave **Only these files** at `*`: disc images often have no extension.
 3. If the dataset has expert labels (below), also connect **Files** to **Experts** of the score block.
-4. Run from **Load a CT** › **Wired files**, or with **Run** in the editor.
+4. Run from **Load a CT** › **Wired files**. (With **Run** at the top of the page, the wired files are loaded only when no scans come from the View within 2 minutes.)
 
 ### What the loader reads
 
@@ -178,12 +178,15 @@ The CT is written in **Hounsfield units**, 16-bit. MR scans are kept when **Moda
 | What you see | Why, and what to do |
 |---|---|
 | No **▶ Start** button; the panel says *Load N series and segment* | The browser kept an old copy of the panel: reload the page with **Ctrl+Shift+R**. |
+| The 3D anatomy shows the demo case (s1400), not your scan | The run loaded the wired files: no scans came from the View within 2 minutes, or the run was started from the editor with the View closed, or with *Wired files*. Keep the View open, press **▶ Start** (or **Run**), drop the folder and press **③ Send**. |
+| *This run is not waiting for scans: it is loading the wired files* | The run is already loading the demo case. Press **Stop** at the top of the page, then **▶ Start**, and send your folder. |
 | After Start, the panel stays on *The run started: waiting for the loader…* | The run waits for a worker, or the demo case is being read first (a few seconds). Check the run's log; with **Run on** *auto* the run needs a worker with an NVIDIA GPU online. |
 | The panel lists **no series** | The folder holds no DICOM images (only pictures or a viewer): look for the `DICOM` folder of the disc, or for `.dcm` files. |
 | Every series is greyed | Only localisers or reports were found, or all series are MR (tick them and choose the task `total_mr`). |
 | *A run is already going* | Wait for it to end, or stop it with **Stop** at the top of the page, then press **▶ Start** again. |
 | *The run is waiting for your scans: drop the folder…* after choosing it | The page showed the views again when the run started (you chose the folder before **Start**): choose it once more and press **③ Send**. |
-| *Sending stopped* | The run ended or the connection dropped: if the run is still waiting, press **③ Send** again; else **▶ Start** again. |
+| *Sending stopped* | The run ended, or EsaSim did not answer for several tries: if the run is still waiting, press **③ Send** again (after a page reload, drop the folder first); it goes on with the files the worker does not have yet. |
+| The run's progress stays at about 15% and the log repeats *Received N of M files* | The transfer stopped (the page was closed or reloaded while sending). Open the View, drop the folder and press **③ Send**: the run takes the rest. |
 | *No scans arrived from the view in 30 minutes* (run log) | The run started but nothing was sent: press **▶ Start** again and drop the folder while the panel says the worker is waiting. |
 | *The folder … does not exist on this worker* | The path is wrong, or the run went to another worker: choose the worker in the run panel. |
 | *No scan to segment* | Every series was skipped: **Series found in the scans** says why for each. With *Only these series*, check **Series to load**. |
@@ -205,7 +208,7 @@ The CT is written in **Hounsfield units**, 16-bit. MR scans are kept when **Moda
 
 1. Under **Compute**, check that a machine is available for this project (for flow 3 on the GPU: a machine with an NVIDIA GPU).
 2. Flows 1 and 2: open the flow under **Blueprint**; to change the case, set **Cases** of the download block: names such as `s1400, s0513` (the 3D view then has a list to choose one), or a number (taken at random, repeatably). Press **Run**: the first run reads the case (about 30 MB) out of the dataset's archive; the next runs use the cache.
-3. Flow 3: open its **View** and use **Load a CT** ([Load your own CT scans](#load-your-own-ct-scans)), or press **Run** in the editor for the demo case.
+3. Flow 3: open its **View** and use **Load a CT** ([Load your own CT scans](#load-your-own-ct-scans)). For the demo case: **Load a CT** › **Wired files** › **Load and segment**.
 4. Open the **View**.
 5. To look inside: in the Parts list, choose a cut (**Cut across**, **Front to back**, **Side to side**), move it with the slider, and choose what the **Cut face** shows. Drag to turn the body until the cut faces you; **⇄** keeps the other side.
 
