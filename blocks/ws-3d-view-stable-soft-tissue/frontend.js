@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 6 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 7 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2663,7 +2663,7 @@ function render(ctx) {
     partsDraw();
   }
   // Anatomy (models grouped as organs, vessels, skeleton…) looks wet: a clear coat that catches the light, as living tissue does
-  var WET = { 'organs': [0.42, 0.7, 0.12], 'vessels': [0.38, 0.75, 0.1], 'heart': [0.42, 0.7, 0.12], 'lungs and airways': [0.5, 0.55, 0.18], 'muscles': [0.5, 0.45, 0.2], 'skeleton': [0.62, 0.2, 0.35] }, headLight = null;
+  var WET = { 'organs': [0.42, 0.7, 0.12], 'vessels': [0.38, 0.75, 0.1], 'heart': [0.34, 0.95, 0.05], 'lungs and airways': [0.5, 0.55, 0.18], 'muscles': [0.5, 0.45, 0.2], 'skeleton': [0.62, 0.2, 0.35] }, headLight = null;
   // Tissue textures: each tissue gets its own surface, computed on the graphics card from the model's own coordinates
   // (solid noise: no texture coordinates needed, no seams, and it stays on the tissue as it deforms): liver lobules,
   // the fine grain of the spleen, bowel folds, muscle fibres, the heart's fibres and fat, the lung's air sacs, vessel
@@ -2672,7 +2672,7 @@ function render(ctx) {
   var TISSUE_KINDS = [  // [kind, words in the structure's name, bump height (m), second colour (fat, slate, pale crests)]
     [1, ['liver'], 0.0003, null], [2, ['spleen'], 0.0003, null], [3, ['kidney', 'gallbladder', 'bladder'], 0.0002, null],
     [4, ['stomach', 'bowel', 'colon', 'duodenum', 'esophagus', 'rectum'], 0.0022, [0.98, 0.84, 0.76]],
-    [6, ['heart', 'atrial', 'myocard'], 0.0018, [0.94, 0.86, 0.64]], [7, ['lung'], 0.0006, [0.3, 0.3, 0.34]],
+    [6, ['heart', 'atrial', 'myocard'], 0.0011, [0.3, 0.035, 0.05]], [7, ['lung'], 0.0006, [0.3, 0.3, 0.34]],
     [8, ['aorta', 'artery', 'arteries', 'vein', 'vena', 'trunk', 'portal', 'trachea', 'bronch'], 0.00025, null],
     [5, ['gluteus', 'iliopsoas', 'autochthon', 'psoas', 'muscle'], 0.0005, [0.95, 0.86, 0.66]],
     [10, ['pancreas', 'adrenal', 'thyroid', 'prostate', 'gland'], 0.0007, [0.93, 0.82, 0.55]]
@@ -2711,10 +2711,14 @@ function render(ctx) {
     '    h = a * (0.6 * q + 0.25 * q2 + 0.15 * esFbm(p * 400.0) * esFade(px, 400.0)); c = 0.84 + 0.2 * lo + 0.08 * a * q; m = 0.4 * a * q; r = 1.0 - 0.15 * a * q; }',
     '  else if (k < 5.5) { float a = esFade(px, 600.0), f = esFbm(vec3(p.x * 600.0, p.y * 16.0, p.z * 600.0)), b = esNoise(vec3(p.x * 110.0, p.y * 5.0, p.z * 110.0));',
     '    h = a * (0.7 * f + 0.3 * b); c = 0.8 + 0.12 * lo + 0.2 * mix(0.5, f, a) + 0.06 * b; m = 0.45 * smoothstep(0.74, 0.86, b); r = 0.9 + 0.2 * a * f; }',
-    // the heart: the stomach's soft folds, a darker red, and whitish fat in spots (along the grooves of the real heart)
-    '  else if (k < 6.5) { float a = esFade(px, 45.0), q = 1.0 - abs(2.0 * esNoise(p * 45.0 + lo * 2.5) - 1.0), q2 = 1.0 - abs(2.0 * esNoise(p * 120.0 + lo * 3.0) - 1.0); q = q * q * q; q2 = q2 * q2 * esFade(px, 120.0);',
-    '    float fat = smoothstep(0.58, 0.74, esFbm(p * 14.0 + vec3(3.7, 1.3, 8.1))), lob = smoothstep(0.0, 0.55, esCell(p * 220.0).x) * esFade(px, 220.0);',
-    '    h = mix(a * (0.6 * q + 0.25 * q2 + 0.15 * esFbm(p * 400.0) * esFade(px, 400.0)), 0.3 + 0.7 * lob, fat); c = mix((0.84 + 0.2 * lo + 0.08 * a * q) * 0.7, 0.9 + 0.1 * lob, fat); m = 0.85 * fat; r = mix(1.0 - 0.15 * a * q, 0.8, fat); }',
+    // the heart: smooth, glossy red muscle with a fine grain and soft mottling, and the coronary vessels over it:
+    // branching trunks and finer branches (ridges of a warped noise, broken up so they read as a tree, not a net),
+    // raised about a millimetre and darker red; no folds, no fat blotches
+    '  else if (k < 6.5) { vec3 q = p * 22.0, wq = vec3(esFbm(q * 0.7 + 4.1), esFbm(q * 0.7 + 9.7), esFbm(q * 0.7 + 1.3));',
+    '    float v1 = 1.0 - abs(2.0 * esFbm(q + 1.6 * wq) - 1.0), big = smoothstep(0.955, 0.99, v1) * smoothstep(0.38, 0.62, esFbm(p * 9.0 + vec3(7.7, 2.1, 5.3)));',
+    '    float a2 = esFade(px, 70.0), v2 = 1.0 - abs(2.0 * esFbm(p * 70.0 + 2.5 * wq) - 1.0), small = a2 * smoothstep(0.968, 0.994, v2) * smoothstep(0.45, 0.72, esFbm(p * 25.0 + vec3(3.3, 8.8, 0.4)));',
+    '    float ves = max(big, 0.65 * small), a = esFade(px, 500.0), grain = esFbm(vec3(p.x * 500.0, p.y * 170.0, p.z * 500.0));',
+    '    h = 0.85 * ves + 0.15 * a * grain; c = 0.8 + 0.28 * lo + 0.05 * a * (grain - 0.5) - 0.12 * ves; m = 0.75 * ves; r = 0.8 - 0.2 * ves; }',
     '  else if (k < 7.5) { float a = esFade(px, 600.0); vec2 w = esCell(p * 600.0); h = a * smoothstep(0.0, 0.6, w.x);',
     '    c = 0.88 + 0.16 * lo + 0.06 * h; m = 0.7 * smoothstep(0.6, 0.76, esFbm(p * 50.0)); r = 1.1; }',
     '  else if (k < 8.5) { float a = esFade(px, 350.0), n = esNoise(vec3(p.x * 350.0, p.y * 25.0, p.z * 350.0)); h = 0.4 * a * n; c = 0.94 + 0.06 * lo + 0.08 * a * n; }',
