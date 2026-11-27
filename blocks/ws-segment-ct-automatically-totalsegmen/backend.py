@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Segment CT automatically (TotalSegmentator) (ws-segment-ct-automatically-totalsegmen) · version 3 · worker block, Python: def run(ctx)
+# Segment CT automatically (TotalSegmentator) (ws-segment-ct-automatically-totalsegmen) · version 4 · worker block, Python: def run(ctx)
 # Segments organs, bones, vessels and muscles in any CT (NIfTI, NRRD, MHA or DICOM series) with TotalSegmentator, and writes each case as <case>/ct.nii.gz + <case>/segmentations/<structure>.nii.gz, the
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-27
@@ -48,6 +48,11 @@ RUNNER = r'''
 import inspect, json, sys
 if __name__ == "__main__":
     args = json.load(open(sys.argv[1], encoding="utf-8"))
+    try:
+        from totalsegmentator.config import set_config_key
+        set_config_key("send_usage_stats", False)
+    except Exception as e:
+        print("Could not turn off usage statistics: %s" % e, flush=True)
     from totalsegmentator.python_api import totalsegmentator
     ok = inspect.signature(totalsegmentator).parameters
     gone = [k for k in list(args) if k not in ok]
