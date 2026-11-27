@@ -1,0 +1,67 @@
+{
+    "id": "ws-ct-volume-for-the-3d-view",
+    "version": "1",
+    "name": "CT volume for the 3D view",
+    "category": "Processing",
+    "icon": "grid",
+    "side": "backend",
+    "customizable": true,
+    "summary": "Resamples a CT scan into the 3D models' own frame (as Labels to 3D models writes them) as a compact volume, so the 3D view can show the real CT on a cut.",
+    "help": "Wire the scans (the same files the Labels to 3D models block reads: masks are skipped) and connect Volume to the 3D view's Scene input next to the models. Each case gives <case>/<case>_ct.ctvol: the CT resampled on a grid aligned with the glTF frame of <case>_anatomy.glb (x = patient's left, y = up, z = towards the face, metres), at most Size voxels on its longest side, 8-bit (0 outside the body; 1 to 255 = −1024 to +1536 HU), compressed. The 3D view paints it on the cut plane with a soft-tissue, bone or lung window.",
+    "inputs": [
+        {
+            "id": "scans",
+            "label": "Scans",
+            "type": "files",
+            "many": true,
+            "formats": [
+                "gz",
+                "nii",
+                "nrrd",
+                "mha",
+                "mhd"
+            ],
+            "help": "CT volumes (NIfTI, NRRD, MHA); masks in segmentations/ folders are skipped"
+        }
+    ],
+    "outputs": [
+        {
+            "id": "volume",
+            "label": "Volume",
+            "type": "files",
+            "formats": [
+                "ctvol"
+            ],
+            "help": "<case>/<case>_ct.ctvol for the 3D view's cut"
+        }
+    ],
+    "params": [
+        {
+            "key": "file",
+            "label": "Scan file name",
+            "type": "text",
+            "default": "ct.nii.gz",
+            "help": "Which file of each case is the CT (a pattern such as *.nii.gz works); empty: any scan that is not a mask"
+        },
+        {
+            "key": "size",
+            "label": "Size (voxels on the longest side)",
+            "type": "number",
+            "default": 256,
+            "min": 64,
+            "max": 512,
+            "help": "256 is about 1.5 to 2.5 mm per voxel for a trunk: a sharp slice, a few MB"
+        }
+    ],
+    "hardware": [
+        "cpu"
+    ],
+    "packages": [
+        "numpy",
+        "scipy",
+        "SimpleITK"
+    ],
+    "esasim": {
+        "version": 1
+    }
+}
