@@ -1,8 +1,8 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 2 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 3 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
-// Saved: 2026-11-24
+// Saved: 2026-11-27
 //
 // Inputs   ctx.input("id") gives { files, stream }; ctx.rows("id"), ctx.json("id"), ctx.text("id")
 //   scene       Anything (json, gz, glb, gltf, obj, stl, ply) Scene or 3D files · several · A scene (esasim.scene/1 JSON), 3D models and point clouds, a robot model (.robot.json.gz) and/or live telemetry; a soft-body model (esasim.softbody/1, from Soft body model) with the anatomy of the sam
@@ -776,6 +776,7 @@ function render(ctx) {
       var shown = objs.filter(function (o) { return o; })[0], soft = shown && (FILES.soft || []).filter(function (sf) { return shortName(sf.name).replace(/[._-]?softbody(\.json)?$/i, '') === shortName(shown.userData.file || ''); })[0];
       if (!soft && shown && (FILES.soft || []).length === 1 && objs.length === 1) soft = FILES.soft[0];
       if (soft) ctx.files.json(soft).then(function (m) { if (seq === FILES.seq) softStart(m, shown); }).catch(function (e) { ctx.status('Could not read ' + soft.name + ': ' + e.message); });
+      if (shown) ctLoad(shown, seq);                     // the CT of the same case, for the cut
     });
   }
   // Models with a scene: a model whose file name an entity gives ("model": "quadcopter.glb"), or the first model when
@@ -1436,6 +1437,7 @@ function render(ctx) {
     }
     var softFiles = files.filter(function (f) { return /softbody\.json$/i.test(f.name); });
     FILES.soft = softFiles;
+    FILES.ct = files.filter(function (f) { return /\.ctvol$/i.test(f.name); });
     var sceneFile = files.filter(function (f) { return /\.json$/i.test(f.name) && !isRobotFile(f) && !/softbody\.json$/i.test(f.name); })[0];
     var meshes = files.filter(function (f) { return /\.(glb|gltf|obj|stl|ply)$/i.test(f.name); });
     if (robots.length || rItems.length) { // a robot: posed live by its joints, with the objects around it
@@ -2620,7 +2622,11 @@ function render(ctx) {
   // A GLB whose models have names (a structure per node, under a node per group: skeleton, organs…) gets a Parts list:
   // show or hide each part or group, find one by name, point at a model to see its name, and cut through everything
   // with a plane (across, front to back, side to side).
-  var PARTS = { list: [], files: 0, plane: new THREE.Plane(new THREE.Vector3(0, -1, 0), 0), axis: 'off', pos: 0.5, flip: false, open: {} };
+  // The cut plane is kept in the model's own frame (lplane, in the first model's coordinates: ref) and put in the world
+  // every frame, so it turns with the model and the cut face can be turned towards you. With a CT volume of the case
+  // (<case>_ct.ctvol, from the block CT volume for the 3D view) the cut shows the scan itself (cap).
+  var PARTS = { list: [], files: 0, plane: new THREE.Plane(new THREE.Vector3(0, -1, 0), 0), lplane: new THREE.Plane(new THREE.Vector3(0, -1, 0), 0), ref: null, lbox: null, at: 0, cap: null, ct: null, win: 'soft', axis: 'off', pos: 0.5, flip: false, open: {} };
+  var CT_WINDOWS = { soft: [-160, 240], bone: [-500, 1300], lung: [-1350, 150] };
   var partsEl = document.createElement('div');
   partsEl.style.cssText = 'position:absolute;left:12px;top:64px;width:236px;max-height:calc(100% - 140px);display:none;flex-direction:column;background:rgba(10,14,22,.72);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.08);border-radius:10px;pointer-events:auto;overflow:hidden';
   partsEl.innerHTML = '<style>.pt-b{all:unset;cursor:pointer;padding:1px 7px;border:1px solid #2a303b;border-radius:6px;font-size:11.5px}.pt-b:hover{border-color:#7b8cff}'
@@ -2631,6 +2637,7 @@ function render(ctx) {
     + '<div class="pt-body" style="display:flex;flex-direction:column;min-height:0"><div style="padding:0 10px 6px"><input class="pt-q" type="search" placeholder="Find a part" style="width:100%;box-sizing:border-box;background:#1b2029;color:#e8ecf2;border:1px solid #2a303b;border-radius:6px;padding:3px 7px;font:inherit"></div>'
     + '<div style="display:flex;gap:6px;align-items:center;padding:0 10px 6px"><select class="pt-ax" title="Cut through the models" style="background:#1b2029;color:#e8ecf2;border:1px solid #2a303b;border-radius:6px;font:inherit;font-size:11.5px"><option value="off">No cut</option><option value="y">Cut across</option><option value="z">Front to back</option><option value="x">Side to side</option></select>'
     + '<input class="pt-pos" type="range" min="0" max="1000" value="500" disabled style="flex:1;min-width:0;accent-color:#7b8cff"><button class="pt-b pt-flip" title="Keep the other side">⇄</button></div>'
+    + '<div class="pt-ctrow" style="display:none;gap:6px;align-items:center;padding:0 10px 6px"><span style="font-size:11.5px;opacity:.75">Cut face</span><select class="pt-win" title="What the cut shows" style="flex:1;background:#1b2029;color:#e8ecf2;border:1px solid #2a303b;border-radius:6px;font:inherit;font-size:11.5px"><option value="soft">CT · soft tissue</option><option value="bone">CT · bone</option><option value="lung">CT · lung</option><option value="off">Inside of the models</option></select></div>'
     + '<div class="pt-l"></div></div>';
   ui.appendChild(partsEl);
   var ptList = partsEl.querySelector('.pt-l');
@@ -2640,9 +2647,13 @@ function render(ctx) {
   ui.appendChild(partsPill);
   PARTS.min = !!(ctx.state || {}).partsMin;
   partsPill.onclick = function () { PARTS.min = false; partsDraw(); keepView(true); };
-  function partsClear() { if (!PARTS) return; PARTS.list = []; PARTS.files = 0; partsEl.style.display = 'none'; partsPill.style.display = 'none'; partsCut('off'); }
+  function partsClear() {
+    if (!PARTS) return; PARTS.list = []; PARTS.files = 0; partsEl.style.display = 'none'; partsPill.style.display = 'none'; partsCut('off');
+    capDrop(); if (PARTS.ct && PARTS.ct.tex) PARTS.ct.tex.dispose(); PARTS.ct = null; PARTS.ref = null; PARTS.lbox = null; partsWinShow();
+  }
   function partsAdd(obj, file) {
     PARTS.files++;
+    if (PARTS.files === 1 || !PARTS.ref) { PARTS.ref = obj; PARTS.lbox = null; capDrop(); }
     obj.traverse(function (o) {
       if (!o.isMesh || !o.name) return;
       var g = o.parent && o.parent !== obj && !o.parent.isScene && o.parent.name ? o.parent.name : '';
@@ -2852,16 +2863,104 @@ function render(ctx) {
   partsEl.addEventListener('keydown', function (e) { e.stopPropagation(); });
   partsEl.querySelector('.pt-ax').addEventListener('change', function () { partsCut(this.value); });
   partsEl.querySelector('.pt-pos').addEventListener('input', function () { PARTS.pos = +this.value / 1000; partsCut(PARTS.axis); });
+  partsEl.querySelector('.pt-win').addEventListener('change', function () { PARTS.win = this.value; partsCut(PARTS.axis); });
+  // the models' box in the first model's own frame (the glTF frame of the file): where the cut can go
+  function partsLocalBox() {
+    var ref = PARTS.ref; if (!ref) return null;
+    ref.updateMatrixWorld(true);
+    var inv = new THREE.Matrix4().copy(ref.matrixWorld).invert(), box = new THREE.Box3(), m = new THREE.Matrix4();
+    PARTS.list.forEach(function (p) {
+      var g = p.mesh.geometry; if (!g || !g.attributes || !g.attributes.position) return;
+      if (!g.boundingBox) g.computeBoundingBox();
+      m.multiplyMatrices(inv, p.mesh.matrixWorld);
+      box.union(g.boundingBox.clone().applyMatrix4(m));
+    });
+    return box.isEmpty() ? null : box;
+  }
+  // every frame: the plane, fixed to the model, put where the model is now (turned, moved)
+  function partsPlaneTick() {
+    if (!PARTS || PARTS.axis === 'off' || !PARTS.ref) return;
+    PARTS.ref.updateMatrixWorld(true);
+    PARTS.plane.copy(PARTS.lplane).applyMatrix4(PARTS.ref.matrixWorld);
+  }
+  function partsWinShow() {
+    var row = partsEl.querySelector('.pt-ctrow'); if (!row) return;
+    row.style.display = PARTS && PARTS.ct && PARTS.axis !== 'off' ? 'flex' : 'none';
+    partsEl.querySelector('.pt-win').value = PARTS ? PARTS.win : 'soft';
+  }
+  function capDrop() {
+    if (!PARTS || !PARTS.cap) return;
+    if (PARTS.cap.parent) PARTS.cap.parent.remove(PARTS.cap);
+    PARTS.cap.geometry.dispose(); PARTS.cap.material.dispose(); PARTS.cap = null;
+  }
+  // The cap: a quad on the cut plane, in the model's frame, painted with the CT (a 3D texture) where the body is
+  function partsCap() {
+    var C = PARTS.ct, box = PARTS.lbox, a = PARTS.axis;
+    if (!C || !C.tex || a === 'off' || PARTS.win === 'off' || !box || !PARTS.ref) { if (PARTS.cap) PARTS.cap.visible = false; return; }
+    if (!PARTS.cap || PARTS.cap.parent !== PARTS.ref) {
+      capDrop();
+      var geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3)); geo.setIndex([0, 1, 2, 0, 2, 3]);
+      var mat = new THREE.ShaderMaterial({
+        uniforms: { vol: { value: C.tex }, bmin: { value: C.min.clone() }, bsize: { value: C.max.clone().sub(C.min) }, wlo: { value: -160 }, whi: { value: 240 }, lo: { value: C.lo }, hi: { value: C.hi } },
+        vertexShader: 'varying vec3 vP;\nvoid main() { vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: 'precision highp float;\nprecision highp sampler3D;\nuniform sampler3D vol; uniform vec3 bmin; uniform vec3 bsize; uniform float wlo; uniform float whi; uniform float lo; uniform float hi;\nvarying vec3 vP;\n'
+          + 'void main() {\n  vec3 u = (vP - bmin) / bsize;\n  if (any(lessThan(u, vec3(0.0))) || any(greaterThan(u, vec3(1.0)))) discard;\n  float v = texture(vol, u).r * 255.0;\n  if (v < 0.5) discard;\n'
+          + '  float hu = lo + (max(v, 1.0) - 1.0) * (hi - lo) / 254.0;\n  float g = clamp((hu - wlo) / (whi - wlo), 0.0, 1.0);\n  gl_FragColor = vec4(vec3(g), 1.0);\n}',
+        side: THREE.DoubleSide, toneMapped: false, depthWrite: true
+      });
+      PARTS.cap = new THREE.Mesh(geo, mat); PARTS.cap.frustumCulled = false; PARTS.cap.renderOrder = 4;
+      PARTS.ref.add(PARTS.cap);
+    }
+    var w = CT_WINDOWS[PARTS.win] || CT_WINDOWS.soft, u = PARTS.cap.material.uniforms;
+    u.wlo.value = w[0]; u.whi.value = w[1];
+    // the quad covers the CT's extent in the two other axes, a hair on the removed side of the plane (no flicker)
+    var o = ['x', 'y', 'z'].filter(function (k) { return k !== a; }), lo3 = C.min, hi3 = C.max, at = PARTS.at - PARTS.lplane.normal[a] * 0.0004;
+    var pos = PARTS.cap.geometry.attributes.position, v = new THREE.Vector3();
+    [[lo3[o[0]], lo3[o[1]]], [hi3[o[0]], lo3[o[1]]], [hi3[o[0]], hi3[o[1]]], [lo3[o[0]], hi3[o[1]]]].forEach(function (c, i) {
+      v.set(0, 0, 0); v[a] = at; v[o[0]] = c[0]; v[o[1]] = c[1]; pos.setXYZ(i, v.x, v.y, v.z);
+    });
+    pos.needsUpdate = true; PARTS.cap.geometry.computeBoundingSphere(); PARTS.cap.visible = true;
+  }
+  // the CT volume of the model shown (<case>_ct.ctvol next to <case>_anatomy.glb), as a 3D texture
+  function ctLoad(shown, seq) {
+    var list = FILES.ct || [], key = shortName(shown.userData.file || '');
+    var f = list.filter(function (c) { return String(c.name).replace(/^.*[\\/]/, '').replace(/_ct\.ctvol$/i, '') === key; })[0] || (list.length === 1 ? list[0] : null);
+    if (!f) return;
+    var D3 = THREE.Data3DTexture || THREE.DataTexture3D;
+    if (!D3 || !(renderer.capabilities && renderer.capabilities.isWebGL2 !== false)) { ctx.status('Showing the CT on the cut needs WebGL 2: the cut shows the inside of the models.'); return; }
+    ctx.files.buffer(f).then(function (buf) {
+      var ab = buf instanceof ArrayBuffer ? buf : buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+      if (String.fromCharCode.apply(null, new Uint8Array(ab, 0, 8)) !== 'ESCTVOL1') throw new Error('not a CT volume');
+      var hl = new DataView(ab).getUint32(8, true), head = JSON.parse(new TextDecoder().decode(new Uint8Array(ab, 12, hl))), body = new Uint8Array(ab, 12 + hl);
+      var raw = head.gzip ? new Response(new Blob([body]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer() : Promise.resolve(body.slice().buffer);
+      return raw.then(function (rb) {
+        if (seq !== FILES.seq) return;
+        var d = head.dims, data = new Uint8Array(rb);
+        if (data.length !== d[0] * d[1] * d[2]) throw new Error('its size does not match its header');
+        var tex = new D3(data, d[0], d[1], d[2]);
+        tex.format = THREE.RedFormat; tex.type = THREE.UnsignedByteType; tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
+        tex.unpackAlignment = 1; tex.generateMipmaps = false; tex.needsUpdate = true;
+        if (PARTS.ct && PARTS.ct.tex) PARTS.ct.tex.dispose();
+        capDrop();
+        PARTS.ct = { tex: tex, min: new THREE.Vector3().fromArray(head.min), max: new THREE.Vector3().fromArray(head.max), lo: +head.hu_lo || -1024, hi: +head.hu_hi || 1536 };
+        partsCut(PARTS.axis);
+      });
+    }).catch(function (e) { ctx.status('Could not show the CT on the cut (' + f.name + '): ' + e.message); });
+  }
   function partsCut(axis) {
     PARTS.axis = axis; partsEl.querySelector('.pt-pos').disabled = axis === 'off'; partsEl.querySelector('.pt-ax').value = axis;
     renderer.localClippingEnabled = axis !== 'off';
-    var box = new THREE.Box3();
-    PARTS.list.forEach(function (p) { box.expandByObject(p.mesh); });
-    if (axis !== 'off' && !box.isEmpty()) {
+    var box = PARTS.lbox || (PARTS.lbox = partsLocalBox());
+    if (axis !== 'off' && box) {
       var n = new THREE.Vector3(axis === 'x' ? 1 : 0, axis === 'y' ? 1 : 0, axis === 'z' ? 1 : 0), lo = box.min[axis], hi = box.max[axis], at = lo + (hi - lo) * PARTS.pos;
       if (!PARTS.flip) n.negate();
-      PARTS.plane.normal.copy(n); PARTS.plane.constant = PARTS.flip ? -at : at;   // keeps the part below the cut (or above, flipped)
+      PARTS.lplane.normal.copy(n); PARTS.lplane.constant = PARTS.flip ? -at : at;   // keeps the part below the cut (or above, flipped), in the model's frame
+      PARTS.at = at;
     }
+    partsPlaneTick();
+    partsWinShow();
+    partsCap();
     PARTS.list.forEach(function (p) {
       (Array.isArray(p.mesh.material) ? p.mesh.material : [p.mesh.material]).forEach(function (m) {
         m.clippingPlanes = axis === 'off' ? null : [PARTS.plane];
@@ -11734,6 +11833,7 @@ function render(ctx) {
       applyMouse(dt);
       if (mode === 'files') { softStep(dt); if (FILES.mixers) FILES.mixers.forEach(function (m) { m.update(dt); }); }
       advance(dt, false);
+      if (mode === 'files') partsPlaneTick();          // the cut turns with the model
       draw();
     } catch (err) {
       // errors in the animation loop would reach the page only as "Script error." (the frame is sandboxed): say what it is

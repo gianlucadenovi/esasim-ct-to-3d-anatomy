@@ -82,7 +82,7 @@ An [EsaSim](https://esacode.com/) project of the workspace Gianluca De Novi's wo
 
 ### Workspace blocks it uses
 
-- [3D view (stable soft tissue)](blocks/ws-3d-view-stable-soft-tissue) · version 2
+- [3D view (stable soft tissue)](blocks/ws-3d-view-stable-soft-tissue) · version 3
 
 ### Assets
 
