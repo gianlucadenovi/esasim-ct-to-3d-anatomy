@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 36 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 37 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -4139,8 +4139,8 @@ function render(ctx) {
     // darker shadows: less fill (the sky light, the room's reflections, the sun) and a stronger key light at the camera
     if (on && !ENH.fill) {
       ENH.fill = { hemi: hemi.intensity, env: scene.environmentIntensity, sun: sun.intensity, head: headLight ? headLight.intensity : 0.75 };
-      hemi.intensity = ENH.fill.hemi * 0.3; scene.environmentIntensity = ENH.fill.env * 0.45; sun.intensity = ENH.fill.sun * 0.4;
-      if (headLight) headLight.intensity = ENH.fill.head * 1.8;
+      hemi.intensity = ENH.fill.hemi * 0.18; scene.environmentIntensity = ENH.fill.env * 0.3; sun.intensity = ENH.fill.sun * 0.25;
+      if (headLight) headLight.intensity = ENH.fill.head * 2.0;
     } else if (!on && ENH.fill) {
       hemi.intensity = ENH.fill.hemi; scene.environmentIntensity = ENH.fill.env; sun.intensity = ENH.fill.sun; if (headLight) headLight.intensity = ENH.fill.head;
       ENH.fill = null;
