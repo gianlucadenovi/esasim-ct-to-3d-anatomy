@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Segment CT automatically (TotalSegmentator) (ws-segment-ct-automatically-totalsegmen) · version 2 · worker block, Python: def run(ctx)
+# Segment CT automatically (TotalSegmentator) (ws-segment-ct-automatically-totalsegmen) · version 3 · worker block, Python: def run(ctx)
 # Segments organs, bones, vessels and muscles in any CT (NIfTI, NRRD, MHA or DICOM series) with TotalSegmentator, and writes each case as <case>/ct.nii.gz + <case>/segmentations/<structure>.nii.gz, the
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-27
@@ -18,7 +18,7 @@
 #   scan_file   text      Scan file name = ""
 #   keep_empty  bool      Keep empty masks = false
 # Runs on  Any worker, NVIDIA GPU. Return a dict to fill the "result" output.
-# Packages TotalSegmentator, torch, SimpleITK, numpy (installed by the worker with pip when missing)
+# Packages torch[cuda], TotalSegmentator, SimpleITK, numpy (installed by the worker with pip when missing)
 # EsaSim rewrites these lines from the block's definition each time it is saved: change the definition, not them.
 # ── end of EsaSim block header ────────────────────────────────────────
 
