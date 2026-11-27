@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 8 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 9 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2672,7 +2672,7 @@ function render(ctx) {
   var TISSUE_KINDS = [  // [kind, words in the structure's name, bump height (m), second colour (fat, slate, pale crests)]
     [1, ['liver'], 0.0003, null], [2, ['spleen'], 0.0003, null], [3, ['kidney', 'gallbladder', 'bladder'], 0.0002, null],
     [4, ['stomach', 'bowel', 'colon', 'duodenum', 'esophagus', 'rectum'], 0.0022, [0.98, 0.84, 0.76]],
-    [6, ['heart', 'atrial', 'myocard'], 0.0011, [0.3, 0.035, 0.05]], [7, ['lung'], 0.0006, [0.3, 0.3, 0.34]],
+    [6, ['heart', 'atrial', 'myocard'], 0.0012, [0.95, 0.87, 0.66]], [7, ['lung'], 0.0006, [0.3, 0.3, 0.34]],
     [8, ['aorta', 'artery', 'arteries', 'vein', 'vena', 'trunk', 'portal', 'trachea', 'bronch'], 0.00025, null],
     [5, ['gluteus', 'iliopsoas', 'autochthon', 'psoas', 'muscle'], 0.0005, [0.95, 0.86, 0.66]],
     [10, ['pancreas', 'adrenal', 'thyroid', 'prostate', 'gland'], 0.0007, [0.93, 0.82, 0.55]]
@@ -2711,14 +2711,20 @@ function render(ctx) {
     '    h = a * (0.6 * q + 0.25 * q2 + 0.15 * esFbm(p * 400.0) * esFade(px, 400.0)); c = 0.84 + 0.2 * lo + 0.08 * a * q; m = 0.4 * a * q; r = 1.0 - 0.15 * a * q; }',
     '  else if (k < 5.5) { float a = esFade(px, 600.0), f = esFbm(vec3(p.x * 600.0, p.y * 16.0, p.z * 600.0)), b = esNoise(vec3(p.x * 110.0, p.y * 5.0, p.z * 110.0));',
     '    h = a * (0.7 * f + 0.3 * b); c = 0.8 + 0.12 * lo + 0.2 * mix(0.5, f, a) + 0.06 * b; m = 0.45 * smoothstep(0.74, 0.86, b); r = 0.9 + 0.2 * a * f; }',
-    // the heart: smooth, glossy red muscle with a fine grain and soft mottling, and the coronary vessels over it:
-    // branching trunks and finer branches (ridges of a warped noise, broken up so they read as a tree, not a net),
-    // raised about a millimetre and darker red; no folds, no fat blotches
-    '  else if (k < 6.5) { vec3 q = p * 22.0, wq = vec3(esFbm(q * 0.7 + 4.1), esFbm(q * 0.7 + 9.7), esFbm(q * 0.7 + 1.3));',
-    '    float v1 = 1.0 - abs(2.0 * esFbm(q + 1.6 * wq) - 1.0), big = smoothstep(0.955, 0.99, v1) * smoothstep(0.38, 0.62, esFbm(p * 9.0 + vec3(7.7, 2.1, 5.3)));',
-    '    float a2 = esFade(px, 70.0), v2 = 1.0 - abs(2.0 * esFbm(p * 70.0 + 2.5 * wq) - 1.0), small = a2 * smoothstep(0.968, 0.994, v2) * smoothstep(0.45, 0.72, esFbm(p * 25.0 + vec3(3.3, 8.8, 0.4)));',
-    '    float ves = max(big, 0.65 * small), a = esFade(px, 500.0), grain = esFbm(vec3(p.x * 500.0, p.y * 170.0, p.z * 500.0));',
-    '    h = 0.85 * ves + 0.15 * a * grain; c = 0.8 + 0.28 * lo + 0.05 * a * (grain - 0.5) - 0.12 * ves; m = 0.75 * ves; r = 0.8 - 0.2 * ves; }',
+    // the heart: smooth, glossy red muscle with soft mottling; whitish, lobulated fat where the surface is hollow or
+    // sharply creased (the grooves between the chambers, round the base of the great vessels: measured on the mesh), with
+    // an irregular edge; the coronary vessels over it, branching trunks and finer branches, raised and darker red, over
+    // the fat too. Every pattern fades out before it gets smaller than a pixel (no sparkle).
+    '  else if (k < 6.5) { float cav = clamp(cv.x, 0.0, 1.0), fold = clamp(cv.y, 0.0, 1.0);',
+    '    float fat = smoothstep(0.3, 0.65, max(cav, 0.85 * fold) + (esFbm(p * 35.0) - 0.5) * 0.5);',
+    '    vec3 q = p * 22.0, wq = vec3(esFbm(q * 0.7 + 4.1), esFbm(q * 0.7 + 9.7), esFbm(q * 0.7 + 1.3));',
+    '    float v1 = 1.0 - abs(2.0 * esFbm(q + 1.6 * wq) - 1.0), big = esFade(px, 180.0) * smoothstep(0.94, 0.985, v1) * smoothstep(0.35, 0.6, esFbm(p * 9.0 + vec3(7.7, 2.1, 5.3)));',
+    '    float v2 = 1.0 - abs(2.0 * esFbm(p * 70.0 + 2.5 * wq) - 1.0), small = esFade(px, 560.0) * smoothstep(0.962, 0.99, v2) * smoothstep(0.45, 0.72, esFbm(p * 25.0 + vec3(3.3, 8.8, 0.4)));',
+    '    float ves = max(big, 0.6 * small), am = esFade(px, 480.0), mot = esFbm(p * 60.0), al = esFade(px, 600.0), lob = smoothstep(0.0, 0.55, esCell(p * 300.0).x);',
+    '    float fv = fat * (1.0 - ves);',
+    '    h = 0.8 * ves + 0.1 * am * mot + 0.6 * fat * al * lob;',
+    '    c = mix(0.82 + 0.22 * lo + 0.08 * am * (mot - 0.5), 0.9 + 0.1 * al * lob, fv) * mix(1.0, 0.55, ves);',
+    '    m = fv; r = mix(0.8 - 0.15 * ves, 1.15, fv); }',
     '  else if (k < 7.5) { float a = esFade(px, 600.0); vec2 w = esCell(p * 600.0); h = a * smoothstep(0.0, 0.6, w.x);',
     '    c = 0.88 + 0.16 * lo + 0.06 * h; m = 0.7 * smoothstep(0.6, 0.76, esFbm(p * 50.0)); r = 1.1; }',
     '  else if (k < 8.5) { float a = esFade(px, 350.0), n = esNoise(vec3(p.x * 350.0, p.y * 25.0, p.z * 350.0)); h = 0.4 * a * n; c = 0.94 + 0.06 * lo + 0.08 * a * n; }',
@@ -2737,8 +2743,17 @@ function render(ctx) {
   function tissueShader(mat, mesh) {
     var t = tissueOf(mesh.name, mesh.parent && mesh.parent.name), g = mesh.geometry;
     if (t[0] === 6 && mat.color) mat.color.setRGB(0.42, 0.035, 0.045);
-    if (!g.attributes.esRest) g.setAttribute('esRest', new THREE.BufferAttribute(g.attributes.position.array.slice(), 3));   // where the surface was: the texture stays on the tissue
-    if (!g.attributes.esCurv) g.setAttribute('esCurv', new THREE.BufferAttribute(t[0] === 9 ? surfaceShape(g) : new Float32Array(2 * g.attributes.position.count), 2));
+    // where the surface was, in metres in the file's frame (the texture stays on the tissue as it deforms). The positions of
+    // a compact GLB are 16-bit integers scaled by the part's node: read raw, every texture was thousands of times too fine
+    // (per-pixel noise, sparkling), so they are put in metres with the part's own transform.
+    if (!g.attributes.esRest) {
+      var pa = g.attributes.position, rest = new Float32Array(3 * pa.count), rv = new THREE.Vector3();
+      mesh.updateMatrix();
+      for (var ri = 0; ri < pa.count; ri++) { rv.fromBufferAttribute(pa, ri).applyMatrix4(mesh.matrix); rest[3 * ri] = rv.x; rest[3 * ri + 1] = rv.y; rest[3 * ri + 2] = rv.z; }
+      g.setAttribute('esRest', new THREE.BufferAttribute(rest, 3));
+    }
+    // the surface's shape (hollow, folded) for bone (darker in its hollows) and the heart (fat in its grooves and creases)
+    if (!g.attributes.esCurv) g.setAttribute('esCurv', new THREE.BufferAttribute(t[0] === 9 || t[0] === 6 ? surfaceShape(g) : new Float32Array(2 * g.attributes.position.count), 2));
     mat.userData.es = { esOn: TEX.uOn || (TEX.uOn = { value: TEX.on ? 1 : 0 }), esKind: { value: t[0] }, esBumpH: { value: t[1] }, esSecond: { value: new THREE.Color().fromArray(t[2] || [1, 1, 1]) } };
     mat.onBeforeCompile = function (sh) {
       var u = mat.userData.es; for (var k in u) sh.uniforms[k] = u[k];
