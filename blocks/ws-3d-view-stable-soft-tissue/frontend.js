@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 32 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 33 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -3420,7 +3420,8 @@ function render(ctx) {
             // the angle between the skin and the line of sight: up to 45 degrees clear, from 45 to 90 gradually solid
             + 'float esF = dot( esN, esV ) * faceDirection, esTh = acos( clamp( abs( esF ), 0.0, 1.0 ) );\n'
             + 'float esT = clamp( ( esTh - 0.7854 ) / 0.7854, 0.0, 1.0 ); esT = esT * esT * ( 3.0 - 2.0 * esT );\n'
-            + 'float esA = mix( 0.02, 1.0, esT ); esA = clamp( esA + esK.y * esT * ( 1.0 - esA ) * 0.4, 0.0, 1.0 );\n'
+            // the front: clear up to 45 degrees; the far side of the body (seen through the front): nearly opaque, a backdrop
+            + 'float esA = esF < 0.0 ? mix( 0.85, 1.0, esT ) : mix( 0.02, 1.0, esT ); esA = clamp( esA + esK.y * esT * ( 1.0 - esA ) * 0.4, 0.0, 1.0 );\n'
             + 'vec3 esHv = normalize( normalize( vec3( 0.4, 0.6, 1.0 ) ) + esV ); float esNH = max( dot( esN, esHv ), 0.0 );\n'
             + 'float esS = 0.12 * pow( esNH, 9.0 ) + 0.18 * pow( esNH, 80.0 );\n'
             + 'if ( esF < 0.0 ) gl_FragColor.rgb += diffuseColor.rgb * vec3( 1.0, 0.75, 0.65 ) * 0.22 * ( -esF );\n'
