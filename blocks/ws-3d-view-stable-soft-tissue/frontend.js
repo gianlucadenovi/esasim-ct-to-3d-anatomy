@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 39 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 40 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -3462,15 +3462,20 @@ function render(ctx) {
       // shows, no other tissue gets outside it
       S.skinMesh = skin; S.skinSdf = skinSdfBuild(m.skin.mesh.positions, sfa); skinClipTex(S.skinSdf);
       S.isSkin = new Uint8Array(S.n);
-      m.bodies.forEach(function (bb) { if (bb.name === 'skin') for (var q = 0; q < bb.spheres.length; q++) S.isSkin[bb.first + q] = 1; });
-      // each particle's nearest skin particle (at rest): the skin moves too, and the tissue is kept inside it where it is now
-      var skinIds = []; for (var q2 = 0; q2 < S.n; q2++) if (S.isSkin[q2]) skinIds.push(q2);
-      S.nearSkinP = new Int32Array(S.n).fill(-1);
-      if (skinIds.length) for (var p2 = 0; p2 < S.n; p2++) {
-        if (S.isSkin[p2]) continue;
-        var qx0 = S.x0[3 * p2], qy0 = S.x0[3 * p2 + 1], qz0 = S.x0[3 * p2 + 2], bdist = 1e9, bid = -1;
-        for (var s5 = 0; s5 < skinIds.length; s5++) { var k5 = 3 * skinIds[s5], e1 = S.x0[k5] - qx0, e2 = S.x0[k5 + 1] - qy0, e3 = S.x0[k5 + 2] - qz0, dd5 = e1 * e1 + e2 * e2 + e3 * e3; if (dd5 < bdist) { bdist = dd5; bid = skinIds[s5]; } }
-        S.nearSkinP[p2] = bid;
+      // the skin's metaballs: each one's outward normal and how far out of its centre the skin surface is. With a model
+      // whose skin spheres lie inside the skin (touching it from inside), from the model; with an older one (centres on
+      // the surface), from the nearest point of the skin's surface
+      S.skinN = new Float32Array(3 * S.n); S.skinH = new Float32Array(S.n);
+      var sNrm = g.attributes.normal.array, sbody = null;
+      m.bodies.forEach(function (bb) { if (bb.name === 'skin') sbody = bb; });
+      if (sbody) for (var q = 0; q < sbody.spheres.length; q++) {
+        var ki = sbody.first + q; S.isSkin[ki] = 1;
+        var mn = m.skin.normals && m.skin.normals[q];
+        if (mn) { S.skinN[3 * ki] = mn[0]; S.skinN[3 * ki + 1] = mn[1]; S.skinN[3 * ki + 2] = mn[2]; S.skinH[ki] = S.r[ki]; continue; }
+        var cx5 = S.x0[3 * ki], cy5 = S.x0[3 * ki + 1], cz5 = S.x0[3 * ki + 2], bd5 = 1e9, bv = 0;
+        for (var vv = 0; vv < spa.length; vv += 3) { var e1 = spa[vv] - cx5, e2 = spa[vv + 1] - cy5, e3 = spa[vv + 2] - cz5, dd5 = e1 * e1 + e2 * e2 + e3 * e3; if (dd5 < bd5) { bd5 = dd5; bv = vv; } }
+        S.skinN[3 * ki] = sNrm[bv]; S.skinN[3 * ki + 1] = sNrm[bv + 1]; S.skinN[3 * ki + 2] = sNrm[bv + 2];
+        S.skinH[ki] = (spa[bv] - cx5) * sNrm[bv] + (spa[bv + 1] - cy5) * sNrm[bv + 1] + (spa[bv + 2] - cz5) * sNrm[bv + 2];
       }
     }
     meshes.forEach(function (mesh) {
@@ -3699,19 +3704,9 @@ function render(ctx) {
               S.clamped = (S.clamped || 0) + 1;
             }
           }
-          if (SG && !S.isSkin[i2]) {                                                         // the skin contains it: at least half its radius inside
-            var nsp = S.nearSkinP ? S.nearSkinP[i2] : -1, qx2 = xb[o], qy2 = xb[o + 1], qz2 = xb[o + 2];
-            if (nsp >= 0) { qx2 -= xb[3 * nsp] - x0[3 * nsp]; qy2 -= xb[3 * nsp + 1] - x0[3 * nsp + 1]; qz2 -= xb[3 * nsp + 2] - x0[3 * nsp + 2]; }   // where the skin is now
-            var sdv = sdfAt(SG, qx2, qy2, qz2), lim = -0.5 * S.r[i2];
-            if (sdv > lim) {
-              var gq = sdfGrad(SG, qx2, qy2, qz2), pv = sdv - lim;
-              xb[o] -= gq[0] * pv; xb[o + 1] -= gq[1] * pv; xb[o + 2] -= gq[2] * pv;
-              var vout = vb[o] * gq[0] + vb[o + 1] * gq[1] + vb[o + 2] * gq[2];
-              if (vout > 0) { vb[o] -= vout * gq[0]; vb[o + 1] -= vout * gq[1]; vb[o + 2] -= vout * gq[2]; }
-            }
-          }
           var mx = xb[o] - ref[o], my = xb[o + 1] - ref[o + 1], mz = xb[o + 2] - ref[o + 2], m2 = mx * mx + my * my + mz * mz; if (m2 > moved) moved = m2;
         }
+        if (SG && S.skinPairs && S.skinPairs.length) softSkinContain(S);                  // every inner sphere stays inside the skin's metaballs
         if (moved > 0.25 * SOFT_MARGIN * SOFT_MARGIN) S.nbDirty = true;                   // a particle moved half the margin: new neighbours next step
       }
       var ok = true;
@@ -3729,6 +3724,55 @@ function render(ctx) {
     if (now - S.rateT > 1000) { S.rate = Math.round(S.steps * 1000 / (now - S.rateT)); S.steps = 0; S.rateT = now; softRate(); }
   }
   function softNbRef(S) { (S.nbRef || (S.nbRef = new Float32Array(3 * S.n))).set(S.xb); }
+  // The skin contains the tissue through its own metaballs. They lie inside the skin, each touching it from inside, and
+  // their blended field gives the skin's surface where the skin is now: near an inner sphere, the skin spheres around it
+  // (weighted by their field at its centre) give a point of that surface and its outward normal, a smooth surface with
+  // no gaps between them. No inner sphere may cross it: it stays wholly inside (or no further out than it was in the
+  // scan). It is a contact both ways: what goes too far out is pushed back in and the skin there pushed out, by their
+  // masses (the skin is light: it gives and bulges, and its links and the tissue around pull it back), and the speed
+  // outward between them is taken away.
+  function softSkinContain(S) {
+    var P = S.skinPairs, n = S.n, xb = S.xb, vb = S.vb, im = S.im, r = S.r, N = S.skinN, H = S.skinH;
+    var A = S.skA || (S.skA = new Float32Array(11 * n)), W = S.skW && S.skW.length >= P.length / 2 ? S.skW : (S.skW = new Float32Array(P.length));
+    var cmax = S.skCmax;
+    A.fill(0);
+    for (var q = 0; q < P.length; q += 2) {                          // pass 1: each inner sphere's surface point, normal, skin speed
+      var i = P[q], k = P[q + 1], ex = xb[3 * i] - xb[3 * k], ey = xb[3 * i + 1] - xb[3 * k + 1], ez = xb[3 * i + 2] - xb[3 * k + 2];
+      var R = r[i] + 1.8 * r[k], s = (ex * ex + ey * ey + ez * ez) / (R * R), w = 0;
+      if (s < 1) { var u = 1 - s; w = u * u * u; }
+      W[q >> 1] = w; if (!w) continue;
+      var a = 11 * i, hk = H[k];
+      A[a] += w; A[a + 1] += w * w * im[k];
+      A[a + 2] += w * (xb[3 * k] + N[3 * k] * hk); A[a + 3] += w * (xb[3 * k + 1] + N[3 * k + 1] * hk); A[a + 4] += w * (xb[3 * k + 2] + N[3 * k + 2] * hk);
+      A[a + 5] += w * N[3 * k]; A[a + 6] += w * N[3 * k + 1]; A[a + 7] += w * N[3 * k + 2];
+      A[a + 8] += w * vb[3 * k]; A[a + 9] += w * vb[3 * k + 1]; A[a + 10] += w * vb[3 * k + 2];
+    }
+    var first = !cmax;
+    if (first) { cmax = S.skCmax = new Float32Array(n); for (var j0 = 0; j0 < n; j0++) cmax[j0] = -r[j0]; }
+    var L = S.skL || (S.skL = new Float32Array(5 * n));                // per inner sphere: the push (position, speed) and normal
+    for (var i2 = 0; i2 < n; i2++) {                                  // pass 2: the inner sphere
+      var b = 11 * i2, sw = A[b]; L[5 * i2] = 0; L[5 * i2 + 1] = 0;
+      if (!(sw > 1e-9) || !im[i2]) continue;
+      var nx = A[b + 5], ny = A[b + 6], nz = A[b + 7], nl = Math.sqrt(nx * nx + ny * ny + nz * nz); if (nl < 1e-9) continue;
+      nx /= nl; ny /= nl; nz /= nl;
+      var o = 3 * i2, c = (xb[o] - A[b + 2] / sw) * nx + (xb[o + 1] - A[b + 3] / sw) * ny + (xb[o + 2] - A[b + 4] / sw) * nz;
+      if (first) { cmax[i2] = Math.min(0, Math.max(-r[i2], c)); continue; }   // the scan: how far out it already was
+      var pen = c - cmax[i2]; if (pen <= 0) continue;
+      var den = im[i2] + A[b + 1] / (sw * sw), dl = pen / den;
+      xb[o] -= im[i2] * dl * nx; xb[o + 1] -= im[i2] * dl * ny; xb[o + 2] -= im[i2] * dl * nz;
+      var vn = (vb[o] - A[b + 8] / sw) * nx + (vb[o + 1] - A[b + 9] / sw) * ny + (vb[o + 2] - A[b + 10] / sw) * nz, J = vn > 0 ? vn / den : 0;
+      vb[o] -= im[i2] * J * nx; vb[o + 1] -= im[i2] * J * ny; vb[o + 2] -= im[i2] * J * nz;
+      L[5 * i2] = dl / sw; L[5 * i2 + 1] = J / sw; L[5 * i2 + 2] = nx; L[5 * i2 + 3] = ny; L[5 * i2 + 4] = nz;
+    }
+    if (first) return;
+    for (var q2 = 0; q2 < P.length; q2 += 2) {                       // pass 3: the skin there is pushed out as much, by its share
+      var i3 = P[q2], k3 = P[q2 + 1], w3 = W[q2 >> 1], l = 5 * i3;
+      if (!w3 || (!L[l] && !L[l + 1]) || !im[k3]) continue;
+      var f = w3 * im[k3], o3 = 3 * k3;
+      xb[o3] += f * L[l] * L[l + 2]; xb[o3 + 1] += f * L[l] * L[l + 3]; xb[o3 + 2] += f * L[l] * L[l + 4];
+      vb[o3] += f * L[l + 1] * L[l + 2]; vb[o3 + 1] += f * L[l + 1] * L[l + 3]; vb[o3 + 2] += f * L[l + 1] * L[l + 4];
+    }
+  }
   // the bones' spheres in a grid of the model's frame (bones do not move in it): each cell lists the spheres that reach it
   function boneGrid(S) {
     var cell = 0.02, map = new Map(), any = false;
