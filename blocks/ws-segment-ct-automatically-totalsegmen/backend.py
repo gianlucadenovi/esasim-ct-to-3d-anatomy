@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Segment CT automatically (TotalSegmentator) (ws-segment-ct-automatically-totalsegmen) · version 5 · worker block, Python: def run(ctx)
+# Segment CT automatically (TotalSegmentator) (ws-segment-ct-automatically-totalsegmen) · version 6 · worker block, Python: def run(ctx)
 # Segments organs, bones, vessels and muscles in any CT (NIfTI, NRRD, MHA or DICOM series) with TotalSegmentator, and writes each case as <case>/ct.nii.gz + <case>/segmentations/<structure>.nii.gz, the
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-27
@@ -175,6 +175,8 @@ def pick_device(choice, log):
             raise RuntimeError("Run on NVIDIA GPU was chosen, but PyTorch on this worker sees no CUDA GPU "
                                "(a CPU-only PyTorch build, or no NVIDIA driver). Choose auto or CPU, or install PyTorch with CUDA.")
         return "gpu"
+    if not cuda and "CUDA_VISIBLE_DEVICES" in os.environ:
+        log("CUDA_VISIBLE_DEVICES is %r on this task." % os.environ["CUDA_VISIBLE_DEVICES"])
     if choice == "CPU" or not cuda:
         if choice == "auto":
             log("No CUDA GPU seen by PyTorch: segmenting on the CPU (slower; Resolution 3 mm helps).")
