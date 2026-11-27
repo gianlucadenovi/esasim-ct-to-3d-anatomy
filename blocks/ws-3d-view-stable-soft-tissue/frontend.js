@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 14 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 16 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2720,7 +2720,10 @@ function render(ctx) {
     '    float bun = esNoise(vec3(x1 * 600.0, x2 * 600.0, s * 14.0) + wav * 2.0);',
     '    float fib = esNoise(vec3(x1 * 2000.0, x2 * 2000.0, s * 70.0) + wav * 3.0);',
     '    float sheath = ab * smoothstep(0.93, 0.99, 1.0 - abs(2.0 * bun - 1.0));',
-    '    float tw = smoothstep(0.45, 0.85, max(cv.x, cv.y) + (esFbm(p * 40.0 + vec3(5.0)) - 0.5) * 0.35);',
+    // the attachment ends in fibres: its edge is set fibre by fibre (a pattern fast across the fibres, slow along them),
+    // so the white runs out in streaks along the fibre direction, away from the bone
+    '    float stk = mix(0.5, 0.7 * esNoise(vec3(x1 * 350.0, x2 * 350.0, s * 4.0)) + 0.3 * esNoise(vec3(x1 * 900.0, x2 * 900.0, s * 10.0)), esFade(px, 900.0));',
+    '    float tw = smoothstep(0.35, 0.6, max(cv.x, cv.y) + (stk - 0.5) * 0.75 + (esFbm(p * 40.0 + vec3(5.0)) - 0.5) * 0.12);',
     '    float mh = 0.55 * ab * smoothstep(0.1, 0.9, bun) + 0.3 * af * fib - 0.25 * sheath;',
     '    h = mix(mh, 0.3 + 0.2 * af * fib, tw);',
     '    c = mix(0.8 + 0.14 * lo + 0.06 * af * (fib - 0.5) + 0.05 * ab * (bun - 0.5), 0.92 + 0.06 * af * fib, tw);',
@@ -2867,7 +2870,7 @@ function render(ctx) {
       if (k === 9) bones.push(o); else if (k === 5) muscles.push(o);
     });
     if (!muscles.length) return;
-    var cell = 0.01, grid = new Map();
+    var cell = 0.017, grid = new Map();                              // (at least the attachment's reach, 16 mm: the 27 cells around cover it)
     var key = function (x, y, z) { return (Math.floor(x / cell) + 4096) * 67108864 + (Math.floor(y / cell) + 4096) * 8192 + (Math.floor(z / cell) + 4096); };
     bones.forEach(function (b) {
       var r = b.geometry.attributes.esRest.array;
@@ -2898,8 +2901,8 @@ function render(ctx) {
           for (var q = 0; q < l2.length; q += 3) { var ex = l2[q] - px, ey = l2[q + 1] - py, ez = l2[q + 2] - pz, d2 = ex * ex + ey * ey + ez * ez; if (d2 < best) best = d2; }
         }
         var sN = ((px * ax.x + py * ax.y + pz * ax.z) - lo) / span;
-        out[2 * i] = 1 - sstep(0.0015, 0.006, Math.sqrt(best));
-        out[2 * i + 1] = 0.85 * Math.max(1 - sstep(0.0, 0.07, sN), sstep(0.93, 1.0, sN));
+        out[2 * i] = 1 - sstep(0.004, 0.016, Math.sqrt(best));
+        out[2 * i + 1] = 0.85 * Math.max(1 - sstep(0.0, 0.15, sN), sstep(0.85, 1.0, sN));
       }
       cv.needsUpdate = true;
       m.material.userData.es.esAxis.value.copy(ax);
