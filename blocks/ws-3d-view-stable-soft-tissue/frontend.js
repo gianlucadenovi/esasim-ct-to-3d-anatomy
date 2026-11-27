@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 3 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 4 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2625,7 +2625,7 @@ function render(ctx) {
   // The cut plane is kept in the model's own frame (lplane, in the first model's coordinates: ref) and put in the world
   // every frame, so it turns with the model and the cut face can be turned towards you. With a CT volume of the case
   // (<case>_ct.ctvol, from the block CT volume for the 3D view) the cut shows the scan itself (cap).
-  var PARTS = { list: [], files: 0, plane: new THREE.Plane(new THREE.Vector3(0, -1, 0), 0), lplane: new THREE.Plane(new THREE.Vector3(0, -1, 0), 0), ref: null, lbox: null, at: 0, cap: null, ct: null, win: 'soft', axis: 'off', pos: 0.5, flip: false, open: {} };
+  var PARTS = { list: [], files: 0, plane: new THREE.Plane(new THREE.Vector3(0, -1, 0), 0), lplane: new THREE.Plane(new THREE.Vector3(0, -1, 0), 0), ref: null, lbox: null, at: 0, cap: null, ct: null, win: 'soft', op: 0.75, axis: 'off', pos: 0.5, flip: false, open: {} };
   var CT_WINDOWS = { soft: [-160, 240], bone: [-500, 1300], lung: [-1350, 150] };
   var partsEl = document.createElement('div');
   partsEl.style.cssText = 'position:absolute;left:12px;top:64px;width:236px;max-height:calc(100% - 140px);display:none;flex-direction:column;background:rgba(10,14,22,.72);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.08);border-radius:10px;pointer-events:auto;overflow:hidden';
@@ -2637,7 +2637,7 @@ function render(ctx) {
     + '<div class="pt-body" style="display:flex;flex-direction:column;min-height:0"><div style="padding:0 10px 6px"><input class="pt-q" type="search" placeholder="Find a part" style="width:100%;box-sizing:border-box;background:#1b2029;color:#e8ecf2;border:1px solid #2a303b;border-radius:6px;padding:3px 7px;font:inherit"></div>'
     + '<div style="display:flex;gap:6px;align-items:center;padding:0 10px 6px"><select class="pt-ax" title="Cut through the models" style="background:#1b2029;color:#e8ecf2;border:1px solid #2a303b;border-radius:6px;font:inherit;font-size:11.5px"><option value="off">No cut</option><option value="y">Cut across</option><option value="z">Front to back</option><option value="x">Side to side</option></select>'
     + '<input class="pt-pos" type="range" min="0" max="1000" value="500" disabled style="flex:1;min-width:0;accent-color:#7b8cff"><button class="pt-b pt-flip" title="Keep the other side">⇄</button></div>'
-    + '<div class="pt-ctrow" style="display:none;gap:6px;align-items:center;padding:0 10px 6px"><span style="font-size:11.5px;opacity:.75">Cut face</span><select class="pt-win" title="What the cut shows" style="flex:1;background:#1b2029;color:#e8ecf2;border:1px solid #2a303b;border-radius:6px;font:inherit;font-size:11.5px"><option value="soft">CT · soft tissue</option><option value="bone">CT · bone</option><option value="lung">CT · lung</option><option value="off">Inside of the models</option></select></div>'
+    + '<div class="pt-ctrow" style="display:none;gap:6px;align-items:center;padding:0 10px 6px"><span style="font-size:11.5px;opacity:.75">Cut face</span><select class="pt-win" title="What the cut shows" style="flex:1;background:#1b2029;color:#e8ecf2;border:1px solid #2a303b;border-radius:6px;font:inherit;font-size:11.5px"><option value="soft">CT · soft tissue</option><option value="bone">CT · bone</option><option value="lung">CT · lung</option><option value="off">Inside of the models</option></select><input class="pt-op" type="range" min="10" max="100" value="75" title="How solid the CT slice is: lower to see the models through it" style="width:64px;accent-color:#7b8cff"></div>'
     + '<div class="pt-l"></div></div>';
   ui.appendChild(partsEl);
   var ptList = partsEl.querySelector('.pt-l');
@@ -2864,6 +2864,7 @@ function render(ctx) {
   partsEl.querySelector('.pt-ax').addEventListener('change', function () { partsCut(this.value); });
   partsEl.querySelector('.pt-pos').addEventListener('input', function () { PARTS.pos = +this.value / 1000; partsCut(PARTS.axis); });
   partsEl.querySelector('.pt-win').addEventListener('change', function () { PARTS.win = this.value; partsCut(PARTS.axis); });
+  partsEl.querySelector('.pt-op').addEventListener('input', function () { PARTS.op = +this.value / 100; if (PARTS.cap) PARTS.cap.material.uniforms.op.value = PARTS.op; });
   // the models' box in the first model's own frame (the glTF frame of the file): where the cut can go
   function partsLocalBox() {
     var ref = PARTS.ref; if (!ref) return null;
@@ -2887,6 +2888,7 @@ function render(ctx) {
     var row = partsEl.querySelector('.pt-ctrow'); if (!row) return;
     row.style.display = PARTS && PARTS.ct && PARTS.axis !== 'off' ? 'flex' : 'none';
     partsEl.querySelector('.pt-win').value = PARTS ? PARTS.win : 'soft';
+    var opEl = partsEl.querySelector('.pt-op'); opEl.value = Math.round((PARTS ? PARTS.op : 0.75) * 100); opEl.style.display = PARTS && PARTS.win === 'off' ? 'none' : '';
   }
   function capDrop() {
     if (!PARTS || !PARTS.cap) return;
@@ -2902,18 +2904,19 @@ function render(ctx) {
       var geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3)); geo.setIndex([0, 1, 2, 0, 2, 3]);
       var mat = new THREE.ShaderMaterial({
-        uniforms: { vol: { value: C.tex }, bmin: { value: C.min.clone() }, bsize: { value: C.max.clone().sub(C.min) }, wlo: { value: -160 }, whi: { value: 240 }, lo: { value: C.lo }, hi: { value: C.hi } },
+        uniforms: { vol: { value: C.tex }, bmin: { value: C.min.clone() }, bsize: { value: C.max.clone().sub(C.min) }, wlo: { value: -160 }, whi: { value: 240 }, lo: { value: C.lo }, hi: { value: C.hi }, op: { value: PARTS.op } },
         vertexShader: 'varying vec3 vP;\nvoid main() { vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-        fragmentShader: 'precision highp float;\nprecision highp sampler3D;\nuniform sampler3D vol; uniform vec3 bmin; uniform vec3 bsize; uniform float wlo; uniform float whi; uniform float lo; uniform float hi;\nvarying vec3 vP;\n'
+        fragmentShader: 'precision highp float;\nprecision highp sampler3D;\nuniform sampler3D vol; uniform vec3 bmin; uniform vec3 bsize; uniform float wlo; uniform float whi; uniform float lo; uniform float hi; uniform float op;\nvarying vec3 vP;\n'
           + 'void main() {\n  vec3 u = (vP - bmin) / bsize;\n  if (any(lessThan(u, vec3(0.0))) || any(greaterThan(u, vec3(1.0)))) discard;\n  float v = texture(vol, u).r * 255.0;\n  if (v < 0.5) discard;\n'
-          + '  float hu = lo + (max(v, 1.0) - 1.0) * (hi - lo) / 254.0;\n  float g = clamp((hu - wlo) / (whi - wlo), 0.0, 1.0);\n  gl_FragColor = vec4(vec3(g), 1.0);\n}',
-        side: THREE.DoubleSide, toneMapped: false, depthWrite: true
+          + '  float hu = lo + (max(v, 1.0) - 1.0) * (hi - lo) / 254.0;\n  float g = clamp((hu - wlo) / (whi - wlo), 0.0, 1.0);\n  gl_FragColor = vec4(vec3(g), op);\n}',
+        // see-through: the models behind the slice stay visible (no depth written, drawn after the solid models)
+        side: THREE.DoubleSide, toneMapped: false, transparent: true, depthWrite: false
       });
       PARTS.cap = new THREE.Mesh(geo, mat); PARTS.cap.frustumCulled = false; PARTS.cap.renderOrder = 4;
       PARTS.ref.add(PARTS.cap);
     }
     var w = CT_WINDOWS[PARTS.win] || CT_WINDOWS.soft, u = PARTS.cap.material.uniforms;
-    u.wlo.value = w[0]; u.whi.value = w[1];
+    u.wlo.value = w[0]; u.whi.value = w[1]; u.op.value = PARTS.op;
     // the quad covers the CT's extent in the two other axes, a hair on the removed side of the plane (no flicker)
     var o = ['x', 'y', 'z'].filter(function (k) { return k !== a; }), lo3 = C.min, hi3 = C.max, at = PARTS.at - PARTS.lplane.normal[a] * 0.0004;
     var pos = PARTS.cap.geometry.attributes.position, v = new THREE.Vector3();
