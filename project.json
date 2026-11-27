@@ -14,8 +14,8 @@
         {
             "name": "1 · CT to 3D anatomy (expert labels)",
             "file": "blueprints/1-ct-to-3d-anatomy-expert-labels.json",
-            "published_version": 3,
-            "nodes": 8
+            "published_version": 4,
+            "nodes": 9
         },
         {
             "name": "2 · Soft tissue under gravity",
@@ -31,14 +31,14 @@
             "name": "CT volume for the 3D view"
         },
         {
-            "id": "ws-3d-view-stable-soft-tissue",
-            "version": 46,
-            "name": "3D view (stable soft tissue)"
-        },
-        {
             "id": "ws-soft-body-model-skin-inside",
             "version": 5,
             "name": "Soft body model (skin inside)"
+        },
+        {
+            "id": "ws-3d-view-stable-soft-tissue",
+            "version": 46,
+            "name": "3D view (stable soft tissue)"
         }
     ]
 }
