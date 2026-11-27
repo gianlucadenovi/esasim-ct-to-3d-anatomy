@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 20 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 21 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2808,7 +2808,7 @@ function render(ctx) {
     // the lungs: solid (the model file makes them see-through), pinkish grey as a living adult lung (linear RGB)
     if (t[0] === 7) { mat.transparent = false; mat.opacity = 1; mat.depthWrite = true; if (mat.color) mat.color.setRGB(0.7, 0.2, 0.19); mat.needsUpdate = true; }
     if (t[0] === 9 && mat.color) mat.color.setRGB(0.72, 0.58, 0.36);    // bone: warm ivory, a little yellow (linear RGB)
-    if (t[0] === 13) { if (mat.color) mat.color.setRGB(0.47, 0.46, 0.48); mat.roughness = 0.45; mat.clearcoat = 0.3; mat.clearcoatRoughness = 0.4; }   // cartilage: darker, pearly, satin
+    if (t[0] === 13) { if (mat.color) mat.color.setRGB(0.2, 0.19, 0.215); mat.roughness = 0.45; mat.clearcoat = 0.3; mat.clearcoatRoughness = 0.4; }   // cartilage: darker, pearly, satin
     if (t[0] === 12) { mat.transparent = false; mat.opacity = 1; mat.depthWrite = true; if (mat.color) mat.color.setRGB(0.72, 0.3, 0.28); mat.needsUpdate = true; }
     // where the surface was, in metres in the file's frame (the texture stays on the tissue as it deforms). The positions of
     // a compact GLB are 16-bit integers scaled by the part's node: read raw, every texture was thousands of times too fine
@@ -2830,7 +2830,10 @@ function render(ctx) {
           + '  vec3 esV = esVessels(vEsP, esKind, esPx); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.3, 0.025, 0.04), esV.x); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.14, 0.05, 0.15), esV.y);\n'
           + '  esHt = esT.x * esBumpH + esV.z + esMicro(vEsP, esPx); }')
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor * esT.z, 0.04, 1.0);')
-        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nif (esOn * esKind > 0.5) normal = esBump(-vViewPosition, normal, esHt, faceDirection);');
+        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nif (esOn * esKind > 0.5) normal = esBump(-vViewPosition, normal, esHt, faceDirection);')
+        // the wet clear coat has a normal of its own (the smooth surface's): it follows the relief too, a little softened,
+        // so the reflections break up over the tissue's detail instead of sliding over a smooth shell
+        .replace('#include <clearcoat_normal_fragment_maps>', '#include <clearcoat_normal_fragment_maps>\nif (esOn * esKind > 0.5) clearcoatNormal = esBump(-vViewPosition, clearcoatNormal, esHt * 0.75, faceDirection);');
     };
     mat.customProgramCacheKey = function () { return 'esasim-tissue'; };
     TEX.mats.push(mat);
@@ -3916,11 +3919,21 @@ function render(ctx) {
     if (headLight) {
       headLight.castShadow = on && renderer.shadowMap.enabled;
       if (on) {
-        var ms = quality === 'high' ? 4096 : 2048;
+        var ms = 2048;
         if (headLight.shadow.mapSize.x !== ms) { headLight.shadow.mapSize.set(ms, ms); if (headLight.shadow.map) { headLight.shadow.map.dispose(); headLight.shadow.map = null; } }
-        headLight.shadow.bias = -0.0005; headLight.shadow.normalBias = 0.002;
+        headLight.shadow.bias = -0.0001; headLight.shadow.normalBias = 0.002;
+        headLight.shadow.radius = 14; headLight.shadow.blurSamples = 20;          // soft penumbras (VSM, below)
         if (headLight.target.parent !== scene) scene.add(headLight.target);
       }
+    }
+    // soft shadows: variance shadow maps, blurred (the renderer's own kind comes back when Enhance is off); every material
+    // is rebuilt for the new kind, the shadow maps are made again
+    var wantT = on ? THREE.VSMShadowMap : (ENH.shT0 != null ? ENH.shT0 : renderer.shadowMap.type);
+    if (renderer.shadowMap.type !== wantT) {
+      if (on) ENH.shT0 = renderer.shadowMap.type;
+      renderer.shadowMap.type = wantT; renderer.shadowMap.needsUpdate = true;
+      [sun, headLight].forEach(function (l) { if (l && l.shadow && l.shadow.map) { l.shadow.map.dispose(); l.shadow.map = null; } });
+      scene.traverse(function (o) { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) { m.needsUpdate = true; }); });
     }
     // darker shadows: less fill (the sky light, the room's reflections, the sun) and a stronger key light at the camera
     if (on && !ENH.fill) {
