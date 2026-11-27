@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 26 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 27 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2687,19 +2687,30 @@ function render(ctx) {
     if (group === 'vessels') return [8, 0.00025, null];
     return [11, 0.0003, null];
   }
+  // One 64x64x64 texture of random values (4 independent channels, the same on every load), wrapping: the tissue shaders
+  // read their noise from it (one texture fetch, smoothed by the hardware's filtering) instead of hashing 8 corners
+  var ES_NOISE = (function () {
+    var N = 64, d = new Uint8Array(N * N * N * 4), s = 1234567;
+    for (var i = 0; i < d.length; i++) { s = (s * 1103515245 + 12345) >>> 0; d[i] = (s >>> 16) & 255; }
+    var D3 = THREE.Data3DTexture || THREE.DataTexture3D, t = new D3(d, N, N, N);
+    t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType; t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter;
+    t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping; t.wrapR = THREE.RepeatWrapping; t.unpackAlignment = 1; t.generateMipmaps = false; t.needsUpdate = true;
+    return { value: t };
+  })();
   var TISSUE_GLSL = [
     'varying vec3 vEsP; varying vec2 vEsC;',
+    'uniform highp sampler3D esNoiseTex;',
     // ambient occlusion of a tissue (1: open, lower: pores, hollows, crevices), set by esTissue for the pixel
     'float esAOv = 1.0;',
     'uniform float esOn; uniform float esKind; uniform float esBumpH; uniform vec3 esSecond; uniform vec3 esAxis;',
-    'float esH(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }',
-    'float esNoise(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);',
-    '  return mix(mix(mix(esH(i), esH(i + vec3(1,0,0)), f.x), mix(esH(i + vec3(0,1,0)), esH(i + vec3(1,1,0)), f.x), f.y),',
-    '             mix(mix(esH(i + vec3(0,0,1)), esH(i + vec3(1,0,1)), f.x), mix(esH(i + vec3(0,1,1)), esH(i + vec3(1,1,1)), f.x), f.y), f.z); }',
+    // a random value per lattice point, and value noise: the lattice point's texel, or between texels with the fraction
+    // smoothed (the hardware's trilinear filtering then gives the smooth noise in one fetch)
+    'float esH(vec3 p) { return texture(esNoiseTex, (floor(p) + 0.5) / 64.0).r; }',
+    'float esNoise(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return texture(esNoiseTex, (i + f + 0.5) / 64.0).a; }',
     'float esFbm(vec3 p) { float a = 0.5, t = 0.0; for (int i = 0; i < 4; i++) { t += a * esNoise(p); p = p * 2.03 + vec3(1.7, 9.2, 3.1); a *= 0.5; } return t / 0.9375; }',
     'vec2 esCell(vec3 p) { vec3 i = floor(p), f = fract(p); float d1 = 8.0, d2 = 8.0;',
     '  for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {',
-    '    vec3 g = vec3(float(x), float(y), float(z)), o = vec3(esH(i + g), esH(i + g + 11.3), esH(i + g + 27.1)), r = g + o - f; float d = dot(r, r);',
+    '    vec3 g = vec3(float(x), float(y), float(z)), o = texture(esNoiseTex, (i + g + 0.5) / 64.0).rgb, r = g + o - f; float d = dot(r, r);',
     '    if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d; }',
     '  return vec2(sqrt(d1), sqrt(d2)); }',
     // fine detail fades out where it would be smaller than a pixel or two (no shimmer when far away)
@@ -2807,6 +2818,28 @@ function render(ctx) {
     '  float det = dot(sx, r1) * fd; vec2 dh = vec2(dFdx(h), dFdy(h)); vec3 g = sign(det) * (dh.x * r1 + dh.y * r2);',
     '  return normalize(abs(det) * n - g); }'
   ].join('\n');
+  // human skin: x relief, y extra opacity, z gloss factor; and its colour
+  var SKIN_GLSL = [
+    'vec4 esSkin(vec3 p, float px) {',
+    // pores, about 0.8 mm apart; fine furrows crossing in two directions (the skin's microrelief), a little warped
+    '  float pore = esFade(px, 2400.0) * (1.0 - smoothstep(0.06, 0.22, esCell(p * 1200.0).x));',
+    '  vec3 w = vec3(esNoise(p * 60.0), esNoise(p * 60.0 + 7.0), esNoise(p * 60.0 + 13.0));',
+    '  float l1 = 1.0 - abs(2.0 * esNoise(vec3((p.x + p.y) * 500.0, p.z * 60.0, p.y * 60.0) + 2.0 * w) - 1.0);',
+    '  float l2 = 1.0 - abs(2.0 * esNoise(vec3((p.x - p.z) * 500.0, p.y * 60.0, p.x * 60.0) + 2.0 * w + 5.0) - 1.0);',
+    '  float fur = esFade(px, 1000.0) * max(smoothstep(0.9, 0.99, l1), smoothstep(0.9, 0.99, l2));',
+    '  float bmp = esFbmP(p, px, 300.0);',
+    '  float h = 0.5 + 0.35 * (bmp - 0.5) - 0.6 * pore - 0.5 * fur;',
+    '  float rough = 1.0 + 0.5 * (esFbm(p * 15.0) - 0.5) + 0.2 * pore + 0.15 * fur;',
+    '  return vec4(h, 0.25 * pore + 0.3 * fur, rough, 0.0); }',
+    // melanin (brownish patches), freckles, redness where blood shows through
+    'vec3 esSkinColor(vec3 base, vec3 p, float px) {',
+    '  float mel = esFbm(p * 8.0 + 3.0), hb = esFbm(p * 14.0 + 9.0);',
+    '  float frk = esFade(px, 600.0) * (1.0 - smoothstep(0.08, 0.2, esCell(p * 300.0 + 4.0).x)) * smoothstep(0.55, 0.8, esFbm(p * 20.0));',
+    '  vec3 c = base * (0.92 + 0.16 * (esFbmP(p, px, 120.0) - 0.5));',
+    '  c = mix(c, c * vec3(0.78, 0.62, 0.5), 0.35 * smoothstep(0.45, 0.75, mel) + 0.4 * frk);',
+    '  c = mix(c, c * vec3(1.08, 0.82, 0.8), 0.3 * smoothstep(0.5, 0.8, hb));',
+    '  return c; }'
+  ].join('\n');
   function tissueShader(mat, mesh) {
     var t = tissueOf(mesh.name, mesh.parent && mesh.parent.name), g = mesh.geometry;
     if (t[0] === 6 && mat.color) mat.color.setRGB(0.42, 0.035, 0.045);
@@ -2837,7 +2870,7 @@ function render(ctx) {
     }
     // the surface's shape (hollow, folded) for bone (darker in its hollows) and the heart (fat in its grooves and creases)
     if (!g.attributes.esCurv) g.setAttribute('esCurv', new THREE.BufferAttribute(t[0] === 9 || t[0] === 6 ? surfaceShape(g) : new Float32Array(2 * g.attributes.position.count), 2));
-    mat.userData.es = { esOn: TEX.uOn || (TEX.uOn = { value: TEX.on ? 1 : 0 }), esKind: { value: t[0] }, esBumpH: { value: t[1] }, esSecond: { value: new THREE.Color().fromArray(t[2] || [1, 1, 1]) }, esAxis: { value: new THREE.Vector3(0, 1, 0) } };
+    mat.userData.es = { esOn: TEX.uOn || (TEX.uOn = { value: TEX.on ? 1 : 0 }), esKind: { value: t[0] }, esBumpH: { value: t[1] }, esSecond: { value: new THREE.Color().fromArray(t[2] || [1, 1, 1]) }, esAxis: { value: new THREE.Vector3(0, 1, 0) }, esNoiseTex: ES_NOISE };
     mat.onBeforeCompile = function (sh) {
       var u = mat.userData.es; for (var k in u) sh.uniforms[k] = u[k];
       sh.vertexShader = 'attribute vec3 esRest;\nattribute vec2 esCurv;\nvarying vec3 vEsP;\nvarying vec2 vEsC;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvEsP = esRest; vEsC = esCurv;');
@@ -3341,14 +3374,28 @@ function render(ctx) {
       g.setIndex(m.skin.mesh.faces); g.computeVertexNormals();
       // matte skin with a white sheen where the light that follows the camera glances off it (a broad soft lobe and a small
       // bright core); see-through where you look straight in, denser at the edges; the sheen shows however see-through it is
-      var skinMat = new THREE.MeshStandardMaterial({ color: 0xd9a888, roughness: 0.85, metalness: 0, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide });
+      // the skin: clear where it faces you, gradually opaque as it turns away (the edges) and on the far side of the body
+      // (from its normals); a human skin texture over its colour (melanin and blood mottling, freckles), its relief (pores,
+      // fine crossing furrows: a normal map), its gloss (oilier and drier places) and a little extra opacity in the pores
+      // and furrows; the white sheen where the light at the camera glances off it, however see-through it is
+      g.setAttribute('esRest', new THREE.BufferAttribute(Float32Array.from(m.skin.mesh.positions), 3));
+      var skinMat = new THREE.MeshStandardMaterial({ color: 0xd9a888, roughness: 0.6, metalness: 0, transparent: true, opacity: 1, depthWrite: false, side: THREE.DoubleSide });
       skinMat.onBeforeCompile = function (sh) {
-        sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', '#include <opaque_fragment>\n{ vec3 esV = normalize( vViewPosition ), esN = normalize( normal ); float facing = abs( dot( esN, esV ) ); float rim = 1.0 - facing; gl_FragColor.a *= mix( 0.25, 2.2, rim * rim );\n'
-          + 'vec3 esH = normalize( normalize( vec3( 0.4, 0.6, 1.0 ) ) + esV ); float esNH = max( dot( esN, esH ), 0.0 );\n'
-          + 'float esS = 0.42 * pow( esNH, 9.0 ) + 0.55 * pow( esNH, 80.0 );\n'
-          + 'gl_FragColor.rgb += vec3( esS ); gl_FragColor.a = clamp( max( gl_FragColor.a, esS * 0.9 ), 0.0, 1.0 ); }');
+        sh.uniforms.esNoiseTex = ES_NOISE; sh.uniforms.esOn = TEX.uOn || (TEX.uOn = { value: TEX.on ? 1 : 0 });
+        sh.vertexShader = 'attribute vec3 esRest;\nvarying vec3 vEsP;\nvarying vec2 vEsC;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvEsP = esRest; vEsC = vec2(0.0);');
+        sh.fragmentShader = TISSUE_GLSL + '\n' + SKIN_GLSL + '\n' + sh.fragmentShader
+          .replace('#include <color_fragment>', '#include <color_fragment>\nvec4 esK = vec4(0.5, 0.0, 1.0, 0.0); float esPx = length(fwidth(vEsP));\nif (esOn > 0.5) { esK = esSkin(vEsP, esPx); diffuseColor.rgb = esSkinColor(diffuseColor.rgb, vEsP, esPx); }')
+          .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor * esK.z, 0.25, 1.0);')
+          .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nif (esOn > 0.5) { normal = esBump(-vViewPosition, normal, esK.x * 0.00025, faceDirection); roughnessFactor = max(roughnessFactor, min(0.6, length(fwidth(normal)) * 0.9)); }')
+          .replace('#include <opaque_fragment>', '#include <opaque_fragment>\n{ vec3 esV = normalize( vViewPosition ), esN = normalize( normal );\n'
+            // s: 1 facing you, 0 at the edge, -1 on the far side (a back face seen through the front)
+            + 'float esF = dot( esN, esV ) * faceDirection, esT = clamp( 0.5 - 0.5 * esF, 0.0, 1.0 );\n'
+            + 'float esA = mix( 0.05, 0.92, pow( esT, 0.75 ) ); esA = clamp( esA + esK.y * ( 1.0 - esA ) * 0.6, 0.0, 1.0 );\n'
+            + 'vec3 esHv = normalize( normalize( vec3( 0.4, 0.6, 1.0 ) ) + esV ); float esNH = max( dot( esN, esHv ), 0.0 );\n'
+            + 'float esS = 0.3 * pow( esNH, 9.0 ) + 0.45 * pow( esNH, 80.0 );\n'
+            + 'gl_FragColor.rgb += vec3( esS ); gl_FragColor.a = clamp( max( esA, esS * 0.9 ), 0.0, 1.0 ); }');
       };
-      skinMat.customProgramCacheKey = function () { return 'esasim-skin-gloss'; };
+      skinMat.customProgramCacheKey = function () { return 'esasim-skin-2'; };
       var skin = new THREE.Mesh(g, skinMat);
       skin.name = 'skin'; skin.renderOrder = 5;
       var grp = new THREE.Group(); grp.name = 'skin'; grp.add(skin); obj.add(grp);
