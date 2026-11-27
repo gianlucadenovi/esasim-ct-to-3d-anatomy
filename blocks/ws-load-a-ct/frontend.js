@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// Load a CT (ws-load-a-ct) · version 3 · view, JavaScript: function render(ctx)
+// Load a CT (ws-load-a-ct) · version 4 · view, JavaScript: function render(ctx)
 // The View's loading dialog for CT scans: drop or choose a folder from your computer (a whole CD/DVD export is fine), see its series, tick the ones to segment and press Load; or give a folder on a worke
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -50,6 +50,7 @@ function render(ctx) {
   .ct .btn{border:1px solid var(--ln);background:rgba(127,127,127,.12);color:inherit;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;white-space:nowrap}
   .ct .btn:hover{background:rgba(127,127,127,.25)}.ct .btn:disabled{opacity:.4;cursor:default}
   .ct .btn.pri{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+  .ct .btn.big{font-size:13.5px;padding:7px 16px;box-shadow:0 0 0 3px rgba(76,141,255,.3)}
   .ct .hint{opacity:.68;font-size:11.5px;line-height:1.5;margin:6px 0}
   .ct .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}
   .ct label.f{display:flex;flex-direction:column;gap:2px;font-size:11px;opacity:.9}
@@ -171,7 +172,10 @@ function render(ctx) {
     const files = chosenFiles();
     if (!files.length) { note = 'Tick at least one series.'; paint(); return; }
     if (!runActive()) { note = 'No run is going on: press Start.'; paint(); return; }
-    st.pending = true; st.session = Math.random().toString(36).slice(2, 10);
+    const d = readLive(), again = !!(d && d.state === 'receiving' && d.session && d.session === st.session && +d.files === files.length);
+    st.pending = true; note = '';
+    if (!again) st.session = Math.random().toString(36).slice(2, 10);
+    MEM.resume = again;
     st.uids = scan.series.filter(s => s.on).map(s => s.key); st.labels = scan.series.filter(s => s.on).map(s => s.label);
     MEM.files = files; MEM.session = st.session; save();
     resume();
@@ -181,20 +185,24 @@ function render(ctx) {
     const files = haveFiles() ? MEM.files : null;
     if (!files || !files.length) { paint(); return; }           // (the dialog asks to choose the folder)
     if (!loaderWaiting()) { paint(); return; }                   // (the loader is not listening yet: next tick)
-    sending = { session: st.session, n: files.length, sent: 0, bytes: 0, total: files.reduce((n, f) => n + f.file.size, 0), round: 1 };
+    sending = { session: st.session, n: files.length, sent: 0, bytes: 0, total: files.reduce((n, f) => n + f.file.size, 0), round: 1, resume: !!MEM.resume };
+    MEM.resume = false;
     paint();
     try {
-      await ctx.send(CHANNEL, { cmd: 'begin', session: st.session, count: files.length, bytes: sending.total });
-      await sendSome(files, files.map((_, i) => i));
-      for (let round = 2; round <= 4; round++) {                 // the loader says which files are missing
+      if (sending.resume) await post({ cmd: 'end', session: st.session });    // (the loader says what it still needs)
+      else {
+        await post({ cmd: 'begin', session: st.session, count: files.length, bytes: sending.total });
+        await sendSome(files, files.map((_, i) => i));
+      }
+      for (let round = 2; round <= 8; round++) {                 // the loader says which files are missing
         const miss = await waitMissing();
         if (!miss || !miss.length) break;
         sending.round = round; paint();
-        if (miss === 'all') await ctx.send(CHANNEL, { cmd: 'begin', session: st.session, count: files.length, bytes: sending.total });
+        if (miss === 'all') await post({ cmd: 'begin', session: st.session, count: files.length, bytes: sending.total });
         await sendSome(files, miss === 'all' ? files.map((_, i) => i) : miss);
       }
     } catch (e) {
-      note = 'Sending stopped: ' + ((e && e.message) || e) + (runActive() ? '' : ' (the run ended)');
+      note = 'Sending stopped: ' + ((e && e.message) || e) + (runActive() ? '. Press ③ Send again: it goes on with the files the worker does not have yet.' : ' (the run ended)');
     }
     sending = null; paint();
   }
@@ -206,17 +214,22 @@ function render(ctx) {
       const f = files[i];
       let bytes = new Uint8Array(await f.file.arrayBuffer());
       if (gz) bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
-      await ctx.send(CHANNEL, { cmd: 'file', session: st.session, i, rel: f.rel, size: bytes.length, gz });
-      for (let off = 0; off < bytes.length || off === 0; off += PIECE) {
-        const piece = bytes.subarray(off, off + PIECE);
-        flying.push(Promise.resolve(ctx.send(CHANNEL, { cmd: 'put', session: st.session, i, off, data: b64(piece) })));
-        if (flying.length >= WIN) await flying.shift();
-        if (!bytes.length) break;
+      try {
+        await post({ cmd: 'file', session: st.session, i, rel: f.rel, size: bytes.length, gz });
+        for (let off = 0; off < bytes.length || off === 0; off += PIECE) {
+          const piece = bytes.subarray(off, off + PIECE);
+          flying.push(post({ cmd: 'put', session: st.session, i, off, data: b64(piece) }).catch(e => { sending.failed = (sending.failed || 0) + 1; sending.err = (e && e.message) || String(e); }));
+          if (flying.length >= WIN) await flying.shift();
+          if (!bytes.length) break;
+        }
+      } catch (e) {                                              // (left for the next round)
+        if (!runActive()) throw e;
+        sending.failed = (sending.failed || 0) + 1; sending.err = (e && e.message) || String(e);
       }
       sending.sent++; sending.bytes += f.file.size; paintProgress();
     }
     await Promise.all(flying);
-    await ctx.send(CHANNEL, { cmd: 'end', session: st.session });
+    await post({ cmd: 'end', session: st.session });
   }
   async function waitMissing() {     // after "end": the loader either moves on, or lists the files to send again
     for (let t = 0; t < 240; t++) {
@@ -230,6 +243,12 @@ function render(ctx) {
       if (!runActive()) return null;
     }
     return null;
+  }
+  async function post(m, tries = 6) {     // one message to the loader: a failed one is tried again, with a growing pause
+    for (let k = 0; ; k++) {
+      try { const r = await ctx.send(CHANNEL, m); if (r && r.ok === false) throw new Error(r.error || 'not sent'); return; }
+      catch (e) { if (k >= tries - 1 || !runActive()) throw e; await new Promise(r => setTimeout(r, 500 * Math.pow(2, k))); }
+    }
   }
   function b64(u) { let s = ''; for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); }
 
@@ -262,7 +281,7 @@ function render(ctx) {
     let line = '', pct = 0;
     if (now === 'starting') line = active ? 'The run started: waiting for the loader on the worker…' : 'Starting…';
     if (now === 'send') {
-      if (sending) { pct = sending.total ? 100 * sending.bytes / sending.total : 0; line = `Sending ${sending.sent} of ${sending.n} files (${mb(sending.bytes)} of ${mb(sending.total)})${sending.round > 1 ? ` · round ${sending.round}: files that did not arrive` : ''}`; }
+      if (sending) { pct = sending.total ? 100 * sending.bytes / sending.total : 0; line = sending.resume && !sending.sent ? 'Asking the worker which files it still needs…' : `Sending ${sending.sent} of ${sending.n} files (${mb(sending.bytes)} of ${mb(sending.total)})${sending.round > 1 ? ` · round ${sending.round}: the files that did not arrive` : ''}${sending.failed ? ` · ${sending.failed} to send again (${esc(sending.err || '')})` : ''}`; }
       else if (needFolder()) line = 'The run is waiting for your scans: <b>drop the folder</b> in the box below, or press <b>Choose a folder…</b>, then tick the series and press <b>③ Send</b>.';
       else line = d && d.state === 'receiving' ? `The worker has ${d.received || 0} of ${d.files || '?'} files.` : 'The worker is ready.';
     }
@@ -296,7 +315,7 @@ function render(ctx) {
         <div class="hint">A whole CD/DVD export works as it is (DICOMDIR, DICOM/, IHE_PDI/, viewer files): the images are grouped into series by their DICOM IDs, copies are read once, and pictures, pages and reports are left out. Also NIfTI, NRRD, MHA/MHD and zips.</div>
       </div>
       ${busy ? `<div class="hint">${esc(busy)}</div>` : ''}${tbl}
-      ${scan && !sending ? `<div class="row"><button class="btn pri" data-a="load"${nOn ? '' : ' disabled'}>${waiting ? `③ Send ${nOn} series and segment (${mb(size)})` : `Start and send ${nOn} series (${mb(size)})`}</button>
+      ${scan && !sending ? `<div class="row"><button class="btn pri big" data-a="load"${nOn ? '' : ' disabled'}>${waiting ? `③ Send ${nOn} series and segment (${mb(size)})` : `Start and send ${nOn} series (${mb(size)})`}</button>
       <span class="hint">${waiting ? '' : 'The page shows the views again when the run starts and your browser forgets the files: you will choose the folder once more and press Send. (Press ▶ Start first to choose it only once.) '}Only the images of the ticked series are sent, compressed, to the worker that runs the flow. Patient names and IDs are not read here, and the worker writes pixels and geometry only.</span></div>` : ''}`;
   }
   function seriesTable() {
