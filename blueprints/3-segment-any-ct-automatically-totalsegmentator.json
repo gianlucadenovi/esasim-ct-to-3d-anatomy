@@ -6,14 +6,14 @@
     "name": "3 · Segment any CT automatically (TotalSegmentator)",
     "description": "Any CT (NIfTI, NRRD, MHA or DICOM) segmented by the TotalSegmentator network into organs, bones, vessels and muscles, turned into the same 3D anatomy as flow 1, and scored against expert labels when the dataset has them.",
     "published_version": 1,
-    "updated": "2026-11-27 20:16:31",
+    "updated": "2026-11-27 20:57:55",
     "graph": {
         "nodes": [
             {
                 "id": "dl",
                 "type": "download-files",
-                "x": 0,
-                "y": 200,
+                "x": -80,
+                "y": 458,
                 "params": {
                     "sources": "https://zenodo.org/records/10047263",
                     "fetch": "*.zip",
@@ -50,7 +50,7 @@
                 "id": "rd",
                 "type": "medical-read",
                 "x": 780,
-                "y": -120,
+                "y": -420,
                 "params": {
                     "window": "CT soft tissue",
                     "skip": "segmentations, segmentation, masks, mask, labels, label",
@@ -62,7 +62,7 @@
                 "id": "mesh",
                 "type": "ws-expert-labels-to-3d-models-clean",
                 "x": 780,
-                "y": 140,
+                "y": -152,
                 "params": {
                     "structures": "",
                     "min_ml": 1,
@@ -79,7 +79,7 @@
                 "id": "ctvol",
                 "type": "ws-ct-volume-for-the-3d-view",
                 "x": 780,
-                "y": 380,
+                "y": 140,
                 "params": {
                     "file": "ct.nii.gz",
                     "size": 256
@@ -90,7 +90,7 @@
                 "id": "skin",
                 "type": "ws-soft-body-model-skin-inside",
                 "x": 780,
-                "y": 600,
+                "y": 342,
                 "params": {
                     "structures": "",
                     "spheres": 40,
@@ -106,7 +106,7 @@
                 "id": "score",
                 "type": "ws-score-segmentation-against-experts",
                 "x": 780,
-                "y": 820,
+                "y": 620,
                 "params": {
                     "min_ml": 0.5
                 },
@@ -116,7 +116,7 @@
                 "id": "slices",
                 "type": "image-view",
                 "x": 1220,
-                "y": -220,
+                "y": -480,
                 "params": {
                     "size": "large"
                 },
@@ -125,8 +125,8 @@
             {
                 "id": "found",
                 "type": "table-view",
-                "x": 1220,
-                "y": 20,
+                "x": 780,
+                "y": 860,
                 "params": {
                     "rows": 50
                 },
@@ -136,7 +136,7 @@
                 "id": "anatomy",
                 "type": "ws-3d-view-stable-soft-tissue",
                 "x": 1220,
-                "y": 240,
+                "y": 80,
                 "params": {
                     "environment": "night",
                     "quality": "high",
@@ -151,7 +151,7 @@
                 "id": "models",
                 "type": "table-view",
                 "x": 1220,
-                "y": 500,
+                "y": 303,
                 "params": {
                     "rows": 50
                 },
@@ -161,7 +161,7 @@
                 "id": "scoretab",
                 "type": "table-view",
                 "x": 1220,
-                "y": 760,
+                "y": 520,
                 "params": {
                     "rows": 50
                 },
@@ -348,7 +348,38 @@
         ],
         "notes": [],
         "dash": {
-            "items": []
+            "items": {
+                "slices": {
+                    "x": 0,
+                    "y": 13,
+                    "w": 6,
+                    "h": 8
+                },
+                "found": {
+                    "x": 6,
+                    "y": 0,
+                    "w": 6,
+                    "h": 7
+                },
+                "anatomy": {
+                    "x": 0,
+                    "y": 0,
+                    "w": 6,
+                    "h": 13
+                },
+                "models": {
+                    "x": 6,
+                    "y": 14,
+                    "w": 6,
+                    "h": 7
+                },
+                "scoretab": {
+                    "x": 6,
+                    "y": 7,
+                    "w": 6,
+                    "h": 7
+                }
+            }
         }
     }
 }
