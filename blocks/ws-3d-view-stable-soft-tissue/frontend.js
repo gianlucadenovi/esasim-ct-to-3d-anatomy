@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 47 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 48 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -3941,6 +3941,7 @@ function render(ctx) {
       bd.mesh.geometry.boundingSphere = null; bd.mesh.geometry.boundingBox = null;
     });
     // the surfaces near the skin stay 1 mm inside its polygons (only those of spheres that are near it now)
+    if (S.skinMesh && S.skinF) skinTriGrid(S, d);                       // the skin's polygons as they are now
     var G = S.stg, NT = S.nearTri;
     if (G && G.ready && NT && S.skinMesh && S.skinMesh.visible) {
       var SP = S.skinMesh.geometry.attributes.position.array;
@@ -3960,7 +3961,6 @@ function render(ctx) {
         if (ch) bd.mesh.geometry.attributes.position.needsUpdate = true;
       });
     }
-    if (S.skinMesh && S.skinF) skinTriGrid(S, d);                       // the skin's polygons as they are now, for the next steps
     ballsUpdate(S);
   }
   // The skin's triangles (as drawn now, in the model's frame) in a grid of 3 cm cells, with their outward normals
@@ -4068,8 +4068,7 @@ function render(ctx) {
       if (vn < 0) { vb[o] -= vn * dx; vb[o + 1] -= vn * dy; vb[o + 2] -= vn * dz; }
       if (sb && corr > 0) {                                             // the skin there gives a little
         var bestV = -1, bd2 = 1e9;
-        for (var tq = 0; tq < 1; tq++) { }
-        var skx = H.x, sky = H.y, skz = H.z, nearest = 0;
+        var skx = H.x, sky = H.y, skz = H.z;
         var vi = sb.idx, push = 0.15 * corr;
         // the skin vertex nearest the contact: its spheres move out along the skin's normal
         var Gm = S.stg, l = Gm.map.get(((Math.floor(skx / Gm.c) + 1024) * 2048 + Math.floor(sky / Gm.c) + 1024) * 2048 + Math.floor(skz / Gm.c) + 1024);
