@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Load CT scans (DICOM discs, NIfTI, NRRD, MHA) (ws-load-ct-scans-dicom-discs-nifti-nrrd) · version 1 · worker block, Python: def run(ctx)
+# Load CT scans (DICOM discs, NIfTI, NRRD, MHA) (ws-load-ct-scans-dicom-discs-nifti-nrrd) · version 2 · worker block, Python: def run(ctx)
 # Turns any CT source (a CD/DVD export with DICOMDIR, DICOM/ and IHE_PDI/, loose DICOM, NIfTI, NRRD, MHA, zips) into one volume per case, <case>/ct.nii.gz: series grouped by their DICOM IDs, copies read
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-27
@@ -478,7 +478,7 @@ def receive(ctx, wait_s):
         if ended and count and all(got.values()):
             break
         now = time.time()
-        if now - beat > 0.5:
+        if now - beat > (0.5 if session else 2.0):                  # (every 2 s while it waits, faster while files come)
             missing = [i for i, ok in got.items() if not ok] if ended else []
             tell(ctx, "receiving" if session else "waiting", session=session, files=count,
                  received=sum(got.values()), bytes=have, total=total, missing=missing[:2000])

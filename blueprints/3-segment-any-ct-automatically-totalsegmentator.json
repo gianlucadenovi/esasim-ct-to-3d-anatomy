@@ -6,14 +6,14 @@
     "name": "3 · Segment any CT automatically (TotalSegmentator)",
     "description": "Any CT (NIfTI, NRRD, MHA or DICOM) segmented by the TotalSegmentator network into organs, bones, vessels and muscles, turned into the same 3D anatomy as flow 1, and scored against expert labels when the dataset has them.",
     "published_version": 2,
-    "updated": "2026-11-27 22:51:21",
+    "updated": "2026-11-27 22:53:20",
     "graph": {
         "nodes": [
             {
                 "id": "dl",
                 "type": "download-files",
-                "x": -390,
-                "y": 980,
+                "x": -380,
+                "y": 894,
                 "params": {
                     "sources": "https://zenodo.org/records/10047263",
                     "fetch": "*.zip",
@@ -35,7 +35,7 @@
                 "id": "load",
                 "type": "ws-load-ct-scans-dicom-discs-nifti-nrrd",
                 "x": 0,
-                "y": 200,
+                "y": 209,
                 "params": {
                     "source": "Files wired in",
                     "folder": "",
@@ -78,7 +78,7 @@
                 "id": "rd",
                 "type": "medical-read",
                 "x": 1470,
-                "y": -380,
+                "y": -180,
                 "params": {
                     "window": "CT soft tissue",
                     "skip": "segmentations, segmentation, masks, mask, labels, label",
@@ -90,7 +90,7 @@
                 "id": "mesh",
                 "type": "ws-expert-labels-to-3d-models-clean",
                 "x": 1470,
-                "y": -112,
+                "y": 88,
                 "params": {
                     "structures": "",
                     "min_ml": 1,
@@ -107,7 +107,7 @@
                 "id": "ctvol",
                 "type": "ws-ct-volume-for-the-3d-view",
                 "x": 1470,
-                "y": 180,
+                "y": 380,
                 "params": {
                     "file": "ct.nii.gz",
                     "size": 256
@@ -118,7 +118,7 @@
                 "id": "skin",
                 "type": "ws-soft-body-model-skin-inside",
                 "x": 1470,
-                "y": 382,
+                "y": 582,
                 "params": {
                     "structures": "",
                     "spheres": 40,
@@ -133,8 +133,8 @@
             {
                 "id": "score",
                 "type": "ws-score-segmentation-against-experts",
-                "x": 1460,
-                "y": 980,
+                "x": 1470,
+                "y": 860,
                 "params": {
                     "min_ml": 0.5
                 },
@@ -143,8 +143,8 @@
             {
                 "id": "loadview",
                 "type": "ws-load-a-ct",
-                "x": 770,
-                "y": 1380,
+                "x": 720,
+                "y": 716,
                 "params": {
                     "loader_node": "load",
                     "seg_node": "seg"
@@ -155,7 +155,7 @@
                 "id": "slices",
                 "type": "image-view",
                 "x": 1910,
-                "y": -360,
+                "y": -160,
                 "params": {
                     "size": "large"
                 },
@@ -164,8 +164,8 @@
             {
                 "id": "found",
                 "type": "table-view",
-                "x": 1460,
-                "y": 1220,
+                "x": 1470,
+                "y": 1100,
                 "params": {
                     "rows": 50
                 },
@@ -175,7 +175,7 @@
                 "id": "anatomy",
                 "type": "ws-3d-view-stable-soft-tissue",
                 "x": 1910,
-                "y": 120,
+                "y": 320,
                 "params": {
                     "environment": "night",
                     "quality": "high",
@@ -190,7 +190,7 @@
                 "id": "models",
                 "type": "table-view",
                 "x": 1910,
-                "y": 343,
+                "y": 543,
                 "params": {
                     "rows": 50
                 },
@@ -199,8 +199,8 @@
             {
                 "id": "scoretab",
                 "type": "table-view",
-                "x": 1900,
-                "y": 880,
+                "x": 1910,
+                "y": 760,
                 "params": {
                     "rows": 50
                 },

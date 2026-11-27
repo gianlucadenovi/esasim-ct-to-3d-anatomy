@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// Load a CT (ws-load-a-ct) · version 1 · view, JavaScript: function render(ctx)
+// Load a CT (ws-load-a-ct) · version 2 · view, JavaScript: function render(ctx)
 // The View's loading dialog for CT scans: drop or choose a folder from your computer (a whole CD/DVD export is fine), see its series, tick the ones to segment and press Load; or give a folder on a worke
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -34,7 +34,7 @@ function render(ctx) {
 
   let st = Object.assign({ tab: 'local', task: 'total', res: RES[0], dev: 'auto', folder: '', choice: CHOICE[0], only: '' }, ctx.state || {});
   let scan = MEM.scan || null;            // what the picked folder holds
-  let busy = '', note = '', sending = null, live = null;
+  let busy = '', note = '', sending = null, live = null, lastMode = '';
 
   const CSS = `
   .ct{--acc:#4c8dff;--ok:#2b8a4a;--warn:#c98a1b;--bad:#c33;--ln:var(--line,#8884);height:100%;display:flex;flex-direction:column;box-sizing:border-box;font-size:12.5px;min-height:0}
@@ -104,16 +104,20 @@ function render(ctx) {
   // ── picking and reading the folder ───────────────────────────────────────────────────────────────────────────
   async function picked(list) {
     if (!list.length) return;
+    const seenRel = {};                                          // files of the same name from different folders
+    list.forEach(x => { const k = x.rel.toLowerCase(); if (seenRel[k]) x.rel = 'f' + (++seenRel[k]) + '/' + x.rel; else seenRel[k] = 1; });
     busy = 'Reading the headers…'; note = ''; paint();
     try {
       scan = await scanFiles(list, (i, n) => { busy = `Reading the headers: ${i} of ${n} files`; paintBusy(); });
       MEM.scan = scan;
-      if (st.pending && st.uids && st.uids.length) {          // picked again after the page reloaded: same series
-        scan.series.forEach(s => { s.on = st.uids.includes(s.key); });
+      if (st.pending && st.uids && st.uids.length) {          // the same folder again after the run started: same series
+        const keep = scan.series.filter(s => st.uids.includes(s.key));
+        if (keep.length) scan.series.forEach(s => { s.on = st.uids.includes(s.key); });
       }
     } catch (e) { note = 'Could not read the folder: ' + ((e && e.message) || e); }
     busy = ''; paint();
-    if (st.pending && runActive()) resume();
+    // the run is going and waits: send now, if the series to send are known (ticked before the run started)
+    if (st.pending && runActive() && st.uids && st.uids.length && scan && scan.series.some(s => s.on)) sendNow();
   }
   async function entriesOf(dt) {      // a folder dropped on the page: walk it
     const out = [], walk = async (en, path) => {
@@ -148,22 +152,34 @@ function render(ctx) {
       note = 'The run could not start: ' + ((e && e.message) || e) + '. Press Run in the flow\'s editor if this view cannot start runs here.'; paint();
     });
   }
-  function loadLocal() {
+  function uploadParams(mr) { const lp = {}; lp[LOAD] = { source: 'Upload from the View', series: 'Every CT series', min_images: 1, modalities: mr ? 'CT, MR' : 'CT', wait_minutes: 30 }; return lp; }
+  function startReceiving() {                                    // ① the run first: then the folder is chosen once
+    const session = Math.random().toString(36).slice(2, 10);
+    start(uploadParams(st.task === 'total_mr'), { pending: true, session, uids: [], labels: [] });
+  }
+  function loadLocal() {                                         // a preview first: the run starts, the folder is asked again
     const files = chosenFiles();
     if (!files.length) { note = 'Tick at least one series.'; paint(); return; }
+    if (loaderWaiting() || (st.pending && runActive())) { sendNow(); return; }
     const session = Math.random().toString(36).slice(2, 10);
-    MEM.files = files; MEM.session = session;
-    keepInBrowser(session, files);                               // (for a page that reloads when the run starts)
+    MEM.files = files; MEM.session = session;                    // (kept if the page does not show the view again)
     const mr = scan.series.some(s => s.on && s.modality === 'MR');
-    const lp = {}; lp[LOAD] = { source: 'Upload from the View', series: 'Every CT series', min_images: 1, modalities: mr ? 'CT, MR' : 'CT', wait_minutes: 30 };
-    start(lp, { pending: true, session, uids: scan.series.filter(s => s.on).map(s => s.key), count: files.length,
-      bytes: files.reduce((n, f) => n + f.file.size, 0), labels: scan.series.filter(s => s.on).map(s => s.label) });
+    start(uploadParams(mr), { pending: true, session, uids: scan.series.filter(s => s.on).map(s => s.key),
+      labels: scan.series.filter(s => s.on).map(s => s.label) });
+  }
+  function sendNow() {                                           // the run waits: these files go now
+    const files = chosenFiles();
+    if (!files.length) { note = 'Tick at least one series.'; paint(); return; }
+    st.pending = true; st.session = st.session || Math.random().toString(36).slice(2, 10);
+    st.uids = scan.series.filter(s => s.on).map(s => s.key); st.labels = scan.series.filter(s => s.on).map(s => s.label);
+    MEM.files = files; MEM.session = st.session; save();
+    resume();
   }
   async function resume() {      // the run is going and the loader waits: send the files
     if (sending || !st.pending) return;
-    let files = MEM.session === st.session ? MEM.files : null;
-    if (!files) files = await fromBrowser(st.session);
-    if (!files || !files.length) { paint(); return; }           // (the dialog asks to choose the folder again)
+    const files = MEM.session === st.session ? MEM.files : null;
+    if (!files || !files.length) { paint(); return; }           // (the dialog asks to choose the folder)
+    if (!loaderWaiting()) { paint(); return; }                   // (the loader is not listening yet: next tick)
     sending = { session: st.session, n: files.length, sent: 0, bytes: 0, total: files.reduce((n, f) => n + f.file.size, 0), round: 1 };
     paint();
     try {
@@ -171,10 +187,10 @@ function render(ctx) {
       await sendSome(files, files.map((_, i) => i));
       for (let round = 2; round <= 4; round++) {                 // the loader says which files are missing
         const miss = await waitMissing();
-        if (!miss) break;
-        if (!miss.length) break;
+        if (!miss || !miss.length) break;
         sending.round = round; paint();
-        await sendSome(files, miss);
+        if (miss === 'all') await ctx.send(CHANNEL, { cmd: 'begin', session: st.session, count: files.length, bytes: sending.total });
+        await sendSome(files, miss === 'all' ? files.map((_, i) => i) : miss);
       }
     } catch (e) {
       note = 'Sending stopped: ' + ((e && e.message) || e) + (runActive() ? '' : ' (the run ended)');
@@ -208,25 +224,20 @@ function render(ctx) {
       if (!d || d.session && d.session !== st.session) continue;
       if (['received', 'looking', 'reading', 'done'].includes(d.state)) return [];
       if (d.state === 'error') return null;
-      if (d.state === 'receiving' && Array.isArray(d.missing) && d.missing.length && (+d.t || 0) * 1000 > Date.now() - 4000) return d.missing;
+      if (d.state === 'receiving' && Array.isArray(d.missing) && d.missing.length && (+d.t || 0) * 1000 > Date.now() - 8000) return d.missing;
+      if (d.state === 'waiting' && t > 10) return 'all';         // (it never heard the start: everything again)
       if (!runActive()) return null;
     }
     return null;
   }
   function b64(u) { let s = ''; for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); }
 
-  // files kept in the browser (IndexedDB) while the run starts, in case the page reloads
-  function idb(mode, fn) {
-    return new Promise((ok, no) => {
-      let rq; try { rq = indexedDB.open('esasim-ct-load', 1); } catch (e) { no(e); return; }
-      rq.onupgradeneeded = () => rq.result.createObjectStore('up');
-      rq.onerror = () => no(rq.error);
-      rq.onsuccess = () => { const tx = rq.result.transaction('up', mode), r = fn(tx.objectStore('up')); tx.oncomplete = () => ok(r && r.result); tx.onerror = () => no(tx.error); };
-    });
-  }
-  function keepInBrowser(session, files) { idb('readwrite', s => { s.clear(); return s.put(files.map(f => ({ rel: f.rel, file: f.file })), session); }).catch(() => {}); }
-  async function fromBrowser(session) { try { return (await idb('readonly', s => s.get(session))) || null; } catch (_) { return null; } }
-  function forget() { idb('readwrite', s => s.clear()).catch(() => {}); MEM.files = null; }
+  function forget() { MEM.files = null; }
+  // The page shows the views again (new frames) when a run starts: files picked before that are gone, and a
+  // sandboxed view has no storage to keep them. So: start the run first, then choose the folder (one pick); or,
+  // after a preview, choose the same folder once more, and the series ticked before go by themselves.
+  const loaderWaiting = () => { const d = readLive(); return runActive() && !!d && (d.state === 'waiting' || d.state === 'receiving'); };
+  const needFolder = () => st.pending && runActive() && !sending && !(MEM.session === st.session && MEM.files && MEM.files.length);
 
   // ── drawing ──────────────────────────────────────────────────────────────────────────────────────────────────
   const sel = (key, opts, cur) => `<select data-k="${key}">${opts.map(o => `<option${o === cur ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
@@ -250,7 +261,7 @@ function render(ctx) {
     if (now === 'starting') line = active ? 'The run started: waiting for the loader on the worker…' : 'Starting…';
     if (now === 'send') {
       if (sending) { pct = sending.total ? 100 * sending.bytes / sending.total : 0; line = `Sending ${sending.sent} of ${sending.n} files (${mb(sending.bytes)} of ${mb(sending.total)})${sending.round > 1 ? ` · round ${sending.round}: files that did not arrive` : ''}`; }
-      else if (st.pending && !(MEM.session === st.session && MEM.files)) line = 'The page reloaded when the run started: <b>choose the same folder again</b> below, and the ticked series go on their own.';
+      else if (needFolder()) line = st.uids && st.uids.length ? 'The run is waiting for your scans: <b>choose the same folder again</b> (the box below). The series you ticked go by themselves.' : 'The run is waiting for your scans: <b>drop the folder</b> in the box below, or press <b>Choose a folder…</b>.';
       else line = d && d.state === 'receiving' ? `The worker has ${d.received || 0} of ${d.files || '?'} files.` : 'The worker is ready: sending…';
     }
     if (now === 'read') { pct = 100; line = d.state === 'looking' ? `Reading the files on the worker (${d.done || 0} of ${d.total || '?'})…` : 'Grouping the images into series and writing the scans…'; }
@@ -272,13 +283,19 @@ function render(ctx) {
   function localHtml() {
     const tbl = scan ? seriesTable() : '';
     const files = chosenFiles(), size = files.reduce((n, f) => n + f.file.size, 0), nOn = scan ? scan.series.filter(s => s.on).length : 0;
-    return `<div class="dz">
-        <b>Drop the folder with the scans here</b>, or <button class="btn" data-a="dir">Choose a folder…</button> <button class="btn" data-a="files">Choose files…</button>
+    const waiting = st.pending && runActive(), ready = loaderWaiting();
+    const steps = waiting ? '' : `<div class="row"><b>①</b> Choose the segmentation, then press <b>Start</b>; <b>②</b> drop the folder with the scans; <b>③</b> tick the series and press <b>Send</b>.</div>
+      ${segRow()}<div class="row"><button class="btn pri" data-a="start">▶ Start</button><span class="hint">The run starts on a worker and waits for your scans (up to 30 minutes).</span></div>`;
+    const head = waiting
+      ? (ready ? `<b>② The worker is waiting: drop the folder with the scans here</b>` : `<b>The run is starting…</b> you can already drop the folder here`)
+      : `<b>Drop the folder with the scans here</b> to see its series first`;
+    return `${steps}<div class="dz${waiting && !scan ? ' drop' : ''}">
+        ${head}, or <button class="btn${waiting && !scan ? ' pri' : ''}" data-a="dir">Choose a folder…</button> <button class="btn" data-a="files">Choose files…</button>
         <div class="hint">A whole CD/DVD export works as it is (DICOMDIR, DICOM/, IHE_PDI/, viewer files): the images are grouped into series by their DICOM IDs, copies are read once, and pictures, pages and reports are left out. Also NIfTI, NRRD, MHA/MHD and zips.</div>
       </div>
       ${busy ? `<div class="hint">${esc(busy)}</div>` : ''}${tbl}
-      ${scan ? `${segRow()}<div class="row"><button class="btn pri" data-a="load"${nOn ? '' : ' disabled'}>Load ${nOn} series and segment (${mb(size)})</button>
-      <span class="hint">Only the images of the ticked series are sent, compressed, to the worker that runs the flow. Patient names and IDs are not read here, and the worker writes pixels and geometry only.</span></div>` : ''}`;
+      ${scan && !sending ? `<div class="row"><button class="btn pri" data-a="load"${nOn ? '' : ' disabled'}>${waiting ? `③ Send ${nOn} series and segment (${mb(size)})` : `Start and send ${nOn} series (${mb(size)})`}</button>
+      <span class="hint">${waiting ? '' : 'The page shows the views again when the run starts and your browser forgets the files: you will be asked to choose the same folder once more. (Press ▶ Start first to choose it only once.) '}Only the images of the ticked series are sent, compressed, to the worker that runs the flow. Patient names and IDs are not read here, and the worker writes pixels and geometry only.</span></div>` : ''}`;
   }
   function seriesTable() {
     const s = scan;
@@ -325,6 +342,7 @@ function render(ctx) {
     if (a === 'dir') pickDir.click();
     else if (a === 'files') pickFiles.click();
     else if (a === 'load') loadLocal();
+    else if (a === 'start') startReceiving();
     else if (a === 'worker') { const lp = {}; lp[LOAD] = { source: 'Folder on the worker', folder: st.folder, series: st.choice, only: st.only }; start(lp, { pending: false }); }
     else if (a === 'wired') { const lp = {}; lp[LOAD] = { source: 'Files wired in', series: st.choice === CHOICE[2] ? CHOICE[0] : st.choice }; start(lp, { pending: false }); }
     else if (a === 'cancel') { try { ctx.send(CHANNEL, { cmd: 'cancel' }); } catch (_) {} st.pending = false; save(); forget(); note = 'Cancelled.'; paint(); }
@@ -334,6 +352,8 @@ function render(ctx) {
     if (st.pending && d && d.session === st.session && ['received', 'looking', 'reading', 'done', 'error'].includes(d.state)) { st.pending = false; save(); forget(); }
     if (st.pending && !runActive() && ctx.run && ctx.run.status && /fail|cancel|succe/.test(ctx.run.status) && !sending) { st.pending = false; save(); }
     if (st.pending && runActive() && d && (d.state === 'waiting' || (d.state === 'receiving' && d.session !== st.session))) resume();
+    const mode = [runActive(), loaderWaiting(), st.pending, !!sending].join();
+    if (mode !== lastMode && !busy) { lastMode = mode; paint(); return; }
     if (!busy) { const pg = body.querySelector('.pg'); if (pg && !sending) paintProgress(); }
   }
   ctx.on('update', tick);
