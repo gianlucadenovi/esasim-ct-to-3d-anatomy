@@ -1,17 +1,17 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Load CT scans (DICOM discs, NIfTI, NRRD, MHA) (ws-load-ct-scans-dicom-discs-nifti-nrrd) · version 3 · worker block, Python: def run(ctx)
+# Load CT scans (DICOM discs, NIfTI, NRRD, MHA) (ws-load-ct-scans-dicom-discs-nifti-nrrd) · version 4 · worker block, Python: def run(ctx)
 # Turns any CT source (a CD/DVD export with DICOMDIR, DICOM/ and IHE_PDI/, loose DICOM, NIfTI, NRRD, MHA, zips) into one volume per case, <case>/ct.nii.gz: series grouped by their DICOM IDs, copies read
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-27
 #
 # Inputs   ctx.inputs["id"] is a list of files: .path .name .size .read_text() .read_json()
-#   files       Files                     Files · several · optional · Source Files wired in: the scans, in any layout (DICOM folders, NIfTI/NRRD/MHA, zips)
+#   files       Files                     Files · several · optional · The wired files: the scans, in any layout (DICOM folders, NIfTI/NRRD/MHA, zips); with the default source, loaded when no one uploads from the View
 # Outputs  ctx.output("id", "name.ext") is the path to write; ctx.write_json / ctx.write_text
 #   cases       Files (gz)                Scans · <case>/ct.nii.gz, one per scan chosen, in HU
 #   series      Table (csv)               Series · series.csv: every series found (study, number, description, modality, images, slice thickness, coverage, folders) and what happened to it
 #   telemetry   Live telemetry            ctx.telemetry("channel", data) while it runs
 # Settings ctx.params["key"]
-#   source      select    Source = "Files wired in" of Files wired in | Folder on the worker | Upload from the View
+#   source      select    Source = "Upload from the View, else the wired files" of Upload from the View, else the wired files…
 #   folder      text      Folder on the worker = ""
 #   series      select    Series = "The best CT series of each study" of The best CT series of each study | Every CT series |…
 #   only        text      Series to load = ""
