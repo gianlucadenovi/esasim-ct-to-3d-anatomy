@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 35 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 36 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -3443,6 +3443,11 @@ function render(ctx) {
       var grp = new THREE.Group(); grp.name = 'skin'; grp.add(skin); obj.add(grp);
       PARTS.list.push({ name: 'skin', group: 'skin', file: obj.userData.file || '', mesh: skin, color: '#e8b89a' }); partsDraw();
       meshes.push(skin); byName.skin = m.skin.body;
+      // what is inside the skin (a signed distance map of it), and which particles are the skin's own: while the skin
+      // shows, no other tissue gets outside it
+      S.skinMesh = skin; S.skinSdf = skinSdfBuild(m.skin.mesh.positions, sfa);
+      S.isSkin = new Uint8Array(S.n);
+      m.bodies.forEach(function (bb) { if (bb.name === 'skin') for (var q = 0; q < bb.spheres.length; q++) S.isSkin[bb.first + q] = 1; });
     }
     meshes.forEach(function (mesh) {
       var bi = byName[mesh.name], b = m.bodies[bi], geo = mesh.geometry, pos = geo.attributes.position, nv = pos.count;
@@ -3651,7 +3656,7 @@ function render(ctx) {
             f[o3] += F1 * ex1; f[o3 + 1] += F1 * ey1; f[o3 + 2] += F1 * ez1;
           }
         }
-        var moved = 0;
+        var moved = 0, SG = S.skinSdf && S.skinMesh && S.skinMesh.visible ? S.skinSdf : null;
         for (var i2 = 0; i2 < n; i2++) {
           if (!im[i2]) continue;
           var o = 3 * i2;
@@ -3668,6 +3673,15 @@ function render(ctx) {
               var k2 = SOFT_STRAY / Math.sqrt(r2); rx *= k2; ry *= k2; rz *= k2; xb[o] = x0[o] + rx; xb[o + 1] = x0[o + 1] + ry; xb[o + 2] = x0[o + 2] + rz;
               var vo = (vb[o] * rx + vb[o + 1] * ry + vb[o + 2] * rz) / (SOFT_STRAY * SOFT_STRAY); if (vo > 0) { vb[o] -= vo * rx; vb[o + 1] -= vo * ry; vb[o + 2] -= vo * rz; }
               S.clamped = (S.clamped || 0) + 1;
+            }
+          }
+          if (SG && !S.isSkin[i2]) {                                                         // the skin contains it: at least half its radius inside
+            var sdv = sdfAt(SG, xb[o], xb[o + 1], xb[o + 2]), lim = -0.5 * S.r[i2];
+            if (sdv > lim) {
+              var gq = sdfGrad(SG, xb[o], xb[o + 1], xb[o + 2]), pv = sdv - lim;
+              xb[o] -= gq[0] * pv; xb[o + 1] -= gq[1] * pv; xb[o + 2] -= gq[2] * pv;
+              var vout = vb[o] * gq[0] + vb[o + 1] * gq[1] + vb[o + 2] * gq[2];
+              if (vout > 0) { vb[o] -= vout * gq[0]; vb[o + 1] -= vout * gq[1]; vb[o + 2] -= vout * gq[2]; }
             }
           }
           var mx = xb[o] - ref[o], my = xb[o + 1] - ref[o + 1], mz = xb[o + 2] - ref[o + 2], m2 = mx * mx + my * my + mz * mz; if (m2 > moved) moved = m2;
@@ -3702,6 +3716,74 @@ function render(ctx) {
     }
     return any ? { cell: cell, map: map } : null;
   }
+  // A signed distance map of the inside of the skin, in the model's frame: negative inside, positive outside, in metres.
+  // Inside: rays through the cell centres front to back (z), between pairs of crossings with the skin (an open torso,
+  // cut at the neck and the pelvis, still works); distances to the boundary by a two-pass chamfer over 26 neighbours.
+  function skinSdfBuild(pos, faces) {
+    var n = pos.length / 3, lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9], i, j, k, a;
+    for (i = 0; i < n; i++) for (a = 0; a < 3; a++) { var v = pos[3 * i + a]; if (v < lo[a]) lo[a] = v; if (v > hi[a]) hi[a] = v; }
+    var ext = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]), c = Math.max(0.004, ext / 160), pad = 3;
+    var o = [lo[0] - pad * c, lo[1] - pad * c, lo[2] - pad * c];
+    var nx = Math.ceil((hi[0] - lo[0]) / c) + 2 * pad + 1, ny = Math.ceil((hi[1] - lo[1]) / c) + 2 * pad + 1, nz = Math.ceil((hi[2] - lo[2]) / c) + 2 * pad + 1, N = nx * ny * nz;
+    if (!(N > 0) || N > 8e6) return null;
+    var cols = new Array(nx * ny);
+    for (var t = 0; t + 2 < faces.length; t += 3) {
+      var A = 3 * faces[t], B = 3 * faces[t + 1], C = 3 * faces[t + 2];
+      var ax = pos[A], ay = pos[A + 1], az = pos[A + 2], bx = pos[B], by = pos[B + 1], bz = pos[B + 2], cx = pos[C], cy = pos[C + 1], cz = pos[C + 2];
+      var den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy); if (Math.abs(den) < 1e-14) continue;
+      var i0 = Math.max(0, Math.ceil((Math.min(ax, bx, cx) - o[0]) / c - 0.5)), i1 = Math.min(nx - 1, Math.floor((Math.max(ax, bx, cx) - o[0]) / c - 0.5));
+      var j0 = Math.max(0, Math.ceil((Math.min(ay, by, cy) - o[1]) / c - 0.5)), j1 = Math.min(ny - 1, Math.floor((Math.max(ay, by, cy) - o[1]) / c - 0.5));
+      for (i = i0; i <= i1; i++) for (j = j0; j <= j1; j++) {
+        var px = o[0] + (i + 0.5) * c, py = o[1] + (j + 0.5) * c;
+        var l1 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / den, l2 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / den, l3 = 1 - l1 - l2;
+        if (l1 < 0 || l2 < 0 || l3 < 0) continue;
+        (cols[i * ny + j] || (cols[i * ny + j] = [])).push(l1 * az + l2 * bz + l3 * cz);
+      }
+    }
+    var ins = new Uint8Array(N);
+    for (i = 0; i < nx; i++) for (j = 0; j < ny; j++) {
+      var L = cols[i * ny + j]; if (!L || L.length < 2) continue;
+      L.sort(function (p, q) { return p - q; });
+      for (var q = 0; q + 1 < L.length; q += 2) {
+        var k0 = Math.max(0, Math.ceil((L[q] - o[2]) / c - 0.5)), k1 = Math.min(nz - 1, Math.floor((L[q + 1] - o[2]) / c - 0.5));
+        for (k = k0; k <= k1; k++) ins[(k * ny + j) * nx + i] = 1;
+      }
+    }
+    var D = new Float32Array(N); D.fill(1e9);
+    for (k = 0; k < nz; k++) for (j = 0; j < ny; j++) for (i = 0; i < nx; i++) {
+      var id = (k * ny + j) * nx + i, s = ins[id];
+      if ((i > 0 && ins[id - 1] !== s) || (i < nx - 1 && ins[id + 1] !== s) || (j > 0 && ins[id - nx] !== s) || (j < ny - 1 && ins[id + nx] !== s) || (k > 0 && ins[id - nx * ny] !== s) || (k < nz - 1 && ins[id + nx * ny] !== s)) D[id] = 0.5;
+    }
+    var offs = [];
+    for (var dk = -1; dk <= 1; dk++) for (var dj = -1; dj <= 1; dj++) for (var di = -1; di <= 1; di++) if (dk < 0 || (dk === 0 && dj < 0) || (dk === 0 && dj === 0 && di < 0)) offs.push([dk, dj, di, Math.sqrt(dk * dk + dj * dj + di * di), (dk * ny + dj) * nx + di]);
+    var pass = function (sgn) {
+      var ks = sgn > 0 ? 0 : nz - 1, ke = sgn > 0 ? nz : -1, js = sgn > 0 ? 0 : ny - 1, je = sgn > 0 ? ny : -1, is = sgn > 0 ? 0 : nx - 1, ie = sgn > 0 ? nx : -1;
+      for (var kk = ks; kk !== ke; kk += sgn) for (var jj = js; jj !== je; jj += sgn) for (var ii = is; ii !== ie; ii += sgn) {
+        var id2 = (kk * ny + jj) * nx + ii, best = D[id2];
+        for (var w = 0; w < offs.length; w++) {
+          var ob = offs[w], k2 = kk + sgn * ob[0], j2 = jj + sgn * ob[1], i2 = ii + sgn * ob[2];
+          if (k2 < 0 || k2 >= nz || j2 < 0 || j2 >= ny || i2 < 0 || i2 >= nx) continue;
+          var cand = D[id2 + sgn * ob[4]] + ob[3]; if (cand < best) best = cand;
+        }
+        D[id2] = best;
+      }
+    };
+    pass(1); pass(-1);
+    for (var m2 = 0; m2 < N; m2++) D[m2] = (ins[m2] ? -1 : 1) * D[m2] * c;
+    return { o: o, c: c, nx: nx, ny: ny, nz: nz, d: D };
+  }
+  function sdfAt(G, x, y, z) {
+    var fx = Math.min(G.nx - 1.001, Math.max(0, (x - G.o[0]) / G.c - 0.5)), fy = Math.min(G.ny - 1.001, Math.max(0, (y - G.o[1]) / G.c - 0.5)), fz = Math.min(G.nz - 1.001, Math.max(0, (z - G.o[2]) / G.c - 0.5));
+    var i = fx | 0, j = fy | 0, k = fz | 0, u = fx - i, v = fy - j, w = fz - k, nx = G.nx, sxy = G.nx * G.ny, b = (k * G.ny + j) * nx + i, d = G.d;
+    var c00 = d[b] + (d[b + 1] - d[b]) * u, c10 = d[b + nx] + (d[b + nx + 1] - d[b + nx]) * u, c01 = d[b + sxy] + (d[b + sxy + 1] - d[b + sxy]) * u, c11 = d[b + sxy + nx] + (d[b + sxy + nx + 1] - d[b + sxy + nx]) * u;
+    var c0 = c00 + (c10 - c00) * v, c1 = c01 + (c11 - c01) * v;
+    return c0 + (c1 - c0) * w;
+  }
+  var SDG = new Float32Array(3);
+  function sdfGrad(G, x, y, z) {                                   // the outward direction (unit), into SDG
+    var h = G.c, gx = sdfAt(G, x + h, y, z) - sdfAt(G, x - h, y, z), gy = sdfAt(G, x, y + h, z) - sdfAt(G, x, y - h, z), gz = sdfAt(G, x, y, z + h) - sdfAt(G, x, y, z - h), l = Math.sqrt(gx * gx + gy * gy + gz * gz) || 1;
+    SDG[0] = gx / l; SDG[1] = gy / l; SDG[2] = gz / l; return SDG;
+  }
   // the surfaces follow the particles (moved back into the model's frame)
   function softSkin(S) {
     var e = MI.copy(S.obj.matrixWorld).invert().elements, x = S.x, n = S.n, d = S.dl || (S.dl = new Float32Array(3 * n));
@@ -3723,9 +3805,14 @@ function render(ctx) {
         bd.nearBone = nb;
       });
     }
-    var bg = S.boneGrid;
+    var bg = S.boneGrid, SGv = S.skinSdf && S.skinMesh && S.skinMesh.visible ? S.skinSdf : null;
     S.binds.forEach(function (bd) {
       if (!bd.mesh.visible) return;
+      if (SGv && !bd.nearSkin && bd.mesh !== S.skinMesh) {             // vertices within 4 cm of the skin in the scan: the only ones that can reach it
+        bd.nearSkin = new Uint8Array(bd.nv);
+        for (var vs = 0; vs < bd.nv; vs++) if (sdfAt(SGv, bd.base[3 * vs], bd.base[3 * vs + 1], bd.base[3 * vs + 2]) > -0.04) bd.nearSkin[vs] = 1;
+      }
+      var keepIn = SGv && bd.nearSkin && bd.mesh !== S.skinMesh;
       var arr = bd.mesh.geometry.attributes.position.array, base = bd.base, idx = bd.idx, w = bd.w;
       for (var vtx = 0; vtx < bd.nv; vtx++) {
         var ox = 0, oy = 0, oz = 0, o4 = 4 * vtx;
@@ -3756,6 +3843,10 @@ function render(ctx) {
             if (rx * rx + ry * ry + rz * rz < br * br) continue;            // inside it in the scan already: left alone
             var ql = Math.sqrt(qd) || 1e-6; px = cx + qx / ql * br; py = cy + qy / ql * br; pz = cz + qz / ql * br;
           }
+        }
+        if (keepIn && bd.nearSkin[vtx]) {                                // the surface stays 1.5 mm inside the skin
+          var sv = sdfAt(SGv, px, py, pz);
+          if (sv > -0.0015) { var gg = sdfGrad(SGv, px, py, pz), pu = sv + 0.0015; px -= gg[0] * pu; py -= gg[1] * pu; pz -= gg[2] * pu; }
         }
         arr[3 * vtx] = px; arr[3 * vtx + 1] = py; arr[3 * vtx + 2] = pz;
       }
