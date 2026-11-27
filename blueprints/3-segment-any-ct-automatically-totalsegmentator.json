@@ -6,14 +6,14 @@
     "name": "3 · Segment any CT automatically (TotalSegmentator)",
     "description": "Any CT (NIfTI, NRRD, MHA or DICOM) segmented by the TotalSegmentator network into organs, bones, vessels and muscles, turned into the same 3D anatomy as flow 1, and scored against expert labels when the dataset has them.",
     "published_version": 2,
-    "updated": "2026-11-27 22:50:14",
+    "updated": "2026-11-27 22:50:59",
     "graph": {
         "nodes": [
             {
                 "id": "dl",
                 "type": "download-files",
-                "x": -380,
-                "y": 660,
+                "x": -390,
+                "y": 980,
                 "params": {
                     "sources": "https://zenodo.org/records/10047263",
                     "fetch": "*.zip",
@@ -51,7 +51,7 @@
                 "id": "loadtel",
                 "type": "telemetry",
                 "x": 390,
-                "y": 980,
+                "y": 720,
                 "params": {
                     "interval": 0.25,
                     "channels": "ct_load",
@@ -133,8 +133,8 @@
             {
                 "id": "score",
                 "type": "ws-score-segmentation-against-experts",
-                "x": 780,
-                "y": 620,
+                "x": 770,
+                "y": 940,
                 "params": {
                     "min_ml": 0.5
                 },
@@ -143,8 +143,8 @@
             {
                 "id": "loadview",
                 "type": "ws-load-a-ct",
-                "x": 780,
-                "y": 1060,
+                "x": 770,
+                "y": 1380,
                 "params": {
                     "loader_node": "load",
                     "seg_node": "seg"
@@ -164,8 +164,8 @@
             {
                 "id": "found",
                 "type": "table-view",
-                "x": 780,
-                "y": 860,
+                "x": 770,
+                "y": 1180,
                 "params": {
                     "rows": 50
                 },
@@ -199,8 +199,8 @@
             {
                 "id": "scoretab",
                 "type": "table-view",
-                "x": 1220,
-                "y": 520,
+                "x": 1210,
+                "y": 840,
                 "params": {
                     "rows": 50
                 },
