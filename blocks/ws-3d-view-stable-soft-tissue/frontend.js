@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 42 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 43 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -3572,7 +3572,7 @@ function render(ctx) {
       var reach = S.r[i2] + B.rmax + M, cb2 = B.cell;
       for (var bx = Math.floor((px - reach) / cb2); bx <= Math.floor((px + reach) / cb2); bx++) for (var by = Math.floor((py - reach) / cb2); by <= Math.floor((py + reach) / cb2); by++) for (var bz = Math.floor((pz - reach) / cb2); bz <= Math.floor((pz + reach) / cb2); bz++) {
         var c2 = B.cells.get(key(bx, by, bz)); if (!c2) continue;
-        for (var q2 = 0; q2 < c2.length; q2++) pair(i2, c2[q2]);
+        for (var q2 = 0; q2 < c2.length; q2++) { var j3 = c2[q2]; if (sk && sk[j3] && !sk[i2]) skinPair(i2, j3); else pair(i2, j3); }
       }
     }
     S.pairs = new Int32Array(out); S.lim = new Float32Array(lim); S.skinPairs = new Int32Array(skOut);
