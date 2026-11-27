@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 11 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 12 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2674,20 +2674,20 @@ function render(ctx) {
     [4, ['stomach', 'bowel', 'colon', 'duodenum', 'esophagus', 'rectum'], 0.0022, [0.98, 0.84, 0.76]],
     [6, ['heart', 'atrial', 'myocard'], 0.0012, [0.95, 0.87, 0.66]], [7, ['lung'], 0.0008, [0.09, 0.085, 0.1]],
     [8, ['aorta', 'artery', 'arteries', 'vein', 'vena', 'trunk', 'portal', 'trachea', 'bronch'], 0.00025, null],
-    [5, ['gluteus', 'iliopsoas', 'autochthon', 'psoas', 'muscle'], 0.0005, [0.95, 0.86, 0.66]],
+    [5, ['gluteus', 'iliopsoas', 'autochthon', 'psoas', 'muscle'], 0.0009, [0.93, 0.88, 0.8]],
     [10, ['pancreas', 'adrenal', 'thyroid', 'prostate', 'gland'], 0.0007, [0.93, 0.82, 0.55]]
   ];
   function tissueOf(name, group) {
     var n = String(name || '').toLowerCase();
     if (group === 'skeleton') return [9, 0.00035, [0.8, 0.66, 0.4]];
     for (var i = 0; i < TISSUE_KINDS.length; i++) if (TISSUE_KINDS[i][1].some(function (w) { return n.indexOf(w) >= 0; })) return [TISSUE_KINDS[i][0], TISSUE_KINDS[i][2], TISSUE_KINDS[i][3]];
-    if (group === 'muscles') return [5, 0.0005, [0.95, 0.86, 0.66]];
+    if (group === 'muscles') return [5, 0.0009, [0.93, 0.88, 0.8]];
     if (group === 'vessels') return [8, 0.00025, null];
     return [11, 0.0003, null];
   }
   var TISSUE_GLSL = [
     'varying vec3 vEsP; varying vec2 vEsC;',
-    'uniform float esOn; uniform float esKind; uniform float esBumpH; uniform vec3 esSecond;',
+    'uniform float esOn; uniform float esKind; uniform float esBumpH; uniform vec3 esSecond; uniform vec3 esAxis;',
     'float esH(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }',
     'float esNoise(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);',
     '  return mix(mix(mix(esH(i), esH(i + vec3(1,0,0)), f.x), mix(esH(i + vec3(0,1,0)), esH(i + vec3(1,1,0)), f.x), f.y),',
@@ -2709,8 +2709,23 @@ function render(ctx) {
     '  else if (k < 3.5) { float a = esFade(px, 250.0); h = a * esFbm(p * 250.0); c = 0.9 + 0.16 * lo; }',
     '  else if (k < 4.5) { float a = esFade(px, 45.0), q = 1.0 - abs(2.0 * esNoise(p * 45.0 + lo * 2.5) - 1.0), q2 = 1.0 - abs(2.0 * esNoise(p * 120.0 + lo * 3.0) - 1.0); q = q * q * q; q2 = q2 * q2 * esFade(px, 120.0);',
     '    h = a * (0.6 * q + 0.25 * q2 + 0.15 * esFbm(p * 400.0) * esFade(px, 400.0)); c = 0.84 + 0.2 * lo + 0.08 * a * q; m = 0.4 * a * q; r = 1.0 - 0.15 * a * q; }',
-    '  else if (k < 5.5) { float a = esFade(px, 600.0), f = esFbm(vec3(p.x * 600.0, p.y * 16.0, p.z * 600.0)), b = esNoise(vec3(p.x * 110.0, p.y * 5.0, p.z * 110.0));',
-    '    h = a * (0.7 * f + 0.3 * b); c = 0.8 + 0.12 * lo + 0.2 * mix(0.5, f, a) + 0.06 * b; m = 0.45 * smoothstep(0.74, 0.86, b); r = 0.9 + 0.2 * a * f; }',
+    '  else if (k < 5.5) {',
+    // muscle: fibres along the muscle's own axis (esAxis, from its shape); rounded fascicles a few mm wide with fine
+    // fibres in them and thin whitish sheaths between them; whitish, glossy tendon where it meets bone (cv.x) and at its
+    // ends (cv.y), with an irregular edge; the fibres show through the tendon, paler
+    '    vec3 ax = normalize(esAxis), u = normalize(cross(ax, abs(ax.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0))), v = cross(ax, u);',
+    '    float s = dot(p, ax), x1 = dot(p, u), x2 = dot(p, v), wav = esFbm(vec3(x1 * 40.0, x2 * 40.0, s * 6.0));',
+    '    float ab = esFade(px, 260.0), af = esFade(px, 900.0);',
+    '    float bun = esNoise(vec3(x1 * 260.0, x2 * 260.0, s * 7.0) + wav * 2.0);',
+    '    float fib = esNoise(vec3(x1 * 900.0, x2 * 900.0, s * 25.0) + wav * 3.0);',
+    '    float sheath = ab * smoothstep(0.88, 0.975, 1.0 - abs(2.0 * bun - 1.0));',
+    '    float fine = af * smoothstep(0.82, 0.97, 1.0 - abs(2.0 * fib - 1.0));',
+    '    float tw = smoothstep(0.3, 0.75, max(cv.x, cv.y) + (esFbm(p * 40.0 + vec3(5.0)) - 0.5) * 0.45);',
+    '    float mh = 0.5 * ab * smoothstep(0.15, 0.85, bun) + 0.35 * af * fib - 0.35 * sheath;',
+    '    h = mix(mh, 0.3 + 0.25 * af * fib, tw);',
+    '    c = mix(0.76 + 0.14 * lo + 0.14 * af * (fib - 0.5) + 0.1 * ab * (bun - 0.5), 0.92 + 0.08 * af * fib, tw);',
+    '    m = max(max(0.75 * sheath, 0.35 * fine), tw);',
+    '    r = mix(0.85 - 0.1 * af * fib, 0.65, tw); }',
     // the heart: smooth, glossy red muscle with soft mottling; whitish, lobulated fat where the surface is hollow or
     // sharply creased (the grooves between the chambers, round the base of the great vessels: measured on the mesh), with
     // an irregular edge; the coronary vessels over it, branching trunks and finer branches, raised and darker red, over
@@ -2783,7 +2798,7 @@ function render(ctx) {
     }
     // the surface's shape (hollow, folded) for bone (darker in its hollows) and the heart (fat in its grooves and creases)
     if (!g.attributes.esCurv) g.setAttribute('esCurv', new THREE.BufferAttribute(t[0] === 9 || t[0] === 6 ? surfaceShape(g) : new Float32Array(2 * g.attributes.position.count), 2));
-    mat.userData.es = { esOn: TEX.uOn || (TEX.uOn = { value: TEX.on ? 1 : 0 }), esKind: { value: t[0] }, esBumpH: { value: t[1] }, esSecond: { value: new THREE.Color().fromArray(t[2] || [1, 1, 1]) } };
+    mat.userData.es = { esOn: TEX.uOn || (TEX.uOn = { value: TEX.on ? 1 : 0 }), esKind: { value: t[0] }, esBumpH: { value: t[1] }, esSecond: { value: new THREE.Color().fromArray(t[2] || [1, 1, 1]) }, esAxis: { value: new THREE.Vector3(0, 1, 0) } };
     mat.onBeforeCompile = function (sh) {
       var u = mat.userData.es; for (var k in u) sh.uniforms[k] = u[k];
       sh.vertexShader = 'attribute vec3 esRest;\nattribute vec2 esCurv;\nvarying vec3 vEsP;\nvarying vec2 vEsC;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvEsP = esRest; vEsC = esCurv;');
@@ -2841,6 +2856,55 @@ function render(ctx) {
     }
     return out;
   }
+  // Muscles: each one's long axis (the main direction of its shape), the fibres run along it; and, at each vertex, how
+  // close the bone is (whitish tendon where it meets bone: full within 3 mm, none beyond 11 mm) and how near its two ends
+  // it is (tendons at the ends). Written into the muscle's esCurv (x: bone, y: ends).
+  function muscleShape(obj) {
+    var bones = [], muscles = [];
+    obj.traverse(function (o) {
+      if (!o.isMesh || !o.geometry || !o.geometry.attributes.esRest || !o.material || !o.material.userData || !o.material.userData.es) return;
+      var k = o.material.userData.es.esKind.value;
+      if (k === 9) bones.push(o); else if (k === 5) muscles.push(o);
+    });
+    if (!muscles.length) return;
+    var cell = 0.01, grid = new Map();
+    var key = function (x, y, z) { return (Math.floor(x / cell) + 4096) * 67108864 + (Math.floor(y / cell) + 4096) * 8192 + (Math.floor(z / cell) + 4096); };
+    bones.forEach(function (b) {
+      var r = b.geometry.attributes.esRest.array;
+      for (var i = 0; i < r.length; i += 6) { var kk = key(r[i], r[i + 1], r[i + 2]), l = grid.get(kk); if (!l) grid.set(kk, l = []); l.push(r[i], r[i + 1], r[i + 2]); }
+    });
+    var sstep = function (a, b, x) { var t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+    muscles.forEach(function (m) {
+      var r = m.geometry.attributes.esRest.array, n = r.length / 3, cv = m.geometry.attributes.esCurv;
+      if (!cv || n < 4) return;
+      var mx = 0, my = 0, mz = 0, i;
+      for (i = 0; i < n; i++) { mx += r[3 * i]; my += r[3 * i + 1]; mz += r[3 * i + 2]; }
+      mx /= n; my /= n; mz /= n;
+      var xx = 0, xy = 0, xz = 0, yy = 0, yz = 0, zz = 0;
+      for (i = 0; i < n; i++) { var dx = r[3 * i] - mx, dy = r[3 * i + 1] - my, dz = r[3 * i + 2] - mz; xx += dx * dx; xy += dx * dy; xz += dx * dz; yy += dy * dy; yz += dy * dz; zz += dz * dz; }
+      var ax = new THREE.Vector3(0.1, 1, 0.1).normalize(), nv = new THREE.Vector3();
+      for (var it = 0; it < 30; it++) {                                   // the main axis: power iteration on the covariance
+        nv.set(xx * ax.x + xy * ax.y + xz * ax.z, xy * ax.x + yy * ax.y + yz * ax.z, xz * ax.x + yz * ax.y + zz * ax.z);
+        if (nv.lengthSq() < 1e-20) break; ax.copy(nv).normalize();
+      }
+      var lo = Infinity, hi = -Infinity;
+      for (i = 0; i < n; i++) { var pr = r[3 * i] * ax.x + r[3 * i + 1] * ax.y + r[3 * i + 2] * ax.z; if (pr < lo) lo = pr; if (pr > hi) hi = pr; }
+      var span = Math.max(1e-6, hi - lo), out = cv.array;
+      for (i = 0; i < n; i++) {
+        var px = r[3 * i], py = r[3 * i + 1], pz = r[3 * i + 2], best = 1;
+        var cx = Math.floor(px / cell), cy = Math.floor(py / cell), cz = Math.floor(pz / cell);
+        for (var a = -1; a <= 1; a++) for (var b2 = -1; b2 <= 1; b2++) for (var c = -1; c <= 1; c++) {
+          var l2 = grid.get((cx + a + 4096) * 67108864 + (cy + b2 + 4096) * 8192 + (cz + c + 4096)); if (!l2) continue;
+          for (var q = 0; q < l2.length; q += 3) { var ex = l2[q] - px, ey = l2[q + 1] - py, ez = l2[q + 2] - pz, d2 = ex * ex + ey * ey + ez * ez; if (d2 < best) best = d2; }
+        }
+        var sN = ((px * ax.x + py * ax.y + pz * ax.z) - lo) / span;
+        out[2 * i] = 1 - sstep(0.003, 0.011, Math.sqrt(best));
+        out[2 * i + 1] = 0.85 * Math.max(1 - sstep(0.0, 0.09, sN), sstep(0.91, 1.0, sN));
+      }
+      cv.needsUpdate = true;
+      m.material.userData.es.esAxis.value.copy(ax);
+    });
+  }
   function texturesOn(on) { TEX.on = !!on; if (TEX.uOn) TEX.uOn.value = TEX.on ? 1 : 0; }
   function wetLook(obj) {
     var any = false;
@@ -2852,6 +2916,7 @@ function render(ctx) {
       tissueShader(o.material, o);
       any = true;
     });
+    if (any) muscleShape(obj);
     if (any) {
       scene.environmentIntensity = Math.max(scene.environmentIntensity || 0, 0.35);                 // reflections of a room
       if (!headLight) { headLight = new THREE.DirectionalLight(0xffffff, 0.75); headLight.position.set(0.4, 0.6, 1); camera.add(headLight); if (!camera.parent) scene.add(camera); }
