@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 9 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 10 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2736,6 +2736,23 @@ function render(ctx) {
     '    h = a * (0.8 * smoothstep(0.0, 0.35, e) + 0.2 * esFbm(p * 600.0)); c = 0.88 + 0.16 * lo - 0.1 * sep; m = 0.35 * sep; }',
     '  else { float a = esFade(px, 250.0); h = 0.6 * a * esFbm(p * 250.0); c = 0.9 + 0.16 * lo; }',
     '  return vec4(h, c, r, m); }',
+    // small surface vessels on the organs: arterioles (two sizes, red) and venules (purplish), ridges of a warped noise
+    // broken up so they branch; x: arteriole amount, y: venule amount, z: their height (m). Not on the heart (its own
+    // coronaries), the big vessels or bone; fewer on the liver and the lungs.
+    'vec3 esVessels(vec3 p, float k, float px) {',
+    '  if ((k > 5.5 && k < 6.5) || (k > 7.5 && k < 9.5)) return vec3(0.0);',
+    '  float dens = k < 1.5 ? 0.7 : ((k > 6.5 && k < 7.5) ? 0.5 : 1.0);',
+    '  vec3 w = vec3(esFbm(p * 18.0 + 2.1), esFbm(p * 18.0 + 7.3), esFbm(p * 18.0 + 5.9));',
+    '  float a1 = 1.0 - abs(2.0 * esFbm(p * 45.0 + 2.0 * w) - 1.0);',
+    '  float t1 = esFade(px, 360.0) * smoothstep(0.965, 0.99, a1) * smoothstep(0.42, 0.68, esFbm(p * 16.0 + vec3(1.3, 4.4, 9.1)));',
+    '  float a2 = 1.0 - abs(2.0 * esFbm(p * 130.0 + 3.0 * w) - 1.0);',
+    '  float t2 = esFade(px, 1040.0) * smoothstep(0.972, 0.993, a2) * smoothstep(0.48, 0.74, esFbm(p * 50.0 + vec3(6.2, 0.7, 3.8)));',
+    '  float v1 = 1.0 - abs(2.0 * esFbm(p * 38.0 + 2.0 * w + 11.0) - 1.0);',
+    '  float t3 = esFade(px, 300.0) * smoothstep(0.97, 0.992, v1) * smoothstep(0.45, 0.7, esFbm(p * 14.0 + vec3(8.0, 2.5, 6.6)));',
+    '  float art = dens * max(t1, 0.7 * t2), vein = dens * 0.8 * t3;',
+    '  return vec3(0.55 * art, 0.5 * vein, 0.00035 * max(art, vein)); }',
+    // finer relief for every tissue (a procedural normal map): about 3 mm and 1 mm, each faded before it gets below a pixel
+    'float esMicro(vec3 p, float px) { return 0.00015 * esFade(px, 2400.0) * esFbm(p * 300.0 + 5.0) + 0.00008 * esFade(px, 7200.0) * esFbm(p * 900.0); }',
     'vec3 esBump(vec3 sp, vec3 n, float h, float fd) { vec3 sx = dFdx(sp), sy = dFdy(sp), r1 = cross(sy, n), r2 = cross(n, sx);',
     '  float det = dot(sx, r1) * fd; vec2 dh = vec2(dFdx(h), dFdy(h)); vec3 g = sign(det) * (dh.x * r1 + dh.y * r2);',
     '  return normalize(abs(det) * n - g); }'
@@ -2759,9 +2776,11 @@ function render(ctx) {
       var u = mat.userData.es; for (var k in u) sh.uniforms[k] = u[k];
       sh.vertexShader = 'attribute vec3 esRest;\nattribute vec2 esCurv;\nvarying vec3 vEsP;\nvarying vec2 vEsC;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvEsP = esRest; vEsC = esCurv;');
       sh.fragmentShader = TISSUE_GLSL + '\n' + sh.fragmentShader
-        .replace('#include <color_fragment>', '#include <color_fragment>\nvec4 esT = vec4(0.0, 1.0, 1.0, 0.0);\nif (esOn * esKind > 0.5) { float esPx = length(fwidth(vEsP)); esT = esTissue(vEsP, esKind, esPx, vEsC); diffuseColor.rgb = mix(diffuseColor.rgb, esSecond, clamp(esT.w, 0.0, 1.0)) * esT.y; }')
+        .replace('#include <color_fragment>', '#include <color_fragment>\nvec4 esT = vec4(0.0, 1.0, 1.0, 0.0); float esHt = 0.0;\nif (esOn * esKind > 0.5) { float esPx = length(fwidth(vEsP)); esT = esTissue(vEsP, esKind, esPx, vEsC); diffuseColor.rgb = mix(diffuseColor.rgb, esSecond, clamp(esT.w, 0.0, 1.0)) * esT.y;\n'
+          + '  vec3 esV = esVessels(vEsP, esKind, esPx); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.3, 0.025, 0.04), esV.x); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.14, 0.05, 0.15), esV.y);\n'
+          + '  esHt = esT.x * esBumpH + esV.z + esMicro(vEsP, esPx); }')
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor * esT.z, 0.04, 1.0);')
-        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nif (esOn * esKind > 0.5) normal = esBump(-vViewPosition, normal, esT.x * esBumpH, faceDirection);');
+        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nif (esOn * esKind > 0.5) normal = esBump(-vViewPosition, normal, esHt, faceDirection);');
     };
     mat.customProgramCacheKey = function () { return 'esasim-tissue'; };
     TEX.mats.push(mat);
