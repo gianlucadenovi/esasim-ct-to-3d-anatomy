@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 10 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 11 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -2663,7 +2663,7 @@ function render(ctx) {
     partsDraw();
   }
   // Anatomy (models grouped as organs, vessels, skeleton…) looks wet: a clear coat that catches the light, as living tissue does
-  var WET = { 'organs': [0.42, 0.7, 0.12], 'vessels': [0.38, 0.75, 0.1], 'heart': [0.34, 0.95, 0.05], 'lungs and airways': [0.5, 0.55, 0.18], 'muscles': [0.5, 0.45, 0.2], 'skeleton': [0.62, 0.2, 0.35] }, headLight = null;
+  var WET = { 'organs': [0.42, 0.7, 0.12], 'vessels': [0.38, 0.75, 0.1], 'heart': [0.34, 0.95, 0.05], 'lungs and airways': [0.45, 0.8, 0.08], 'muscles': [0.5, 0.45, 0.2], 'skeleton': [0.62, 0.2, 0.35] }, headLight = null;
   // Tissue textures: each tissue gets its own surface, computed on the graphics card from the model's own coordinates
   // (solid noise: no texture coordinates needed, no seams, and it stays on the tissue as it deforms): liver lobules,
   // the fine grain of the spleen, bowel folds, muscle fibres, the heart's fibres and fat, the lung's air sacs, vessel
@@ -2672,7 +2672,7 @@ function render(ctx) {
   var TISSUE_KINDS = [  // [kind, words in the structure's name, bump height (m), second colour (fat, slate, pale crests)]
     [1, ['liver'], 0.0003, null], [2, ['spleen'], 0.0003, null], [3, ['kidney', 'gallbladder', 'bladder'], 0.0002, null],
     [4, ['stomach', 'bowel', 'colon', 'duodenum', 'esophagus', 'rectum'], 0.0022, [0.98, 0.84, 0.76]],
-    [6, ['heart', 'atrial', 'myocard'], 0.0012, [0.95, 0.87, 0.66]], [7, ['lung'], 0.0006, [0.3, 0.3, 0.34]],
+    [6, ['heart', 'atrial', 'myocard'], 0.0012, [0.95, 0.87, 0.66]], [7, ['lung'], 0.0008, [0.09, 0.085, 0.1]],
     [8, ['aorta', 'artery', 'arteries', 'vein', 'vena', 'trunk', 'portal', 'trachea', 'bronch'], 0.00025, null],
     [5, ['gluteus', 'iliopsoas', 'autochthon', 'psoas', 'muscle'], 0.0005, [0.95, 0.86, 0.66]],
     [10, ['pancreas', 'adrenal', 'thyroid', 'prostate', 'gland'], 0.0007, [0.93, 0.82, 0.55]]
@@ -2725,8 +2725,18 @@ function render(ctx) {
     '    h = 0.8 * ves + 0.1 * am * mot + 0.6 * fat * al * lob;',
     '    c = mix(0.82 + 0.22 * lo + 0.08 * am * (mot - 0.5), 0.9 + 0.1 * al * lob, fv) * mix(1.0, 0.55, ves);',
     '    m = fv; r = mix(0.8 - 0.15 * ves, 1.15, fv); }',
-    '  else if (k < 7.5) { float a = esFade(px, 600.0); vec2 w = esCell(p * 600.0); h = a * smoothstep(0.0, 0.6, w.x);',
-    '    c = 0.88 + 0.16 * lo + 0.06 * h; m = 0.7 * smoothstep(0.6, 0.76, esFbm(p * 50.0)); r = 1.1; }',
+    // the lungs: polygonal lobules (1 to 2.5 cm, slightly warped) outlined by thin septa, where dark carbon pigment
+    // gathers in patches, with small dark specks; under the glossy pleura a fine bubbly alveolar texture; the colour
+    // varies softly between pink and grey
+    '  else if (k < 7.5) { vec3 lw = vec3(esFbm(p * 20.0), esFbm(p * 20.0 + 3.1), esFbm(p * 20.0 + 6.7)); vec2 L = esCell(p * 60.0 + 0.6 * lw);',
+    '    float sept = esFade(px, 120.0) * (1.0 - smoothstep(0.0, 0.07, L.y - L.x));',
+    '    float alv = esFade(px, 900.0) * smoothstep(0.0, 0.5, esCell(p * 450.0).x);',
+    '    float soot = smoothstep(0.48, 0.72, esFbm(p * 25.0 + 4.0));',
+    '    float dots = esFade(px, 440.0) * (1.0 - smoothstep(0.05, 0.13, esCell(p * 220.0 + 7.0).x)) * smoothstep(0.42, 0.7, esFbm(p * 30.0 + 9.0));',
+    '    h = 0.55 * alv + 0.45 * (1.0 - sept);',
+    '    c = 0.84 + 0.26 * lo + 0.06 * alv - 0.06 * sept;',
+    '    m = clamp(sept * (0.25 + 0.6 * soot) + 0.75 * dots + 0.12 * smoothstep(0.55, 0.8, esFbm(p * 12.0 + 2.0)), 0.0, 0.9);',
+    '    r = 0.9 + 0.12 * sept; }',
     '  else if (k < 8.5) { float a = esFade(px, 350.0), n = esNoise(vec3(p.x * 350.0, p.y * 25.0, p.z * 350.0)); h = 0.4 * a * n; c = 0.94 + 0.06 * lo + 0.08 * a * n; }',
     // bone: a little noise; darker and yellowish where the surface is hollow or folded (its shape, measured on the mesh)
     '  else if (k < 9.5) { float a = esFade(px, 500.0), cav = clamp(cv.x, 0.0, 1.0), cx = clamp(cv.y, 0.0, 1.0);',
@@ -2760,6 +2770,8 @@ function render(ctx) {
   function tissueShader(mat, mesh) {
     var t = tissueOf(mesh.name, mesh.parent && mesh.parent.name), g = mesh.geometry;
     if (t[0] === 6 && mat.color) mat.color.setRGB(0.42, 0.035, 0.045);
+    // the lungs: solid (the model file makes them see-through), pinkish grey as a living adult lung (linear RGB)
+    if (t[0] === 7) { mat.transparent = false; mat.opacity = 1; mat.depthWrite = true; if (mat.color) mat.color.setRGB(0.6, 0.3, 0.3); mat.needsUpdate = true; }
     // where the surface was, in metres in the file's frame (the texture stays on the tissue as it deforms). The positions of
     // a compact GLB are 16-bit integers scaled by the part's node: read raw, every texture was thousands of times too fine
     // (per-pixel noise, sparkling), so they are put in metres with the part's own transform.
