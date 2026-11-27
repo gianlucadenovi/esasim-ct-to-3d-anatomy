@@ -6,13 +6,13 @@
     "name": "3 · Segment any CT automatically (TotalSegmentator)",
     "description": "Any CT (NIfTI, NRRD, MHA or DICOM) segmented by the TotalSegmentator network into organs, bones, vessels and muscles, turned into the same 3D anatomy as flow 1, and scored against expert labels when the dataset has them.",
     "published_version": 1,
-    "updated": "2026-11-27 20:57:55",
+    "updated": "2026-11-27 21:20:39",
     "graph": {
         "nodes": [
             {
                 "id": "dl",
                 "type": "download-files",
-                "x": -80,
+                "x": -380,
                 "y": 458,
                 "params": {
                     "sources": "https://zenodo.org/records/10047263",
@@ -29,7 +29,35 @@
                     "licence": "CC-BY-4.0",
                     "credit": "TotalSegmentator dataset v2.0.1 (small subset), Zenodo, doi:10.5281/zenodo.10047263. Wasserthal J., Breit H.-C., Meyer M.T., et al. TotalSegmentator: Robust Segmentation of 104 Anatomic Structures in CT Images. Radiology: Artificial Intelligence 2023; 5(5): e230024."
                 },
-                "title": "CT scans: TotalSegmentator dataset (Zenodo), case s1400 · replace with your own "
+                "title": "Demo scans: TotalSegmentator case s1400 (Zenodo), with expert labels"
+            },
+            {
+                "id": "load",
+                "type": "ws-load-ct-scans-dicom-discs-nifti-nrrd",
+                "x": 0,
+                "y": 200,
+                "params": {
+                    "source": "Files wired in",
+                    "folder": "",
+                    "series": "The best CT series of each study",
+                    "only": "",
+                    "modalities": "CT",
+                    "min_images": 20,
+                    "wait_minutes": 30
+                },
+                "title": "Load the CT scans (disc, DICOM, NIfTI…)"
+            },
+            {
+                "id": "loadtel",
+                "type": "telemetry",
+                "x": 380,
+                "y": -300,
+                "params": {
+                    "interval": 0.25,
+                    "channels": "ct_load",
+                    "keep": 200
+                },
+                "title": "Loader, live"
             },
             {
                 "id": "seg",
@@ -113,6 +141,17 @@
                 "title": "Score the network against the experts"
             },
             {
+                "id": "loadview",
+                "type": "ws-load-a-ct",
+                "x": 1220,
+                "y": -760,
+                "params": {
+                    "loader_node": "load",
+                    "seg_node": "seg"
+                },
+                "title": "Load a CT"
+            },
+            {
                 "id": "slices",
                 "type": "image-view",
                 "x": 1220,
@@ -166,18 +205,72 @@
                     "rows": 50
                 },
                 "title": "Network vs experts: Dice per structure (worst first)"
+            },
+            {
+                "id": "seriestab",
+                "type": "table-view",
+                "x": 380,
+                "y": 760,
+                "params": {
+                    "rows": 50
+                },
+                "title": "Series found in the scans (and which were loaded)"
             }
         ],
         "edges": [
             {
-                "id": "dl.files>seg.scans",
+                "id": "dl.files>load.files",
                 "from": {
                     "node": "dl",
                     "port": "files"
                 },
                 "to": {
+                    "node": "load",
+                    "port": "files"
+                }
+            },
+            {
+                "id": "load.cases>seg.scans",
+                "from": {
+                    "node": "load",
+                    "port": "cases"
+                },
+                "to": {
                     "node": "seg",
                     "port": "scans"
+                }
+            },
+            {
+                "id": "load.telemetry>loadtel.from",
+                "from": {
+                    "node": "load",
+                    "port": "telemetry"
+                },
+                "to": {
+                    "node": "loadtel",
+                    "port": "from"
+                }
+            },
+            {
+                "id": "loadtel.stream>loadview.live",
+                "from": {
+                    "node": "loadtel",
+                    "port": "stream"
+                },
+                "to": {
+                    "node": "loadview",
+                    "port": "live"
+                }
+            },
+            {
+                "id": "load.series>seriestab.data",
+                "from": {
+                    "node": "load",
+                    "port": "series"
+                },
+                "to": {
+                    "node": "seriestab",
+                    "port": "data"
                 }
             },
             {

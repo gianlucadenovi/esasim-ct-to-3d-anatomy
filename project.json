@@ -27,7 +27,7 @@
             "name": "3 · Segment any CT automatically (TotalSegmentator)",
             "file": "blueprints/3-segment-any-ct-automatically-totalsegmentator.json",
             "published_version": 1,
-            "nodes": 12
+            "nodes": 16
         }
     ],
     "blocks": [
@@ -52,6 +52,11 @@
             "name": "3D view (stable soft tissue)"
         },
         {
+            "id": "ws-load-ct-scans-dicom-discs-nifti-nrrd",
+            "version": 1,
+            "name": "Load CT scans (DICOM discs, NIfTI, NRRD, MHA)"
+        },
+        {
             "id": "ws-segment-ct-automatically-totalsegmen",
             "version": 7,
             "name": "Segment CT automatically (TotalSegmentator)"
@@ -60,6 +65,11 @@
             "id": "ws-score-segmentation-against-experts",
             "version": 2,
             "name": "Score segmentation against experts"
+        },
+        {
+            "id": "ws-load-a-ct",
+            "version": 1,
+            "name": "Load a CT"
         }
     ]
 }
