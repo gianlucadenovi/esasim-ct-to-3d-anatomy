@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 56 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 57 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -72,6 +72,11 @@ function render(ctx) {
   if (window.__v3dStop) { try { window.__v3dStop(); } catch (e) { } window.__v3dStop = null; }
   el.innerHTML = '';
   el.style.background = '#0b0e14';
+  var ESDBG = document.createElement('div'); ESDBG.style.cssText = 'position:fixed;left:230px;top:40px;z-index:9999;color:#ff0;font:11px monospace;max-width:440px;white-space:pre-wrap;pointer-events:none;background:rgba(0,0,0,.7)';
+  document.body.appendChild(ESDBG); window.__esdbg = function (m) { ESDBG.textContent = (String(m) + '\n' + ESDBG.textContent).slice(0, 1500); };
+  window.addEventListener('error', function (e) { window.__esdbg('ERR ' + e.message + ' @' + e.lineno + ':' + e.colno); });
+  window.addEventListener('unhandledrejection', function (e) { window.__esdbg('REJ ' + (e.reason && e.reason.message || e.reason)); });
+  window.__esdbg('debug v57');
 
   // ------------------------------------------------------------------ renderer, scene, camera
   // A rocket flight spans centimetres to thousands of kilometres: a logarithmic depth buffer keeps both sharp.
@@ -3210,7 +3215,8 @@ function render(ctx) {
       });
     }).catch(function (e) { ctx.status('Could not show the CT on the cut (' + f.name + '): ' + e.message); });
   }
-  function partsCut(axis) {
+  function partsCut(axis) { try { partsCut0(axis); } catch (e) { if (window.__esdbg) window.__esdbg('CUT ' + e.message + ' ' + String(e.stack || '').split('\n').slice(1, 3).join(' ')); } }
+  function partsCut0(axis) {
     PARTS.axis = axis; partsEl.querySelector('.pt-pos').disabled = axis === 'off'; partsEl.querySelector('.pt-ax').value = axis;
     renderer.localClippingEnabled = axis !== 'off';
     var box = PARTS.lbox || (PARTS.lbox = partsLocalBox());
@@ -3223,7 +3229,7 @@ function render(ctx) {
     partsPlaneTick();
     try { var bad = PARTS.list.filter(function (p) { var g = p.mesh.geometry; if (!g.boundingBox) g.computeBoundingBox(); var b = g.boundingBox; return !(isFinite(b.min.x) && isFinite(b.max.x) && isFinite(b.min.y) && isFinite(b.max.y) && isFinite(b.min.z) && isFinite(b.max.z)); }).map(function (p) { return p.name; });
       var dbg = document.createElement('div'); dbg.style.cssText = 'position:absolute;left:220px;top:60px;z-index:99;color:#ff0;font:11px monospace;max-width:480px;background:#000a;padding:4px'; dbg.className = 'cutdbg'; var od = el.querySelector('.cutdbg'); if (od) od.remove(); el.appendChild(dbg);
-      dbg.textContent = ('CUTDBG ' + axis + ' box ' + (box ? [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z].map(function (v) { return v.toFixed(3); }).join(',') : 'none') + ' at ' + PARTS.at + ' plane ' + PARTS.plane.normal.toArray().map(function (v) { return v.toFixed(2); }).join(',') + ' / ' + PARTS.plane.constant.toFixed(3) + ' bad ' + bad.slice(0, 5).join(',') + ' n ' + bad.length + ' cam ' + camera.position.toArray().map(function (v) { return v.toFixed(2); }).join(',') + ' ref ' + (PARTS.ref ? PARTS.ref.name + ' ' + PARTS.ref.matrixWorld.elements.slice(12, 15).map(function (v) { return v.toFixed(2); }).join(',') + ' s ' + PARTS.ref.matrixWorld.elements[0].toFixed(3) : '-')); } catch (e) { var d2 = document.createElement('div'); d2.style.cssText = 'position:absolute;left:220px;top:60px;z-index:99;color:#f55'; d2.textContent = 'CUTDBG error ' + e.message; el.appendChild(d2); }
+      dbg.textContent = window.__esdbg && window.__esdbg('CUTDBG ' + axis + ' box ' + (box ? [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z].map(function (v) { return v.toFixed(3); }).join(',') : 'none') + ' at ' + PARTS.at + ' plane ' + PARTS.plane.normal.toArray().map(function (v) { return v.toFixed(2); }).join(',') + ' / ' + PARTS.plane.constant.toFixed(3) + ' bad ' + bad.slice(0, 5).join(',') + ' n ' + bad.length + ' cam ' + camera.position.toArray().map(function (v) { return v.toFixed(2); }).join(',') + ' ref ' + (PARTS.ref ? PARTS.ref.name + ' ' + PARTS.ref.matrixWorld.elements.slice(12, 15).map(function (v) { return v.toFixed(2); }).join(',') + ' s ' + PARTS.ref.matrixWorld.elements[0].toFixed(3) : '-')); } catch (e) { var d2 = document.createElement('div'); d2.style.cssText = 'position:absolute;left:220px;top:60px;z-index:99;color:#f55'; d2.textContent = 'CUTDBG error ' + e.message; el.appendChild(d2); }
     partsWinShow();
     partsCap();
     PARTS.list.forEach(function (p) {
@@ -12569,6 +12575,7 @@ function render(ctx) {
       draw();
     } catch (err) {
       // errors in the animation loop would reach the page only as "Script error." (the frame is sandboxed): say what it is
+      if (window.__esdbg) window.__esdbg('TICK ' + err.message + ' ' + String(err.stack || '').split('\n').slice(1, 3).join(' '));
       if (!tickErr || tickErr.message !== err.message) { tickErr = err; console.error(err); ctx.status('The 3D view hit an error: ' + err.message + (err.stack ? ' (' + String(err.stack).split('\n').slice(1, 3).join(' ').replace(/\s+/g, ' ').trim() + ')' : '')); }
     }
   }
