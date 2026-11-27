@@ -37,7 +37,7 @@
         },
         {
             "id": "ws-soft-body-model-skin-inside",
-            "version": 3,
+            "version": 4,
             "name": "Soft body model (skin inside)"
         }
     ]

@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 3 · worker block, Python: def run(ctx)
+# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 4 · worker block, Python: def run(ctx)
 # Turns segmented anatomy into a soft-tissue model the 3D view simulates in real time: organs that sag, sway and push each other under gravity, held by a fixed skeleton and contained by the skin (metaba
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-27
@@ -21,6 +21,7 @@
 #   skin        bool      Skin = true
 #   skin_spacing number    Skin spacing (mm) = 40
 #   body_hu     number    Body threshold (HU) = -300
+#   physics     bool      Physics = true
 # Runs on  Any worker. Return a dict to fill the "result" output.
 # Packages numpy, scipy, scikit-image, trimesh, fast-simplification, SimpleITK (installed by the worker with pip when missing)
 # EsaSim rewrites these lines from the block's definition each time it is saved: change the definition, not them.
