@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# CT volume for the 3D view (ws-ct-volume-for-the-3d-view) · version 3 · worker block, Python: def run(ctx)
+# CT volume for the 3D view (ws-ct-volume-for-the-3d-view) · version 5 · worker block, Python: def run(ctx)
 # Resamples a CT scan into the 3D models' own frame (as Labels to 3D models writes them) as a compact volume, so the 3D view can show the real CT on a cut.
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-27
@@ -121,7 +121,7 @@ def run(ctx):
             if not names:
                 labvol = None
             ctx.log("%s: %d structures for the colours on the cut." % (case, len(names)))
-        lab = np.zeros((nz, ny, nx), np.uint8) if labvol is not None else None
+        slab = np.zeros((nz, ny, nx), np.uint8) if labvol is not None else None
         X, Y = np.meshgrid(xs, ys)                                       # (ny, nx)
         for kz in range(nz):
             Z = gmin[2] + (kz + 0.5) * h
@@ -131,12 +131,12 @@ def run(ctx):
             ijk = pts @ Ainv.T                                           # continuous (i, j, k)
             v = ndimage.map_coordinates(arr, [ijk[:, 2], ijk[:, 1], ijk[:, 0]], order=1, mode="constant", cval=HU_LO)
             out[kz] = v.reshape(ny, nx)
-            if lab is not None:                                          # the nearest voxel's structure
+            if slab is not None:                                          # the nearest voxel's structure
                 ii = np.rint(ijk).astype(np.int64)
                 ok = (ii[:, 0] >= 0) & (ii[:, 0] < ni) & (ii[:, 1] >= 0) & (ii[:, 1] < nj) & (ii[:, 2] >= 0) & (ii[:, 2] < nk)
                 lv = np.zeros(len(ii), np.uint8)
                 lv[ok] = labvol[ii[ok, 2], ii[ok, 1], ii[ok, 0]]
-                lab[kz] = lv.reshape(ny, nx)
+                slab[kz] = lv.reshape(ny, nx)
             if kz % 16 == 0:
                 ctx.progress(100.0 * (n + kz / nz) / len(files), "%s: resampling %d of %d" % (case, kz, nz))
         # the body: tissue above -400 HU, the largest piece, holes (lungs, bowel gas) filled slice by slice
@@ -152,7 +152,7 @@ def run(ctx):
         q = np.zeros(out.shape, np.uint8)
         q[body] = (1 + np.round((np.clip(out[body], HU_LO, HU_HI) - HU_LO) / (HU_HI - HU_LO) * 254)).astype(np.uint8)
         data = gzip.compress(q.tobytes(order="C"), compresslevel=6)
-        ldata = gzip.compress(lab.tobytes(order="C"), compresslevel=6) if lab is not None else b""
+        ldata = gzip.compress(slab.tobytes(order="C"), compresslevel=6) if slab is not None else b""
         head = {"format": "esasim.ctvol/1", "case": case, "dims": [nx, ny, nz], "min": [round(float(x), 6) for x in gmin],
                 "max": [round(float(x), 6) for x in gmax], "voxel_m": round(h, 6), "gzip": True, "data_bytes": len(data),
                 "label_bytes": len(ldata), "labels": names,
