@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 60 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 61 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -3224,6 +3224,8 @@ function render(ctx) {
       return Promise.all([unz(body), lbody ? unz(lbody) : Promise.resolve(null)]).then(function (rbs) {
         if (seq !== FILES.seq) return;
         var rb = rbs[0], d = head.dims, data = new Uint8Array(rb);
+        var dbgE = document.createElement('div'); dbgE.style.cssText = 'position:absolute;left:230px;top:50px;z-index:99;color:#ff0;font:11px monospace;background:#000a;pointer-events:none'; el.appendChild(dbgE);
+        dbgE.textContent = 'CTDBG data_bytes ' + head.data_bytes + ' label_bytes ' + head.label_bytes + ' labels ' + (head.labels ? head.labels.length : 'none') + ' lab ' + (rbs[1] ? rbs[1].byteLength : 'null') + ' need ' + d[0] * d[1] * d[2] + ' ct ' + rb.byteLength;
         if (data.length !== d[0] * d[1] * d[2]) throw new Error('its size does not match its header');
         var tex = new D3(data, d[0], d[1], d[2]);
         tex.format = THREE.RedFormat; tex.type = THREE.UnsignedByteType; tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
