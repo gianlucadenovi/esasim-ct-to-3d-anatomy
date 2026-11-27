@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 44 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 45 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -3741,6 +3741,9 @@ function render(ctx) {
   // scan). It is a contact both ways: what goes too far out is pushed back in and the skin there pushed out, by their
   // masses (the skin is light: it gives and bulges, and its links and the tissue around pull it back), and the speed
   // outward between them is taken away.
+  // the body wall under the skin (fat, the abdominal and back muscles that are not segmented) carries the organs' weight:
+  // the containment treats it as this share of the skin's give (1: the skin alone)
+  var SKIN_WALL = 0.05;
   function softSkinContain(S) {
     var P = S.skinPairs, n = S.n, xb = S.xb, vb = S.vb, im = S.im, r = S.r, N = S.skinN, H = S.skinH;
     var A = S.skA || (S.skA = new Float32Array(11 * n)), W = S.skW && S.skW.length >= P.length / 2 ? S.skW : (S.skW = new Float32Array(P.length));
@@ -3752,7 +3755,7 @@ function render(ctx) {
       if (s < 1) { var u = 1 - s; w = u * u * u; }
       W[q >> 1] = w; if (!w) continue;
       var a = 11 * i, hk = H[k];
-      A[a] += w; A[a + 1] += w * w * im[k];
+      A[a] += w; A[a + 1] += w * w * im[k] * SKIN_WALL;
       A[a + 2] += w * (xb[3 * k] + N[3 * k] * hk); A[a + 3] += w * (xb[3 * k + 1] + N[3 * k + 1] * hk); A[a + 4] += w * (xb[3 * k + 2] + N[3 * k + 2] * hk);
       A[a + 5] += w * N[3 * k]; A[a + 6] += w * N[3 * k + 1]; A[a + 7] += w * N[3 * k + 2];
       A[a + 8] += w * vb[3 * k]; A[a + 9] += w * vb[3 * k + 1]; A[a + 10] += w * vb[3 * k + 2];
@@ -3780,7 +3783,7 @@ function render(ctx) {
     for (var q2 = 0; q2 < P.length; q2 += 2) {                       // pass 3: the skin there is pushed out as much, by its share
       var i3 = P[q2], k3 = P[q2 + 1], w3 = W[q2 >> 1], l = 5 * i3;
       if (!w3 || (!L[l] && !L[l + 1]) || !im[k3]) continue;
-      var f = w3 * im[k3] / Math.max(1, C[k3]), o3 = 3 * k3;
+      var f = w3 * im[k3] * SKIN_WALL / Math.max(1, C[k3]), o3 = 3 * k3;
       xb[o3] += f * L[l] * L[l + 2]; xb[o3 + 1] += f * L[l] * L[l + 3]; xb[o3 + 2] += f * L[l] * L[l + 4];
       vb[o3] += f * L[l + 1] * L[l + 2]; vb[o3 + 1] += f * L[l + 1] * L[l + 3]; vb[o3 + 2] += f * L[l + 1] * L[l + 4];
     }
