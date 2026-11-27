@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Segment CT automatically (TotalSegmentator) (ws-segment-ct-automatically-totalsegmen) · version 7 · worker block, Python: def run(ctx)
+# Segment CT automatically (TotalSegmentator) (ws-segment-ct-automatically-totalsegmen) · version 8 · worker block, Python: def run(ctx)
 # Segments organs, bones, vessels and muscles in any CT (NIfTI, NRRD, MHA or DICOM series) with TotalSegmentator, and writes each case as <case>/ct.nii.gz + <case>/segmentations/<structure>.nii.gz, the
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-27
@@ -159,14 +159,25 @@ def run(ctx):
 
 def pick_device(choice, log):
     # asked of a child process: this one never loads torch (torch and SimpleITK in one process can crash on Windows)
-    code = ("import torch, json; c = torch.cuda.is_available(); print(json.dumps([c, torch.cuda.get_device_name(0) if c else '', "
-            "torch.__version__, torch.version.cuda]))")
+    code = ("import torch, json\n"
+            "c = torch.cuda.is_available(); why = ''\n"
+            "if not c and torch.version.cuda:\n"
+            "    try:\n        torch.cuda.init()\n    except Exception as e:\n        why = str(e).splitlines()[0][:300]\n"
+            "print(json.dumps([c, torch.cuda.get_device_name(0) if c else '', torch.__version__, torch.version.cuda, why]))")
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join(dict.fromkeys([x for x in sys.path if x and os.path.isdir(x)] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])))
     try:
         out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, timeout=300)
-        cuda, name, ver, cver = json.loads(out.stdout.strip().splitlines()[-1])
+        cuda, name, ver, cver, why = json.loads(out.stdout.strip().splitlines()[-1])
         log("PyTorch %s (%s)." % (ver, "CUDA %s" % cver if cver else "a CPU-only build"))
+        if not cuda and cver:
+            log("PyTorch cannot use the GPU here: %s" % (why or "no CUDA device found"))
+            try:
+                smi = subprocess.run(["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader"],
+                                     capture_output=True, text=True, timeout=30)
+                log("nvidia-smi: %s" % ((smi.stdout or smi.stderr).strip()[:300] or "no answer"))
+            except Exception as e:
+                log("nvidia-smi could not run (%s): is the NVIDIA driver installed on this worker?" % e)
     except Exception as e:
         log("PyTorch could not be checked (%s): the CPU is used." % e)
         cuda, name = False, ""
