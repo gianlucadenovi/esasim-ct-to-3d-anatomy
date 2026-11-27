@@ -6,7 +6,7 @@
     "name": "3 · Segment any CT automatically (TotalSegmentator)",
     "description": "Any CT (NIfTI, NRRD, MHA or DICOM) segmented by the TotalSegmentator network into organs, bones, vessels and muscles, turned into the same 3D anatomy as flow 1, and scored against expert labels when the dataset has them.",
     "published_version": 2,
-    "updated": "2026-11-27 22:50:59",
+    "updated": "2026-11-27 22:51:21",
     "graph": {
         "nodes": [
             {
@@ -77,8 +77,8 @@
             {
                 "id": "rd",
                 "type": "medical-read",
-                "x": 780,
-                "y": -420,
+                "x": 1470,
+                "y": -380,
                 "params": {
                     "window": "CT soft tissue",
                     "skip": "segmentations, segmentation, masks, mask, labels, label",
@@ -89,8 +89,8 @@
             {
                 "id": "mesh",
                 "type": "ws-expert-labels-to-3d-models-clean",
-                "x": 780,
-                "y": -152,
+                "x": 1470,
+                "y": -112,
                 "params": {
                     "structures": "",
                     "min_ml": 1,
@@ -106,8 +106,8 @@
             {
                 "id": "ctvol",
                 "type": "ws-ct-volume-for-the-3d-view",
-                "x": 780,
-                "y": 140,
+                "x": 1470,
+                "y": 180,
                 "params": {
                     "file": "ct.nii.gz",
                     "size": 256
@@ -117,8 +117,8 @@
             {
                 "id": "skin",
                 "type": "ws-soft-body-model-skin-inside",
-                "x": 780,
-                "y": 342,
+                "x": 1470,
+                "y": 382,
                 "params": {
                     "structures": "",
                     "spheres": 40,
@@ -133,8 +133,8 @@
             {
                 "id": "score",
                 "type": "ws-score-segmentation-against-experts",
-                "x": 770,
-                "y": 940,
+                "x": 1460,
+                "y": 980,
                 "params": {
                     "min_ml": 0.5
                 },
@@ -154,8 +154,8 @@
             {
                 "id": "slices",
                 "type": "image-view",
-                "x": 1220,
-                "y": -400,
+                "x": 1910,
+                "y": -360,
                 "params": {
                     "size": "large"
                 },
@@ -164,8 +164,8 @@
             {
                 "id": "found",
                 "type": "table-view",
-                "x": 770,
-                "y": 1180,
+                "x": 1460,
+                "y": 1220,
                 "params": {
                     "rows": 50
                 },
@@ -174,8 +174,8 @@
             {
                 "id": "anatomy",
                 "type": "ws-3d-view-stable-soft-tissue",
-                "x": 1220,
-                "y": 80,
+                "x": 1910,
+                "y": 120,
                 "params": {
                     "environment": "night",
                     "quality": "high",
@@ -189,8 +189,8 @@
             {
                 "id": "models",
                 "type": "table-view",
-                "x": 1220,
-                "y": 303,
+                "x": 1910,
+                "y": 343,
                 "params": {
                     "rows": 50
                 },
@@ -199,8 +199,8 @@
             {
                 "id": "scoretab",
                 "type": "table-view",
-                "x": 1210,
-                "y": 840,
+                "x": 1900,
+                "y": 880,
                 "params": {
                     "rows": 50
                 },
