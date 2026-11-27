@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 46 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 47 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-27
@@ -3469,7 +3469,7 @@ function render(ctx) {
       meshes.push(skin); byName.skin = m.skin.body;
       // what is inside the skin (a signed distance map of it), and which particles are the skin's own: while the skin
       // shows, no other tissue gets outside it
-      S.skinMesh = skin;
+      S.skinMesh = skin; S.skinF = Uint32Array.from(sfa);
       S.isSkin = new Uint8Array(S.n);
       // the skin's metaballs: each one's outward normal and how far out of its centre the skin surface is. With a model
       // whose skin spheres lie inside the skin (touching it from inside), from the model; with an older one (centres on
@@ -3725,7 +3725,7 @@ function render(ctx) {
           }
           var mx = xb[o] - ref[o], my = xb[o + 1] - ref[o + 1], mz = xb[o + 2] - ref[o + 2], m2 = mx * mx + my * my + mz * mz; if (m2 > moved) moved = m2;
         }
-        if (S.skinN && S.skinPairs && S.skinPairs.length) softSkinContain(S);                  // every inner sphere stays inside the skin's metaballs
+        if (S.stg && S.stg.ready) softSkinTris(S);                                         // no soft-tissue sphere crosses the skin's polygons
         if (moved > 0.25 * SOFT_MARGIN * SOFT_MARGIN) S.nbDirty = true;                   // a particle moved half the margin: new neighbours next step
       }
       var ok = true;
@@ -3940,7 +3940,149 @@ function render(ctx) {
       if (S.frame % 3 === 0) bd.mesh.geometry.computeVertexNormals();
       bd.mesh.geometry.boundingSphere = null; bd.mesh.geometry.boundingBox = null;
     });
+    // the surfaces near the skin stay 1 mm inside its polygons (only those of spheres that are near it now)
+    var G = S.stg, NT = S.nearTri;
+    if (G && G.ready && NT && S.skinMesh && S.skinMesh.visible) {
+      var SP = S.skinMesh.geometry.attributes.position.array;
+      S.binds.forEach(function (bd) {
+        if (!bd.mesh.visible || bd.mesh === S.skinMesh) return;
+        var arr = bd.mesh.geometry.attributes.position.array, idx = bd.idx, ch = false;
+        for (var v = 0; v < bd.nv; v++) {
+          if (!NT[idx[4 * v]] && !NT[idx[4 * v + 1]]) continue;
+          var px = arr[3 * v], py = arr[3 * v + 1], pz = arr[3 * v + 2];
+          if (!skinNearest(S, SP, px, py, pz, 0.006)) continue;
+          var H = SKH, side = (px - H.x) * H.nx + (py - H.y) * H.ny + (pz - H.z) * H.nz;
+          if (side < -0.001) continue;
+          var dx = -H.nx, dy = -H.ny, dz = -H.nz;
+          if (side < 0 && H.d > 1e-6) { dx = (px - H.x) / H.d; dy = (py - H.y) / H.d; dz = (pz - H.z) / H.d; }
+          arr[3 * v] = H.x + dx * 0.001; arr[3 * v + 1] = H.y + dy * 0.001; arr[3 * v + 2] = H.z + dz * 0.001; ch = true;
+        }
+        if (ch) bd.mesh.geometry.attributes.position.needsUpdate = true;
+      });
+    }
+    if (S.skinMesh && S.skinF) skinTriGrid(S, d);                       // the skin's polygons as they are now, for the next steps
     ballsUpdate(S);
+  }
+  // The skin's triangles (as drawn now, in the model's frame) in a grid of 3 cm cells, with their outward normals
+  function skinTriGrid(S, d) {
+    var P = S.skinMesh.geometry.attributes.position.array, F = S.skinF, nt = F.length / 3, c = 0.03, i, t;
+    var G = S.stg || (S.stg = { c: c, map: new Map(), n: new Float32Array(3 * nt), stamp: new Int32Array(nt), tick: 1, ready: false });
+    G.map.clear();
+    for (t = 0; t < nt; t++) {
+      var a = 3 * F[3 * t], b = 3 * F[3 * t + 1], e = 3 * F[3 * t + 2];
+      var ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[e] - P[a], vy = P[e + 1] - P[a + 1], vz = P[e + 2] - P[a + 2];
+      var nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      G.n[3 * t] = nx / nl; G.n[3 * t + 1] = ny / nl; G.n[3 * t + 2] = nz / nl;
+      var x0 = Math.floor(Math.min(P[a], P[b], P[e]) / c), x1 = Math.floor(Math.max(P[a], P[b], P[e]) / c);
+      var y0 = Math.floor(Math.min(P[a + 1], P[b + 1], P[e + 1]) / c), y1 = Math.floor(Math.max(P[a + 1], P[b + 1], P[e + 1]) / c);
+      var z0 = Math.floor(Math.min(P[a + 2], P[b + 2], P[e + 2]) / c), z1 = Math.floor(Math.max(P[a + 2], P[b + 2], P[e + 2]) / c);
+      for (var ix = x0; ix <= x1; ix++) for (var iy = y0; iy <= y1; iy++) for (var iz = z0; iz <= z1; iz++) {
+        var k = ((ix + 1024) * 2048 + iy + 1024) * 2048 + iz + 1024, l = G.map.get(k); if (l) l.push(t); else G.map.set(k, [t]);
+      }
+    }
+    // how far the skin has moved at most (from its particles), and, once, how deep each soft sphere was under it in the
+    // scan: a sphere is only tested when it could have reached the skin
+    var mm = 0;
+    if (!S.skinIds) { S.skinIds = []; for (i = 0; i < S.n; i++) if (S.isSkin && S.isSkin[i]) S.skinIds.push(i); }
+    for (i = 0; i < S.skinIds.length; i++) { var o = 3 * S.skinIds[i], m2 = d[o] * d[o] + d[o + 1] * d[o + 1] + d[o + 2] * d[o + 2]; if (m2 > mm) mm = m2; }
+    S.skinMove = Math.sqrt(mm);
+    if (!S.triRest) {
+      S.triRest = new Float32Array(S.n);
+      for (i = 0; i < S.n; i++) {
+        if (!S.im[i] || (S.isSkin && S.isSkin[i])) continue;
+        var dd = 0.16;
+        for (var rr = 0.04; rr <= 0.16; rr *= 2) if (skinNearest(S, P, S.x0[3 * i], S.x0[3 * i + 1], S.x0[3 * i + 2], rr)) { dd = SKH.d; break; }
+        S.triRest[i] = dd;
+      }
+    }
+    G.ready = true;
+  }
+  // the nearest point of the skin's polygons to a point, within reach: into SKH (point, distance, the polygon's normal)
+  var SKH = { x: 0, y: 0, z: 0, d: 0, nx: 0, ny: 0, nz: 0 };
+  function skinNearest(S, P, px, py, pz, reach) {
+    var G = S.stg, F = S.skinF, c = G.c, best = reach * reach, found = false, tick = ++G.tick;
+    var x0 = Math.floor((px - reach) / c), x1 = Math.floor((px + reach) / c), y0 = Math.floor((py - reach) / c), y1 = Math.floor((py + reach) / c), z0 = Math.floor((pz - reach) / c), z1 = Math.floor((pz + reach) / c);
+    for (var ix = x0; ix <= x1; ix++) for (var iy = y0; iy <= y1; iy++) for (var iz = z0; iz <= z1; iz++) {
+      var l = G.map.get(((ix + 1024) * 2048 + iy + 1024) * 2048 + iz + 1024); if (!l) continue;
+      for (var q = 0; q < l.length; q++) {
+        var t = l[q]; if (G.stamp[t] === tick) continue; G.stamp[t] = tick;
+        var d2 = triClosest(px, py, pz, P, 3 * F[3 * t], 3 * F[3 * t + 1], 3 * F[3 * t + 2]);
+        if (d2 < best) { best = d2; found = true; SKH.x = TCP[0]; SKH.y = TCP[1]; SKH.z = TCP[2]; SKH.nx = G.n[3 * t]; SKH.ny = G.n[3 * t + 1]; SKH.nz = G.n[3 * t + 2]; }
+      }
+    }
+    if (found) SKH.d = Math.sqrt(best);
+    return found;
+  }
+  // the closest point of a triangle to a point (Ericson, Real-Time Collision Detection 5.1.5): into TCP; the squared distance
+  var TCP = new Float64Array(3);
+  function triClosest(px, py, pz, P, a, b, c) {
+    var ax = P[a], ay = P[a + 1], az = P[a + 2], abx = P[b] - ax, aby = P[b + 1] - ay, abz = P[b + 2] - az, acx = P[c] - ax, acy = P[c + 1] - ay, acz = P[c + 2] - az;
+    var apx = px - ax, apy = py - ay, apz = pz - az, d1 = abx * apx + aby * apy + abz * apz, d2 = acx * apx + acy * apy + acz * apz, qx, qy, qz;
+    if (d1 <= 0 && d2 <= 0) { qx = ax; qy = ay; qz = az; }
+    else {
+      var bpx = px - P[b], bpy = py - P[b + 1], bpz = pz - P[b + 2], d3 = abx * bpx + aby * bpy + abz * bpz, d4 = acx * bpx + acy * bpy + acz * bpz;
+      if (d3 >= 0 && d4 <= d3) { qx = P[b]; qy = P[b + 1]; qz = P[b + 2]; }
+      else {
+        var vc = d1 * d4 - d3 * d2;
+        if (vc <= 0 && d1 >= 0 && d3 <= 0) { var v = d1 / (d1 - d3); qx = ax + v * abx; qy = ay + v * aby; qz = az + v * abz; }
+        else {
+          var cpx = px - P[c], cpy = py - P[c + 1], cpz = pz - P[c + 2], d5 = abx * cpx + aby * cpy + abz * cpz, d6 = acx * cpx + acy * cpy + acz * cpz;
+          if (d6 >= 0 && d5 <= d6) { qx = P[c]; qy = P[c + 1]; qz = P[c + 2]; }
+          else {
+            var vb = d5 * d2 - d1 * d6;
+            if (vb <= 0 && d2 >= 0 && d6 <= 0) { var w = d2 / (d2 - d6); qx = ax + w * acx; qy = ay + w * acy; qz = az + w * acz; }
+            else {
+              var va = d3 * d6 - d5 * d4;
+              if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0) { var w2 = (d4 - d3) / ((d4 - d3) + (d5 - d6)); qx = P[b] + w2 * (P[c] - P[b]); qy = P[b + 1] + w2 * (P[c + 1] - P[b + 1]); qz = P[b + 2] + w2 * (P[c + 2] - P[b + 2]); }
+              else { var dn = 1 / (va + vb + vc), v2 = vb * dn, w3 = vc * dn; qx = ax + abx * v2 + acx * w3; qy = ay + aby * v2 + acy * w3; qz = az + abz * v2 + acz * w3; }
+            }
+          }
+        }
+      }
+    }
+    TCP[0] = qx; TCP[1] = qy; TCP[2] = qz;
+    var ex = px - qx, ey = py - qy, ez = pz - qz; return ex * ex + ey * ey + ez * ez;
+  }
+  // Every soft-tissue sphere stays wholly inside the skin's polygons: one that reaches them (or has crossed them) is put
+  // back inside, touching them, and loses its speed outward; the skin's spheres under those polygons are pushed out a
+  // little (the skin bulges where it is pressed, and its links pull it back)
+  function softSkinTris(S) {
+    var P = S.skinMesh.geometry.attributes.position.array, xb = S.xb, vb = S.vb, x0 = S.x0, im = S.im, r = S.r, n = S.n;
+    var NT = S.nearTri || (S.nearTri = new Uint8Array(n)), sb = S.skinBind, mv = S.skinMove || 0, TR = S.triRest;
+    if (!sb) S.binds.forEach(function (bd) { if (bd.mesh === S.skinMesh) sb = S.skinBind = bd; });
+    for (var i = 0; i < n; i++) {
+      NT[i] = 0;
+      if (!im[i] || S.isSkin[i]) continue;
+      var o = 3 * i, px = xb[o], py = xb[o + 1], pz = xb[o + 2], rx = px - x0[o], ry = py - x0[o + 1], rz = pz - x0[o + 2];
+      if (TR && TR[i] - Math.sqrt(rx * rx + ry * ry + rz * rz) - mv > r[i] + 0.02) continue;     // too deep to reach it
+      if (!skinNearest(S, P, px, py, pz, r[i] + 0.02)) continue;
+      NT[i] = 1;
+      var H = SKH, side = (px - H.x) * H.nx + (py - H.y) * H.ny + (pz - H.z) * H.nz;
+      if (side < 0 && H.d >= r[i]) continue;                            // wholly inside
+      var dx = -H.nx, dy = -H.ny, dz = -H.nz;                             // inward
+      if (side < 0 && H.d > 1e-6) { dx = (px - H.x) / H.d; dy = (py - H.y) / H.d; dz = (pz - H.z) / H.d; }
+      var tx = H.x + dx * r[i], ty = H.y + dy * r[i], tz = H.z + dz * r[i];
+      var cx = tx - px, cy = ty - py, cz = tz - pz, corr = Math.sqrt(cx * cx + cy * cy + cz * cz);
+      xb[o] = tx; xb[o + 1] = ty; xb[o + 2] = tz;
+      var vn = vb[o] * dx + vb[o + 1] * dy + vb[o + 2] * dz;
+      if (vn < 0) { vb[o] -= vn * dx; vb[o + 1] -= vn * dy; vb[o + 2] -= vn * dz; }
+      if (sb && corr > 0) {                                             // the skin there gives a little
+        var bestV = -1, bd2 = 1e9;
+        for (var tq = 0; tq < 1; tq++) { }
+        var skx = H.x, sky = H.y, skz = H.z, nearest = 0;
+        var vi = sb.idx, push = 0.15 * corr;
+        // the skin vertex nearest the contact: its spheres move out along the skin's normal
+        var Gm = S.stg, l = Gm.map.get(((Math.floor(skx / Gm.c) + 1024) * 2048 + Math.floor(sky / Gm.c) + 1024) * 2048 + Math.floor(skz / Gm.c) + 1024);
+        if (l) for (var q = 0; q < l.length; q++) for (var cpt = 0; cpt < 3; cpt++) {
+          var vv = S.skinF[3 * l[q] + cpt], ex = P[3 * vv] - skx, ey = P[3 * vv + 1] - sky, ez = P[3 * vv + 2] - skz, e2 = ex * ex + ey * ey + ez * ez;
+          if (e2 < bd2) { bd2 = e2; bestV = vv; }
+        }
+        if (bestV >= 0) for (var z = 0; z < 4; z++) {
+          var k = vi[4 * bestV + z], wk = sb.w[4 * bestV + z]; if (!wk || !im[k]) continue;
+          xb[3 * k] -= dx * push * wk; xb[3 * k + 1] -= dy * push * wk; xb[3 * k + 2] -= dz * push * wk;
+        }
+      }
+    }
   }
   var softEl = null;
   function softUi() {
