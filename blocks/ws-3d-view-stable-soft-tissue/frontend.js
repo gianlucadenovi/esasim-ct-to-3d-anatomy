@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 85 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 86 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -790,6 +790,7 @@ function render(ctx) {
     if (!list.length) return;
     var root = new THREE.Group(), seq = ++FILES.seq, floorOn = P.floor !== false;
     FILES.shown = null;                                   // (the extras wait for the new model)
+    SKINLOOK.mat = null; SKINLOOK.mesh = null;            // (the skin of the model before is gone)
     modelState(list.length === 1 ? list[0].name : '', false);
     FILES.root = root; entities.files = root; scene.add(root);
     FILES.mixers = [];                                     // the files' animations (glTF clips), played in tick()
@@ -2835,6 +2836,7 @@ function render(ctx) {
     if (open == null) open = !(skinPanel && skinPanel.style.display !== 'none');
     if (!skinPanel) skinPanelMake();
     skinPanel.style.display = open ? 'flex' : 'none';
+    if (open && HAIR.panel) HAIR.panel.style.display = 'none';   // (one of the two at a time: same place)
     if (open) { skinPanel.style.top = partsEl.style.top || '64px'; skinPanel.style.left = (partsEl.offsetLeft + partsEl.offsetWidth + 8 || 256) + 'px'; skinPanelSync(); }
   }
   function skinPanelMake() {
@@ -3664,7 +3666,7 @@ function render(ctx) {
     lookEl.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap;padding:0 10px 6px;font-size:11.5px';
     lookEl.innerHTML = '<label style="display:flex;gap:5px;align-items:center"><input class="lk-tex" type="checkbox"' + (TEX.on ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Tissue textures</label>'
       + '<label class="lk-balls-l" style="display:none;gap:5px;align-items:center" title="The spheres of the soft-body model, moving with the tissue"><input class="lk-balls" type="checkbox"' + (BALLS.on ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Metaballs</label>'
-      + '<span class="lk-skin-l" style="display:' + (SKINLOOK.mat ? 'flex' : 'none') + ';gap:5px;align-items:center"><label style="display:flex;gap:5px;align-items:center" title="On: the skin solid, in skin colour. Off: see-through, clear where it faces you"><input class="lk-skin" type="checkbox"' + (SKINLOOK.solid ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Solid skin</label><button class="pt-b" data-skg="1" title="Skin settings: colour, skin type, red tones, bumps, gloss, see-through or solid" style="padding:0 5px">⚙</button></span>'
+      + '<span class="lk-skin-l" style="display:' + (SKINLOOK.mat ? 'flex' : 'none') + ';gap:5px;align-items:center"><label style="display:flex;gap:5px;align-items:center" title="On: the skin solid, in skin colour. Off: see-through, clear where it faces you"><input class="lk-skin" type="checkbox"' + (SKINLOOK.solid ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Solid skin</label><button class="pt-b" data-skg="1" title="Skin settings: colour, skin type, red tones, bumps, gloss, see-through or solid" style="padding:0 5px">⚙</button><button class="pt-b" data-hairg="1" title="Body hair: paint where it grows, how long, how visible, its colour" style="padding:0 5px">✂</button></span>'
       + '<label style="display:flex;gap:5px;align-items:center" title="Soft shadows from the light at the camera across the model, and a soft glow on the brightest highlights (heavier for the graphics card)"><input class="lk-enh" type="checkbox"' + (ENH.on ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Enhance (shadows, bloom)</label>';
     var body = partsEl.querySelector('.pt-body'); body.insertBefore(lookEl, body.firstChild);
     lookEl.querySelector('.lk-tex').addEventListener('change', function () { texturesOn(this.checked); });
@@ -3689,7 +3691,7 @@ function render(ctx) {
     order.forEach(function (k) {
       var ids = groups[k]; if (!ids.length) return;
       var on = ids.filter(function (i) { return PARTS.list[i].mesh.visible; }).length, open = q || PARTS.open[k];
-      h.push('<div class="pt-g" data-g="' + esc(k) + '"><input type="checkbox" data-gc="' + esc(k) + '"' + (on === ids.length ? ' checked' : '') + (on && on < ids.length ? ' data-mixed="1"' : '') + '><span class="pt-n">' + (open ? '▾ ' : '▸ ') + esc(nice(k)) + ' <span class="pt-c">' + on + '/' + ids.length + '</span></span>' + (PARTS.list[ids[0]] && PARTS.list[ids[0]].name === 'skin' ? '<button class="pt-b" data-skg="1" title="Skin settings: colour, skin type, red tones, bumps, gloss, see-through or solid" style="padding:0 5px">⚙</button>' : '') + '</div>');
+      h.push('<div class="pt-g" data-g="' + esc(k) + '"><input type="checkbox" data-gc="' + esc(k) + '"' + (on === ids.length ? ' checked' : '') + (on && on < ids.length ? ' data-mixed="1"' : '') + '><span class="pt-n">' + (open ? '▾ ' : '▸ ') + esc(nice(k)) + ' <span class="pt-c">' + on + '/' + ids.length + '</span></span>' + (PARTS.list[ids[0]] && PARTS.list[ids[0]].name === 'skin' ? '<button class="pt-b" data-skg="1" title="Skin settings: colour, skin type, red tones, bumps, gloss, see-through or solid" style="padding:0 5px">⚙</button><button class="pt-b" data-hairg="1" title="Body hair: paint where it grows, how long, how visible, its colour" style="padding:0 5px">✂</button>' : '') + '</div>');
       if (open) ids.forEach(function (i) { var p = PARTS.list[i]; h.push('<div class="pt-r' + (PARTS.sel === i ? ' sel' : '') + '" data-i="' + i + '"><input type="checkbox" data-pc="' + i + '"' + (p.mesh.visible ? ' checked' : '') + '><span class="pt-d" style="background:' + p.color + '"></span><span class="pt-n" title="' + esc(nice(p.name)) + '">' + esc(nice(p.name)) + '</span></div>'); });
     });
     ptList.innerHTML = h.join('');
@@ -3718,6 +3720,7 @@ function render(ctx) {
   partsEl.addEventListener('click', function (e) {
     var t = e.target;
     if (t.closest && t.closest('[data-skg]')) { e.stopPropagation(); skinPanelToggle(); return; }
+    if (t.closest && t.closest('[data-hairg]')) { e.stopPropagation(); hairPanelToggle(); return; }
     if (t.matches('[data-gc]')) { var k = t.getAttribute('data-gc'); partsShow(PARTS.list.map(function (p, i) { return partKey(p) === k ? i : -1; }).filter(function (i) { return i >= 0; }), t.checked); return; }
     if (t.matches('[data-pc]')) { partsShow([+t.getAttribute('data-pc')], t.checked); return; }
     var g = t.closest('.pt-g'); if (g) { var gk = g.getAttribute('data-g'); PARTS.open[gk] = !PARTS.open[gk]; partsDraw(); return; }
@@ -4082,6 +4085,8 @@ function render(ctx) {
       var skCurv = surfaceShape(g);
       g.setAttribute('esCurv', new THREE.BufferAttribute(skCurv, 2));
       g.setAttribute('esCxF', new THREE.BufferAttribute(skinSpread(g, skCurv), 4));
+      // the skin laid flat (from the Soft body model), where the hair maps are painted: -1 on the caps
+      if (m.skin.mesh.uv && m.skin.mesh.uv.length === 2 * (m.skin.mesh.positions.length / 3)) g.setAttribute('uv', new THREE.Float32BufferAttribute(m.skin.mesh.uv, 2));
       var skinMat = new THREE.MeshStandardMaterial({ color: 0xd9a888, roughness: 0.38, metalness: 0, envMapIntensity: 1.0, transparent: true, opacity: 1, depthWrite: false, side: THREE.DoubleSide });
       skinMat.onBeforeCompile = function (sh) {
         sh.uniforms.esNoiseTex = ES_NOISE; sh.uniforms.esOn = TEX.uOn || (TEX.uOn = { value: TEX.on ? 1 : 0 }); sh.uniforms.esSolid = SKINLOOK.u;
@@ -4115,6 +4120,7 @@ function render(ctx) {
       var skin = new THREE.Mesh(g, skinMat);
       skin.name = 'skin'; skin.renderOrder = 5;
       SKINLOOK.mat = skinMat; SKINLOOK.mesh = skin; skinApply(); skinSolid(SKINLOOK.solid);
+      hairOnSkin();                                       // its hair, from its maps
       if (lookEl) lookEl.querySelector('.lk-skin-l').style.display = 'flex';
       var grp = new THREE.Group(); grp.name = 'skin'; grp.add(skin); obj.add(grp);
       PARTS.list.push({ name: 'skin', group: 'skin', file: obj.userData.file || '', mesh: skin, color: '#e8b89a' }); partsDraw();
@@ -13266,7 +13272,7 @@ function render(ctx) {
     if (!now && performance.now() - saveAt < 1000) return;
     saveAt = performance.now();
     ctx.saveState({ cam: { p: camera.position.toArray(), t: controls.target.toArray(), q: camera.quaternion.toArray(), flying: flying }, speed: speed, model: FILES.sel, partsMin: PARTS.min, enhance: ENH.on,
-      fleet: { routes: FLEET.routes, heat: FLEET.heat, cine: FLEET.cine, labels: FLEET.labels }, rkcam: RK.cam, crcam: CR.cam, vgcam: VG.cam, hmcam: HM.camPicked || 'director', sound: AUD.on, voice: AUD.voice, voiceName: AUD.voiceName || null, skin: skinState() }, true);   // (true: the next run's view starts from it too)
+      fleet: { routes: FLEET.routes, heat: FLEET.heat, cine: FLEET.cine, labels: FLEET.labels }, rkcam: RK.cam, crcam: CR.cam, vgcam: VG.cam, hmcam: HM.camPicked || 'director', sound: AUD.on, voice: AUD.voice, voiceName: AUD.voiceName || null, skin: skinState(), hair: hairState() }, true);   // (true: the next run's view starts from it too)
   }
   controls.addEventListener('end', function () { keepView(true); });
   $('.fit').addEventListener('click', function () { setTimeout(function () { keepView(true); }, 50); });
