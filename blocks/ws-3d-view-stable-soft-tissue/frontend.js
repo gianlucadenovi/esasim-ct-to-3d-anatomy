@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 77 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 78 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -599,7 +599,7 @@ function render(ctx) {
   // The material table (esaSample) while 3D files load: on the stage with Stage set, else framed on the ground.
   // While 3D files load: a loading panel (a spinner, what it is doing, a progress bar), not the material table's spheres
   var LOADEL = null;
-  function loadingUi(on, msg, frac) {
+  function loadingUi(on, msg, frac, title) {
     if (!LOADEL) {
       LOADEL = document.createElement('div');
       LOADEL.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);min-width:260px;max-width:80%;padding:18px 22px;border-radius:14px;background:rgba(10,14,22,.82);border:1px solid rgba(255,255,255,.1);color:#e8ecf2;display:none;flex-direction:column;align-items:center;gap:10px;pointer-events:none;z-index:4;text-align:center';
@@ -612,6 +612,7 @@ function render(ctx) {
     }
     LOADEL.style.display = on ? 'flex' : 'none';
     if (!on) return;
+    LOADEL.querySelector('.ld-t').textContent = title || 'Loading the 3D model';
     if (msg != null) LOADEL.querySelector('.ld-m').textContent = msg;
     var bar = LOADEL.querySelector('.ld-b');
     if (frac == null) { bar.style.width = '35%'; bar.style.opacity = '0.5'; } else { bar.style.width = Math.round(100 * Math.max(0, Math.min(1, frac))) + '%'; bar.style.opacity = '1'; }
@@ -1524,6 +1525,14 @@ function render(ctx) {
     var robotSrc = (ctx.sources || []).filter(function (s) { return (s.formats || []).indexOf('gz') >= 0 || /robot|xarm|\barm\b/i.test(s.block + ' ' + s.name); })[0];
     if (robotSrc && !stream.length) { robotLight(); tl.style.display = 'none'; barEl.style.display = 'none'; }
     if (robotSrc && !stream.length) return ctx.status('The robot appears here when the blueprint runs: its 3D model comes from ' + robotSrc.name + ', its pose from the blocks that drive it.');
+    // 3D models are wired in but none has come yet: not the empty floor (black at night) but what is going on
+    var meshSrc = (ctx.sources || []).some(function (s) { return (s.formats || []).some(function (x) { return /^(glb|gltf|obj|stl|ply)$/i.test(String(x)); }); });
+    if (meshSrc && !stream.length && !ctx.sample && ctx.run) {
+      var rs = String(ctx.run.status || '');
+      if (ctx.run.active) { barEl.style.display = 'none'; ctx.status(''); loadingUi(true, 'The 3D model appears here as soon as the run has built it: follow the run\'s progress at the top of the page.', null, 'Building the 3D model…'); return; }
+      if (/succeeded|done|finished/i.test(rs)) { barEl.style.display = 'none'; ctx.status(''); loadingUi(true, 'The run is done: its results are being collected from the worker (about a minute for a large model).', null, 'Collecting the 3D model…'); return; }
+      loadingUi(false);
+    }
     if (!stream.length) { IDLE.want = true; barEl.style.display = 'none'; ctx.status(''); return; }
     ctx.status('Waiting for positions: a stream item such as {"drone": [x, y, z]}, or a scene.');
   }
