@@ -68,7 +68,7 @@
         },
         {
             "id": "ws-load-a-ct",
-            "version": 9,
+            "version": 10,
             "name": "Load a CT"
         }
     ]

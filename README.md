@@ -274,7 +274,7 @@ An [EsaSim](https://esacode.com/) project of the workspace Gianluca De Novi's wo
 - [Load CT scans (DICOM discs, NIfTI, NRRD, MHA)](blocks/ws-load-ct-scans-dicom-discs-nifti-nrrd) · version 5
 - [Segment CT automatically (TotalSegmentator)](blocks/ws-segment-ct-automatically-totalsegmen) · version 9
 - [Score segmentation against experts](blocks/ws-score-segmentation-against-experts) · version 2
-- [Load a CT](blocks/ws-load-a-ct) · version 9
+- [Load a CT](blocks/ws-load-a-ct) · version 10
 
 ### Assets
 

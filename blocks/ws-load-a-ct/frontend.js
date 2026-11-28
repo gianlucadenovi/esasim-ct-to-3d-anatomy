@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// Load a CT (ws-load-a-ct) · version 9 · view, JavaScript: function render(ctx)
+// Load a CT (ws-load-a-ct) · version 10 · view, JavaScript: function render(ctx)
 // The View's loading dialog for CT scans: drop or choose a folder from your computer (a whole CD/DVD export is fine), see its series, tick the ones to segment and press Load; or give a folder on a worke
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -117,14 +117,15 @@ function render(ctx) {
       scan = await scanFiles(list, (i, n) => { busy = `Reading the headers: ${i} of ${n} files`; paintBusy(); });
       MEM.scan = scan;
       if (st.ticks === 'all') tickSeries('every');                // the remembered choice: every CT series ticked
-      if (st.pending && st.uids && st.uids.length) {          // the same folder again after the run started: same series
+      if (st.autoSend && st.uids && st.uids.length) {         // the same folder again right after preview + Start: same series
         const keep = scan.series.filter(s => st.uids.includes(s.key));
         if (keep.length) scan.series.forEach(s => { s.on = st.uids.includes(s.key); });
       }
     } catch (e) { note = 'Could not read the folder: ' + ((e && e.message) || e); }
     busy = ''; paint();
     // the run is going and waits: send now, if the series to send are known (ticked before the run started)
-    if (waitingForFiles() && st.uids && st.uids.length && scan && scan.series.some(s => s.on && st.uids.includes(s.key))) sendNow();
+    // (only right after a preview + Start, the one case where the series were already chosen: otherwise the table shows)
+    if (st.autoSend && waitingForFiles() && st.uids && st.uids.length && scan && scan.series.some(s => s.on && st.uids.includes(s.key))) sendNow();
   }
   async function entriesOf(dt) {      // a folder dropped on the page: walk it
     const out = [], walk = async (en, path) => {
@@ -162,7 +163,7 @@ function render(ctx) {
   function uploadParams(mr) { const lp = {}; lp[LOAD] = { source: 'Upload from the View', series: 'Every CT series', min_images: 1, modalities: mr ? 'CT, MR' : 'CT', wait_minutes: 30 }; return lp; }
   function startReceiving() {                                    // ① the run first: then the folder is chosen once
     const session = Math.random().toString(36).slice(2, 10);
-    start(uploadParams(st.task === 'total_mr'), { pending: true, session, uids: [], labels: [] });
+    start(uploadParams(st.task === 'total_mr'), { pending: true, session, uids: [], labels: [], autoSend: false });
   }
   function loadLocal() {                                         // a preview first: the run starts, the folder is asked again
     const files = chosenFiles();
@@ -171,7 +172,7 @@ function render(ctx) {
     const session = Math.random().toString(36).slice(2, 10);
     MEM.files = files; MEM.session = session;                    // (kept if the page does not show the view again)
     const mr = scan.series.some(s => s.on && s.modality === 'MR');
-    start(uploadParams(mr), { pending: true, session, uids: scan.series.filter(s => s.on).map(s => s.key),
+    start(uploadParams(mr), { pending: true, session, autoSend: true, uids: scan.series.filter(s => s.on).map(s => s.key),
       labels: scan.series.filter(s => s.on).map(s => s.label) });
   }
   function sendNow() {                                           // the run waits: these files go now
@@ -180,7 +181,7 @@ function render(ctx) {
     if (!runActive()) { note = 'No run is going on: press Start.'; paint(); return; }
     if (!loaderWaiting()) { note = 'This run is not waiting for scans: it is loading the wired files (the demo case). Press Stop at the top of the page, then ▶ Start here, and send your folder.'; paint(); return; }
     const d = readLive(), again = !!(d && d.state === 'receiving' && d.session && d.session === st.session && +d.files === files.length);
-    st.pending = true; note = '';
+    st.pending = true; st.autoSend = false; note = '';
     if (!again) st.session = Math.random().toString(36).slice(2, 10);
     MEM.resume = again;
     st.uids = scan.series.filter(s => s.on).map(s => s.key); st.labels = scan.series.filter(s => s.on).map(s => s.label);
