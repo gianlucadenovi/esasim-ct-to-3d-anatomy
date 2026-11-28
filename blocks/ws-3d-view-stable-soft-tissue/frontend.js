@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 108 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 109 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -3058,7 +3058,8 @@ function render(ctx) {
     var C = HAIR.cache, S = HAIR.S;
     if (!C.fl.length) return;
     var Lp = HAIR.maps.len.getContext('2d').getImageData(0, 0, S, S).data, Op = HAIR.maps.op.getContext('2d').getImageData(0, 0, S, S).data, Cp = HAIR.maps.col.getContext('2d').getImageData(0, 0, S, S).data;
-    var N = Math.min(500000, Math.round(HAIR.dens * C.tot / (U * U) * 1e4)), rnd = hairRng(1234567), K = 3;
+    var curl = Math.max(0, Math.min(1, HAIR.curl || 0)), K = 3 + Math.round(curl * 9), pts = new Float64Array(3 * (K + 1));   // (curly: more points along each hair)
+    var N = Math.min(500000, Math.floor(1.5e6 / K), Math.round(HAIR.dens * C.tot / (U * U) * 1e4)), rnd = hairRng(1234567);
     var mid0 = 4 * ((S >> 1) * S + (S >> 1));                // (no uv: the middle of each map)
     var NV = N * 2 * K, P = new Float32Array(3 * NV), Q = new Float32Array(4 * NV), TT = new Float32Array(3 * NV), NN = new Float32Array(3 * NV);
     var FI = new Uint32Array(N), FW = new Float32Array(2 * N), FR = new Float32Array(3 * N), dirs = [], nh = 0, pv = 0, L0 = HAIR.len / 1000 * U, bend = Math.max(0, Math.min(1, HAIR.bend));
@@ -3100,19 +3101,29 @@ function render(ctx) {
         var fr = (s + 0.5) / K, e = e0 + (e1 - e0) * fr, ce = Math.cos(e), se = Math.sin(e);
         dirs[3 * s] = nx * se + qx * ce; dirs[3 * s + 1] = ny * se + qy * ce; dirs[3 * s + 2] = nz * se + qz * ce;
       }
+      // the strand's points: along its line (as it lies, towards the feet) and, curly, round that line in a spiral (a
+      // few turns, more on long hair; the curl grows from the root, and always stays off the skin)
+      var crl = curl * Math.min(0.12 * len, 0.004 * U) * (0.7 + 0.6 * ((ra * 3.71) % 1));
+      var turns = curl * (1.2 + 1.8 * ((ra * 5.13) % 1)) * Math.max(0.6, Math.min(4, len / (0.012 * U))), ph0 = 6.2832 * ((ra * 7.77) % 1);
+      var wx = ny * qz - nz * qy, wy = nz * qx - nx * qz, wz = nx * qy - ny * qx;   // (across the strand, along the skin)
+      var cx0 = sx, cy0 = sy, cz0 = sz; pts[0] = sx; pts[1] = sy; pts[2] = sz;
+      for (s = 1; s <= K; s++) {
+        cx0 += dirs[3 * (s - 1)] * seg; cy0 += dirs[3 * (s - 1) + 1] * seg; cz0 += dirs[3 * (s - 1) + 2] * seg;
+        var tt = s / K, rr = crl * Math.min(1, tt / 0.2), an = ph0 + 6.2832 * turns * tt, ca = Math.cos(an), sa = Math.sin(an);
+        pts[3 * s] = cx0 + rr * (ca * wx + (1 + sa) * 0.5 * nx); pts[3 * s + 1] = cy0 + rr * (ca * wy + (1 + sa) * 0.5 * ny); pts[3 * s + 2] = cz0 + rr * (ca * wz + (1 + sa) * 0.5 * nz);
+      }
       for (s = 0; s < K; s++) {
-        var dx = dirs[3 * s], dy = dirs[3 * s + 1], dz = dirs[3 * s + 2];
-        var ex = sx + dx * seg, ey = sy + dy * seg, ez = sz + dz * seg;
         var o3 = 3 * pv, o4 = 4 * pv;
-        P[o3] = sx; P[o3 + 1] = sy; P[o3 + 2] = sz; P[o3 + 3] = ex; P[o3 + 4] = ey; P[o3 + 5] = ez;
-        // the strand's direction, smooth across its bends (the sheen slides along it)
-        var p0 = s > 0 ? 3 * (s - 1) : 3 * s, p1 = s < K - 1 ? 3 * (s + 1) : 3 * s;
-        TT[o3] = dx + dirs[p0]; TT[o3 + 1] = dy + dirs[p0 + 1]; TT[o3 + 2] = dz + dirs[p0 + 2]; TT[o3 + 3] = dx + dirs[p1]; TT[o3 + 4] = dy + dirs[p1 + 1]; TT[o3 + 5] = dz + dirs[p1 + 2];
+        for (var j = 0; j < 2; j++) {
+          var vi = s + j, va = Math.max(0, vi - 1), vc = Math.min(K, vi + 1);
+          P[o3 + 3 * j] = pts[3 * vi]; P[o3 + 3 * j + 1] = pts[3 * vi + 1]; P[o3 + 3 * j + 2] = pts[3 * vi + 2];
+          // the strand's direction there, smooth across its bends and curls (the sheen slides along it)
+          TT[o3 + 3 * j] = pts[3 * vc] - pts[3 * va]; TT[o3 + 3 * j + 1] = pts[3 * vc + 1] - pts[3 * va + 1]; TT[o3 + 3 * j + 2] = pts[3 * vc + 2] - pts[3 * va + 2];
+        }
         NN[o3] = NN[o3 + 3] = nx; NN[o3 + 1] = NN[o3 + 4] = ny; NN[o3 + 2] = NN[o3 + 5] = nz;   // (the skin's normal at the root: its light)
         var a0 = 0.85 * op * (1 - 0.45 * s / K), a1 = 0.85 * op * (1 - 0.45 * (s + 1) / K);
         Q[o4] = Q[o4 + 4] = cr; Q[o4 + 1] = Q[o4 + 5] = cg; Q[o4 + 2] = Q[o4 + 6] = cb; Q[o4 + 3] = a0; Q[o4 + 7] = a1;
         pv += 2;
-        sx = ex; sy = ey; sz = ez;
       }
     }
     if (!nh) return;
