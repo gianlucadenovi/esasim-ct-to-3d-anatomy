@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 118 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 120 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2935,7 +2935,17 @@ function render(ctx) {
     }
     L.geometry.attributes.position.needsUpdate = true;
   }
-  function hairCaseKey() { return FILES.shown ? caseName(FILES.shown.userData.file || '').replace(/^.*[\\/]/, '') || 'case' : 'case'; }
+  // the maps belong to the skin they were painted on: its fingerprint (its points and a sample of where they are), the
+  // same at every reload whatever is known about the case at that moment
+  function hairCaseKey() {
+    var g = SKINLOOK.mesh && SKINLOOK.mesh.geometry, a = g && (g.attributes.esRest || g.attributes.position);
+    if (!a) return 'case';
+    var p = a.array, h = 0;
+    for (var i = 0; i < p.length; i += 997) h = (h * 31 + Math.round(p[i] * 10000)) | 0;
+    return 'skin:' + a.count + ':' + (h >>> 0).toString(36);
+  }
+  function hairOldKey() { return FILES.shown ? caseName(FILES.shown.userData.file || '').replace(/^.*[\\/]/, '') || 'case' : 'case'; }
+  function hairStatus(t) { HAIR.stat = t; var e = HAIR.panel && HAIR.panel.querySelector('.hr-st'); if (e) e.textContent = t; }
   function hairGeo() { var m = SKINLOOK.mesh; return m && m.geometry && m.geometry.index ? m.geometry : null; }
   // the skin laid flat: the Soft body model's own layout (uv) when it has one, else one made here, around the body:
   // each point by its angle round the body's long axis (the back, towards the spine, at both sides; the front in the
@@ -2977,7 +2987,12 @@ function render(ctx) {
   // the maps of the case shown: kept ones (as pictures), else plain (10% of the longest everywhere, fully visible, the default colour, as curly as the slider)
   function hairMapsFor(key, done) {
     HAIR.key = key; HAIR.maps = { len: hairBlank('len'), op: hairBlank('op'), col: hairBlank('col'), curl: hairBlank('curl') }; HAIR.undo = { len: [], op: [], col: [], curl: [] };
-    var kept = HAIR.store[key], left = 0;
+    // (saved before maps were known by their skin: under the case's name, or 'case'; one left alone is this one's)
+    var kept = HAIR.store[key], from = key;
+    if (!kept) { var ok = hairOldKey(); if (HAIR.store[ok]) { kept = HAIR.store[ok]; from = ok; } else if (HAIR.store['case']) { kept = HAIR.store['case']; from = 'case'; } else { var ks = Object.keys(HAIR.store).filter(function (k) { return !/^skin:/.test(k); }); if (ks.length === 1) { kept = HAIR.store[ks[0]]; from = ks[0]; } } }
+    if (kept && from !== key) { HAIR.store[key] = kept; delete HAIR.store[from]; }
+    hairStatus(kept ? 'Maps restored' + (kept.t ? ' (saved ' + new Date(kept.t).toLocaleString() + ')' : '') : 'New maps (nothing saved for this skin yet)');
+    var left = 0;
     if (kept) HAIR_LAYERS.forEach(function (L) {
       if (!kept[L[0]]) return;
       left++;
@@ -3016,9 +3031,14 @@ function render(ctx) {
         var t = document.createElement('canvas'); t.width = t.height = 512; var tg = t.getContext('2d');
         HAIR_LAYERS.forEach(function (L) { tg.clearRect(0, 0, 512, 512); tg.drawImage(HAIR.maps[L[0]], 0, 0, 512, 512); o[L[0]] = t.toDataURL('image/webp', 0.9); });
       } catch (e) { return; }
+      o.t = Date.now();
       var only = {}; only[HAIR.key] = o;                    // (the maps of the case shown; another case's are kept too if small)
       for (var kk in HAIR.store) if (kk !== HAIR.key && JSON.stringify(HAIR.store[kk]).length < 400000) only[kk] = HAIR.store[kk];
-      HAIR.store = only; keepView(true);
+      HAIR.store = only;
+      var kb = Math.round(JSON.stringify(o).length / 1024), r = keepView(true), when = new Date(o.t).toLocaleTimeString();
+      hairStatus('Saving…');
+      if (r && r.then) r.then(function () { hairStatus('Saved ' + when + ' · ' + kb + ' KB'); }, function (e) { hairStatus('NOT saved (' + (e && e.message || e || 'refused') + '): use Export'); });
+      else hairStatus('Saved ' + when + ' · ' + kb + ' KB');
     }, 1200);
   }
   function hairSoon(ms) { clearTimeout(HAIR.timer); HAIR.timer = setTimeout(hairBuild, ms == null ? 250 : ms); }
@@ -3202,7 +3222,7 @@ function render(ctx) {
       }).join('')
       + '<div class="hr-swr" title="What the brush paints (click: change it)"><span style="opacity:.8">Painting</span><span class="hr-sw"></span><b class="hr-swt"></b></div></div>'
       + '<div class="hr-c"><canvas class="hr-cv"></canvas><div class="hr-msg" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:20px;opacity:.85"></div></div>'
-      + '<div class="hr-row" style="padding:4px 10px 8px;opacity:.7"><span class="hr-ft" style="flex:1">The skin laid flat: the head at the top, the front in the middle, the back seam at both sides, the legs at the bottom. Wheel: zoom · right-drag: move · [ ]: brush size</span><button class="hr-b hr-exp" title="The four maps as PNG files: to a dataset or a download, to keep them safe or use them elsewhere">Export</button><button class="hr-b hr-imp" title="Maps back from PNG files (named with length, opacity, colour, curliness)">Import</button><input type="file" class="hr-impf" accept="image/*" multiple style="display:none"><button class="hr-b hr-fit">Fit</button></div>';
+      + '<div class="hr-row" style="padding:4px 10px 8px;opacity:.7"><b class="hr-st" style="flex-basis:100%;font-weight:600;opacity:.95"></b><span class="hr-ft" style="flex:1">The skin laid flat: the head at the top, the front in the middle, the back seam at both sides, the legs at the bottom. Wheel: zoom · right-drag: move · [ ]: brush size</span><button class="hr-b hr-exp" title="The four maps as PNG files: to a dataset or a download, to keep them safe or use them elsewhere">Export</button><button class="hr-b hr-imp" title="Maps back from PNG files (named with length, opacity, colour, curliness)">Import</button><input type="file" class="hr-impf" accept="image/*" multiple style="display:none"><button class="hr-b hr-fit">Fit</button></div>';
     ui.appendChild(p);
     ['pointerdown', 'mousedown', 'touchstart', 'wheel', 'keydown', 'contextmenu'].forEach(function (ev) { p.addEventListener(ev, function (e) { e.stopPropagation(); }, { passive: ev !== 'wheel' && ev !== 'contextmenu' }); });
     var q = function (s) { return p.querySelector(s); };
@@ -3311,6 +3331,7 @@ function render(ctx) {
     p.querySelector('.hr-cin').value = HAIR.paintCol || HAIR.col;
     p.querySelector('.hr-3d').checked = HAIR.paint3d;
     hairSwatch();
+    var stl = p.querySelector('.hr-st'); if (stl) stl.textContent = HAIR.stat || '';
     var msg = p.querySelector('.hr-msg');
     var g = hairGeo();
     msg.style.display = g ? 'none' : 'flex';
@@ -13599,7 +13620,7 @@ function render(ctx) {
     if (!ctx.saveState) return;
     if (!now && performance.now() - saveAt < 1000) return;
     saveAt = performance.now();
-    ctx.saveState({ cam: { p: camera.position.toArray(), t: controls.target.toArray(), q: camera.quaternion.toArray(), flying: flying }, speed: speed, model: FILES.sel, partsMin: PARTS.min, enhance: ENH.on,
+    return ctx.saveState({ cam: { p: camera.position.toArray(), t: controls.target.toArray(), q: camera.quaternion.toArray(), flying: flying }, speed: speed, model: FILES.sel, partsMin: PARTS.min, enhance: ENH.on,
       fleet: { routes: FLEET.routes, heat: FLEET.heat, cine: FLEET.cine, labels: FLEET.labels }, rkcam: RK.cam, crcam: CR.cam, vgcam: VG.cam, hmcam: HM.camPicked || 'director', sound: AUD.on, voice: AUD.voice, voiceName: AUD.voiceName || null, skin: skinState(), hair: hairState() }, true);   // (true: the next run's view starts from it too)
   }
   controls.addEventListener('end', function () { keepView(true); });
