@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 6 · worker block, Python: def run(ctx)
+# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 8 · worker block, Python: def run(ctx)
 # Turns segmented anatomy into a soft-tissue model the 3D view simulates in real time: organs that sag, sway and push each other under gravity, held by a fixed skeleton and contained by the skin (metaba
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-28
@@ -295,25 +295,49 @@ def skin_shell(ct, hu, spacing_mm, log):
     import SimpleITK as sitk
     from scipy import ndimage
     from skimage import measure
+    # The surface where the CT itself crosses hu, not the edge of a yes/no mask: the scanner's partial volume puts it
+    # between voxels, so there are no terraces at each slice and voxel row, and the real detail stays. The body is found
+    # as before (largest piece above hu, holes filled per slice): air inside it is raised (lungs, bowel), what is apart
+    # from it lowered (table, blankets); only within 4 mm of the outline do the CT values decide.
     a = sitk.GetArrayFromImage(ct)
     sp = np.array(ct.GetSpacing(), float)[::-1]
-    # about 2 mm on each axis (thick slices are all kept): the outline's detail (navel, folds, the breasts, the buttocks)
-    step = np.maximum(1, np.round(2.0 / sp)).astype(int)
-    b = a[::step[0], ::step[1], ::step[2]] > hu
-    lab, n = ndimage.label(b)
+    step = np.maximum(1, np.round(1.5 / sp)).astype(int)             # about 1.5 mm in plane, every slice
+    m0 = a[:, ::4, ::4] > hu                                         # the body's box, from a quick look
+    lab, n = ndimage.label(m0)
     if n == 0:
         return None
-    sizes = ndimage.sum(b, lab, range(1, n + 1))
-    b = lab == (1 + int(np.argmax(sizes)))
-    for k in range(b.shape[0]):                                      # air in the lungs and the bowel is inside the body
-        b[k] = ndimage.binary_fill_holes(b[k])
-    # closed small gaps, the scan's first and last slices kept (padded with themselves: the closing does not eat the ends)
-    b = ndimage.binary_closing(np.pad(b, 2, mode="edge"), iterations=2)[2:-2, 2:-2, 2:-2]
+    m0 = lab == (1 + int(np.argmax(ndimage.sum(m0, lab, range(1, n + 1)))))
+    zz, yy, xx = np.nonzero(m0)
+    mg = 12
+    y0, y1 = max(0, 4 * int(yy.min()) - mg), min(a.shape[1], 4 * int(yy.max()) + 4 + mg)
+    x0, x1 = max(0, 4 * int(xx.min()) - mg), min(a.shape[2], 4 * int(xx.max()) + 4 + mg)
+    z0, z1 = int(zz.min()), int(zz.max()) + 1
+    del m0, lab
+    c = a[z0:z1, y0:y1, x0:x1].astype(np.float32)
+    del a
+    cz, cy, cx = (np.array(c.shape) // step) * step
+    c = c[:cz, :cy, :cx]
+    v = c.reshape(cz // step[0], step[0], cy // step[1], step[1], cx // step[2], step[2]).mean(axis=(1, 3, 5))   # block means: no aliasing
+    del c
+    np.clip(v, -1000.0, 400.0, out=v)
     vsp = sp * step
-    pad = np.pad(b, 1).astype(np.float32)
-    sig = np.clip(1.2 / vsp, 0.5, 1.0)                               # about 1.2 mm of smoothing: no voxel steps, the detail stays
-    verts, faces, nrm, _ = measure.marching_cubes(ndimage.gaussian_filter(pad, sig), 0.5, step_size=1, allow_degenerate=False)
-    ijk = ((verts - 1.0) * step)[:, ::-1]
+    body = v > hu
+    lab, n = ndimage.label(body)
+    body = lab == (1 + int(np.argmax(ndimage.sum(body, lab, range(1, n + 1)))))
+    del lab
+    r_in = max(1, int(round(4.0 / vsp[1:].min())))
+    for k in range(body.shape[0]):
+        filled = ndimage.binary_fill_holes(body[k])
+        inner = ndimage.binary_erosion(filled, iterations=r_in)
+        near = ndimage.binary_dilation(filled, iterations=r_in)
+        v[k][inner] = np.maximum(v[k][inner], 400.0)                 # air inside the body is body
+        v[k][~near] = -1000.0                                        # whatever is apart from the body is air
+    v = np.pad(v, 1, constant_values=-1000.0)                        # the scan's first and last slices close the skin
+    v = ndimage.gaussian_filter(v, np.clip(0.7 / vsp, 0.3, 0.6))     # a touch: the noise, not the detail
+    verts, faces, nrm, _ = measure.marching_cubes(v, float(hu), allow_degenerate=False)
+    del v
+    verts = verts - 1.0
+    ijk = (verts * step + np.array([z0, y0, x0], float) + (step - 1) / 2.0)[:, ::-1]
     d = np.array(ct.GetDirection(), float).reshape(3, 3)
     lps = np.array(ct.GetOrigin(), float) + (ijk * np.array(ct.GetSpacing(), float)) @ d.T
     pts = np.column_stack([lps[:, 0], lps[:, 2], -lps[:, 1]]) / 1000.0
@@ -346,6 +370,10 @@ def skin_shell(ct, hu, spacing_mm, log):
     try:
         if len(mesh.faces) > SKIN_FACES:
             mesh = mesh.simplify_quadric_decimation(face_count=SKIN_FACES)
+    except Exception:
+        pass
+    try:                                                             # 2 light passes that keep the volume (Taubin): the last ripple
+        trimesh.smoothing.filter_taubin(mesh, lamb=0.5, nu=-0.53, iterations=2)
     except Exception:
         pass
     trimesh.repair.fix_normals(mesh)
