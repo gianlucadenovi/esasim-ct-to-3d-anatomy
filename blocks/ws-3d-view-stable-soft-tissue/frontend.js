@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 126 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 127 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2916,7 +2916,7 @@ function render(ctx) {
   // as Length says (times the longest), and bend towards the feet (the model's own down: they turn with it). Each case
   // keeps its own maps (its own layout), with the view.
   var HAIR = { on: true, dens: 40, len: 20, bend: 0.6, rand: 0.35, gloss: 0.6, curl: 0, S: 1024, fol: null, maps: null, lines: null, panel: null,
-    layer: 'len', tool: 'brush', brush: 40, soft: 0.6, flow: 0.7, val: 1, col: '#3b2a20', undo: { len: [], op: [], col: [], curl: [] },
+    layer: 'len', tool: 'brush', brush: 40, soft: 0.6, flow: 0.7, val: 1, col: '#3b2a20', skinCol: '#a5654c', undo: { len: [], op: [], col: [], curl: [], skin: [] },
     view: { z: 1, ox: 0, oy: 0 }, wire: null, wireKey: '', paint3d: false, store: {}, key: '', cache: null, timer: 0, saveT: 0 };
   (function () {
     var st = (ctx.state || {}).hair;
@@ -2925,7 +2925,24 @@ function render(ctx) {
       if (st.store && typeof st.store === 'object') HAIR.store = st.store;
     }
   })();
-  var HAIR_LAYERS = [['len', 'Length'], ['op', 'Opacity'], ['col', 'Colour'], ['curl', 'Curliness']];
+  var HAIR_LAYERS = [['len', 'Length'], ['op', 'Opacity'], ['col', 'Colour'], ['curl', 'Curliness'], ['skin', 'Skin colour']];
+  // the skin's own colour, painted: see-through = the skin as it is; painted = that colour, its pores, mottling and
+  // freckles kept over it (the skin's shader reads the map through its layout, live while painting)
+  var SKPAINT = { tex: null, u: { value: null }, on: { value: 0 } };
+  function skinPaintUpd() {
+    var g = hairGeo(), c = HAIR.maps && HAIR.maps.skin;
+    if (!g || !c) { SKPAINT.on.value = 0; return; }
+    if (!g.attributes.esUv) g.setAttribute('esUv', new THREE.BufferAttribute(Float32Array.from(hairLayout(g).uv), 2));
+    if (!SKPAINT.tex || SKPAINT.tex.image !== c) {
+      if (SKPAINT.tex) SKPAINT.tex.dispose();
+      var t = new THREE.CanvasTexture(c);
+      if (THREE.SRGBColorSpace) t.colorSpace = THREE.SRGBColorSpace; else if (THREE.sRGBEncoding) t.encoding = THREE.sRGBEncoding;
+      t.anisotropy = 4; SKPAINT.tex = t; SKPAINT.u.value = t;
+    }
+    SKPAINT.tex.needsUpdate = true; SKPAINT.on.value = 1;
+  }
+  // after a stroke: the skin's colour map shows at once; the hair maps regrow the hair (soon while painting, at the end)
+  function hairMapsChanged(final) { if (HAIR.layer === 'skin') skinPaintUpd(); else if (final) hairBuild(); else hairSoon(400); }
   function hairState() { return { on: HAIR.on, dens: HAIR.dens, len: HAIR.len, bend: HAIR.bend, rand: HAIR.rand, gloss: HAIR.gloss, curl: HAIR.curl, col: HAIR.col, store: HAIR.store }; }
   // the hair's look: lit as strands (Kajiya-Kay): bright across the light, and a sheen where the strand lies at the
   // mirror angle between the light (at the camera, a little above) and the eye; as the hair bends, that place moves along it
@@ -3004,13 +3021,15 @@ function render(ctx) {
   function hairBlank(kind) {
     var c = document.createElement('canvas'); c.width = c.height = HAIR.S;
     // (Length: 10%, short everywhere; Opacity: 1; Curliness: 0, straight; Colour: the default)
-    var g = c.getContext('2d', { willReadFrequently: true }); g.fillStyle = kind === 'len' ? '#1a1a1a' : kind === 'curl' ? '#000' : kind === 'op' ? '#fff' : HAIR.col;
+    var g = c.getContext('2d', { willReadFrequently: true });
+    if (kind === 'skin') return c;                         // (Skin colour: see-through, the skin as it is)
+    g.fillStyle = kind === 'len' ? '#1a1a1a' : kind === 'curl' ? '#000' : kind === 'op' ? '#fff' : HAIR.col;
     g.fillRect(0, 0, HAIR.S, HAIR.S);
     return c;
   }
   // the maps of the case shown: kept ones (as pictures), else plain (10% of the longest everywhere, fully visible, the default colour, as curly as the slider)
   function hairMapsFor(key, done) {
-    HAIR.key = key; HAIR.maps = { len: hairBlank('len'), op: hairBlank('op'), col: hairBlank('col'), curl: hairBlank('curl') }; HAIR.undo = { len: [], op: [], col: [], curl: [] };
+    HAIR.key = key; HAIR.maps = { len: hairBlank('len'), op: hairBlank('op'), col: hairBlank('col'), curl: hairBlank('curl'), skin: hairBlank('skin') }; HAIR.undo = { len: [], op: [], col: [], curl: [], skin: [] };
     // (saved before maps were known by their skin: under the case's name, or 'case'; one left alone is this one's)
     var kept = HAIR.store[key], from = key;
     // (older saves, made before the maps were kept by skin, were all painted on the layout made here: only a skin
@@ -3058,7 +3077,8 @@ function render(ctx) {
     // (grown at the next frame drawn with the skin in the scene: while the model is still being set up, the skin's
     // triangles are not yet the ones drawn)
     HAIR.pending = false;
-    hairMapsFor(hairCaseKey(), function () { HAIR.pending = true; });
+    hairMapsFor(hairCaseKey(), function () { HAIR.pending = true; skinPaintUpd(); });
+    skinPaintUpd();
   }
   function hairSave() {
     clearTimeout(HAIR.saveT);
@@ -3257,7 +3277,7 @@ function render(ctx) {
       + '<label class="hr-s hr-colw" title="The colour painted"><span>Colour</span><input type="color" class="hr-cin" style="width:36px;height:18px;padding:0;border:1px solid #2a303b;background:none"></label>'
       + '<label style="display:flex;gap:5px;align-items:center" title="Paint on the skin in the 3D view too (a drag on the skin paints; beside it, the view turns as usual)"><input type="checkbox" class="hr-3d" style="margin:0;accent-color:#7b8cff">Paint on the 3D model</label></div>'
       + '<div class="hr-tabs">' + HAIR_LAYERS.map(function (L) {
-        var hint = { len: 'grey × longest', op: '0 hidden · 1 seen', col: 'dark, blond…', curl: '0 straight · 1 curly' }[L[0]];
+        var hint = { len: 'grey × longest', op: '0 hidden · 1 seen', col: 'dark, blond…', curl: '0 straight · 1 curly', skin: 'the skin’s own' }[L[0]];
         return '<button class="hr-tab" data-hl="' + L[0] + '" title="Paint the ' + L[1] + ' map"><canvas class="hr-th" data-th="' + L[0] + '" width="44" height="26"></canvas><span style="line-height:1.15;text-align:left"><b>' + L[1] + '</b><br><small style="opacity:.7">' + hint + '</small></span></button>';
       }).join('')
       + '<div class="hr-swr" title="What the brush paints (click: change it)"><span style="opacity:.8">Painting</span><span class="hr-sw"></span><b class="hr-swt"></b></div></div>'
@@ -3279,14 +3299,14 @@ function render(ctx) {
     p.querySelectorAll('[data-hl]').forEach(function (b) { b.onclick = function () { HAIR.layer = b.getAttribute('data-hl'); hairPanelSync(); hairDraw(); }; });
     p.querySelectorAll('[data-ht]').forEach(function (b) { b.onclick = function () { HAIR.tool = b.getAttribute('data-ht'); hairPanelSync(); }; });
     q('.hr-vin').addEventListener('input', function () { HAIR.val = +this.value; q('.hr-vv').textContent = Math.round(HAIR.val * 100) + '%'; hairSwatch(); });
-    q('.hr-cin').addEventListener('input', function () { HAIR.paintCol = this.value; hairSwatch(); });
-    q('.hr-swr').onclick = function () { if (HAIR.layer === 'col') q('.hr-cin').click(); else q('.hr-vin').focus(); };
+    q('.hr-cin').addEventListener('input', function () { if (HAIR.layer === 'skin') HAIR.skinCol = this.value; else HAIR.paintCol = this.value; hairSwatch(); });
+    q('.hr-swr').onclick = function () { if (HAIR.layer === 'col' || HAIR.layer === 'skin') q('.hr-cin').click(); else q('.hr-vin').focus(); };
     q('.hr-fill').onclick = function () { hairFill(false); };
     q('.hr-clear').onclick = function () { hairFill(true); };
     q('.hr-undo').onclick = hairUndo;
     q('.hr-fit').onclick = function () { hairFit(); hairDraw(); };
     // the maps as files (to keep them safe, or to use them elsewhere), and back
-    var HNAMES = { len: 'hair-length.png', op: 'hair-opacity.png', col: 'hair-colour.png', curl: 'hair-curliness.png' };
+    var HNAMES = { len: 'hair-length.png', op: 'hair-opacity.png', col: 'hair-colour.png', curl: 'hair-curliness.png', skin: 'skin-colour.png' };
     q('.hr-exp').onclick = function () {
       if (!HAIR.maps) return;
       var list = [], left = HAIR_LAYERS.length;
@@ -3304,11 +3324,11 @@ function render(ctx) {
       var fs = Array.prototype.slice.call(fin.files || []); if (!fs.length) return;
       var left = fs.length;
       fs.forEach(function (f) {
-        var n = f.name.toLowerCase(), L = /curl/.test(n) ? 'curl' : /opac|alpha|transp/.test(n) ? 'op' : /col/.test(n) ? 'col' : /len/.test(n) ? 'len' : null;
-        var done = function () { if (--left) return; hairDraw(); hairBuild(); hairSave(); };
+        var n = f.name.toLowerCase(), L = /skin/.test(n) ? 'skin' : /curl/.test(n) ? 'curl' : /opac|alpha|transp/.test(n) ? 'op' : /col/.test(n) ? 'col' : /len/.test(n) ? 'len' : null;
+        var done = function () { if (--left) return; hairDraw(); hairBuild(); skinPaintUpd(); hairSave(); };
         if (!L) { done(); return; }
         var im = new Image(), url = URL.createObjectURL(f);
-        im.onload = function () { HAIR.layer = L; hairUndoPush(); HAIR.maps[L].getContext('2d').drawImage(im, 0, 0, HAIR.S, HAIR.S); URL.revokeObjectURL(url); done(); };
+        im.onload = function () { HAIR.layer = L; hairUndoPush(); var ic = HAIR.maps[L].getContext('2d'); if (L === 'skin') ic.clearRect(0, 0, HAIR.S, HAIR.S); ic.drawImage(im, 0, 0, HAIR.S, HAIR.S); URL.revokeObjectURL(url); done(); };
         im.onerror = function () { URL.revokeObjectURL(url); done(); };
         im.src = url;
       });
@@ -3338,10 +3358,10 @@ function render(ctx) {
     cv.addEventListener('pointermove', function (e) {
       HAIR.mouse = hairCanvasXY(e);
       if (drag) { HAIR.view.ox += e.clientX - drag.x; HAIR.view.oy += e.clientY - drag.y; drag = { x: e.clientX, y: e.clientY }; }
-      else if (last) { var m = hairMapAt(e); hairStroke(last, m); last = m; hairSoon(400); }
+      else if (last) { var m = hairMapAt(e); hairStroke(last, m); last = m; hairMapsChanged(false); }
       hairDraw();
     });
-    var up = function () { if (last) { last = null; hairBuild(); hairSave(); } drag = null; };
+    var up = function () { if (last) { last = null; hairMapsChanged(true); hairSave(); } drag = null; };
     cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
     cv.addEventListener('pointerleave', function () { HAIR.mouse = null; hairDraw(); });
     if (window.ResizeObserver) new ResizeObserver(function () { hairDraw(); }).observe(q('.hr-c'));
@@ -3352,7 +3372,7 @@ function render(ctx) {
     var sw = p.querySelector('.hr-sw'), t = p.querySelector('.hr-swt'); if (!sw || !t) return;
     var css = hairPaintStyle(); sw.style.background = css;
     var erase = HAIR.tool === 'erase', v = erase ? 0 : HAIR.val;
-    if (HAIR.layer === 'col') { var c = hairRGB(css); t.textContent = '#' + c.map(function (n) { return ('0' + n.toString(16)).slice(-2); }).join('') + (erase ? ' (default)' : ''); }
+    if (HAIR.layer === 'col' || HAIR.layer === 'skin') { var c = hairRGB(css); t.textContent = erase && HAIR.layer === 'skin' ? 'eraser: the skin as it is' : '#' + c.map(function (n) { return ('0' + n.toString(16)).slice(-2); }).join('') + (erase ? ' (default)' : ''); }
     else if (HAIR.layer === 'len') t.textContent = Math.round(v * 100) + '% · ' + (Math.round(v * HAIR.len * 10) / 10) + ' mm' + (erase ? ' (eraser)' : '');
     else if (HAIR.layer === 'curl') t.textContent = Math.round(v * 100) + '% ' + (v <= 0 ? 'straight' : 'curly') + (erase ? ' (eraser)' : '');
     else t.textContent = Math.round(v * 100) + '% ' + (v <= 0 ? 'hidden' : v >= 1 ? 'seen' : 'see-through') + (erase ? ' (eraser)' : '');
@@ -3364,11 +3384,11 @@ function render(ctx) {
     p.querySelectorAll('[data-hs]').forEach(function (inp) { var k = inp.getAttribute('data-hs'); inp.value = HAIR[k]; p.querySelector('[data-hv="' + k + '"]').textContent = hairFmt(k); });
     p.querySelectorAll('[data-hl]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-hl') === HAIR.layer); });
     p.querySelectorAll('[data-ht]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-ht') === HAIR.tool); });
-    var colL = HAIR.layer === 'col';
+    var colL = HAIR.layer === 'col' || HAIR.layer === 'skin';
     p.querySelector('.hr-val').style.display = colL ? 'none' : 'flex';
     p.querySelector('.hr-colw').style.display = colL ? 'flex' : 'none';
     p.querySelector('.hr-vin').value = HAIR.val; p.querySelector('.hr-vv').textContent = Math.round(HAIR.val * 100) + '%';
-    p.querySelector('.hr-cin').value = HAIR.paintCol || HAIR.col;
+    p.querySelector('.hr-cin').value = HAIR.layer === 'skin' ? HAIR.skinCol : (HAIR.paintCol || HAIR.col);
     p.querySelector('.hr-3d').checked = HAIR.paint3d;
     hairSwatch();
     var stl = p.querySelector('.hr-st'); if (stl) stl.textContent = HAIR.stat || '';
@@ -3439,22 +3459,25 @@ function render(ctx) {
     if (!HAIR.maps || !hairGeo()) return;
     var V = HAIR.view, S = HAIR.S;
     x.imageSmoothingEnabled = V.z < 2;
+    var skinBase = (typeof SKINV !== 'undefined' && SKINV.base) || '#d9a888';
+    if (HAIR.layer === 'skin') { x.fillStyle = skinBase; x.fillRect(V.ox, V.oy, S * V.z, S * V.z); }   // (under the paint: the skin as it is)
     x.drawImage(HAIR.maps[HAIR.layer], V.ox, V.oy, S * V.z, S * V.z);
     // the skin's shading and its triangles over the map, light, so the map's own values show
     var w = hairWire(); if (w) { x.globalAlpha = 0.32; x.imageSmoothingEnabled = true; x.drawImage(w, V.ox, V.oy, S * V.z, S * V.z); x.globalAlpha = 1; }
     // which map is being painted, and what its values mean
-    var lab = { len: 'Painting LENGTH: white = the longest (' + Math.round(HAIR.len) + ' mm), black = no hair', op: 'Painting OPACITY: white = seen, black = hidden', col: 'Painting COLOUR: the hair’s colour (pick it beside Colour)', curl: 'Painting CURLINESS: white = curly (a spiral along the hair), black = straight (heading down)' }[HAIR.layer];
+    var lab = { len: 'Painting LENGTH: white = the longest (' + Math.round(HAIR.len) + ' mm), black = no hair', op: 'Painting OPACITY: white = seen, black = hidden', col: 'Painting COLOUR: the hair’s colour (pick it beside Colour)', curl: 'Painting CURLINESS: white = curly (a spiral along the hair), black = straight (heading down)', skin: 'Painting SKIN COLOUR: the skin’s colour where painted (its texture kept); Eraser: back to the skin as it is' }[HAIR.layer];
     x.font = '600 12px system-ui, sans-serif'; var tw = x.measureText(lab).width;
     x.fillStyle = 'rgba(10,14,22,.85)'; x.fillRect(6, 6, tw + 14, 20); x.fillStyle = '#fff'; x.fillText(lab, 13, 20);
     // the three maps' pictures on their cards
     var B = HAIR.box || { x: 0, y: 0, w: S, h: S };
-    p.querySelectorAll('.hr-th').forEach(function (tc) { var t = tc.getContext('2d'); t.fillStyle = '#000'; t.fillRect(0, 0, tc.width, tc.height); t.drawImage(HAIR.maps[tc.getAttribute('data-th')], B.x, B.y, B.w, B.h, 0, 0, tc.width, tc.height); });
+    p.querySelectorAll('.hr-th').forEach(function (tc) { var t = tc.getContext('2d'); t.fillStyle = tc.getAttribute('data-th') === 'skin' ? skinBase : '#000'; t.fillRect(0, 0, tc.width, tc.height); t.drawImage(HAIR.maps[tc.getAttribute('data-th')], B.x, B.y, B.w, B.h, 0, 0, tc.width, tc.height); });
     if (HAIR.mouse) { x.strokeStyle = '#fff'; x.lineWidth = 1; x.beginPath(); x.arc(HAIR.mouse.x, HAIR.mouse.y, Math.max(1.5, HAIR.brush * V.z / 2), 0, 2 * Math.PI); x.stroke(); }
   }
   // painting: soft round dabs, so many along a stroke
   function hairPaintStyle() {
     var L = HAIR.layer, erase = HAIR.tool === 'erase';
     if (L === 'col') { var c = erase ? HAIR.col : (HAIR.paintCol || HAIR.col); return c; }
+    if (L === 'skin') return HAIR.skinCol;
     var g = Math.round(255 * (erase ? 0 : HAIR.val)); return 'rgb(' + g + ',' + g + ',' + g + ')';
   }
   function hairRGB(css) { var d = document.createElement('canvas').getContext('2d'); d.fillStyle = css; var h = d.fillStyle; if (h[0] === '#') { var n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; } var m = h.match(/\d+/g) || [0, 0, 0]; return [+m[0], +m[1], +m[2]]; }
@@ -3462,7 +3485,10 @@ function render(ctx) {
     var c = HAIR.maps[HAIR.layer].getContext('2d'), R = HAIR.brush / 2, rgb = hairRGB(hairPaintStyle()), a = HAIR.flow;
     var gr = c.createRadialGradient(mx, my, R * (1 - HAIR.soft) * 0.999, mx, my, R);
     gr.addColorStop(0, 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',' + a + ')'); gr.addColorStop(1, 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0)');
+    var wipe = HAIR.layer === 'skin' && HAIR.tool === 'erase';   // (Skin colour's eraser: see-through again)
+    if (wipe) c.globalCompositeOperation = 'destination-out';
     c.fillStyle = gr; c.beginPath(); c.arc(mx, my, R, 0, 2 * Math.PI); c.fill();
+    if (wipe) c.globalCompositeOperation = 'source-over';
   }
   function hairStroke(a, b) {
     var d = Math.hypot(b.x - a.x, b.y - a.y), step = Math.max(1, HAIR.brush * 0.15), n = Math.ceil(d / step);
@@ -3474,14 +3500,18 @@ function render(ctx) {
   }
   function hairUndo() {
     var L = HAIR.layer, u = HAIR.undo[L]; if (!u.length) return;
-    HAIR.maps[L].getContext('2d').putImageData(u.pop(), 0, 0); hairDraw(); hairBuild(); hairSave();
+    HAIR.maps[L].getContext('2d').putImageData(u.pop(), 0, 0); hairDraw(); hairMapsChanged(true); hairSave();
   }
   function hairFill(clear) {
     if (!HAIR.maps) return;
     hairUndoPush();
     var c = HAIR.maps[HAIR.layer].getContext('2d');
-    c.fillStyle = clear ? (HAIR.layer === 'len' ? '#1a1a1a' : HAIR.layer === 'curl' ? '#000' : HAIR.layer === 'op' ? '#fff' : HAIR.col) : hairPaintStyle();
-    c.fillRect(0, 0, HAIR.S, HAIR.S); hairDraw(); hairBuild(); hairSave();
+    if (clear && HAIR.layer === 'skin') c.clearRect(0, 0, HAIR.S, HAIR.S);
+    else {
+      c.fillStyle = clear ? (HAIR.layer === 'len' ? '#1a1a1a' : HAIR.layer === 'curl' ? '#000' : HAIR.layer === 'op' ? '#fff' : HAIR.col) : hairPaintStyle();
+      c.fillRect(0, 0, HAIR.S, HAIR.S);
+    }
+    hairDraw(); hairMapsChanged(true); hairSave();
   }
   // painting on the skin in the 3D view: the layout's place under the pointer (the hit face, its uv)
   var hrRay = new THREE.Raycaster(), hrM = new THREE.Vector2(), hrTri = new THREE.Triangle(), hrBar = new THREE.Vector3(), hrA = new THREE.Vector3(), hrB = new THREE.Vector3(), hrC = new THREE.Vector3();
@@ -3521,9 +3551,9 @@ function render(ctx) {
       var m = hairHit(ev); if (!m) return;
       // (a jump across the seam: no line through the whole layout)
       if (Math.hypot(m.x - last.x, m.y - last.y) < HAIR.S * 0.08) hairStroke(last, m); else hairDab(m.x, m.y);
-      last = m; hairDraw(); hairSoon(400);
+      last = m; hairDraw(); hairMapsChanged(false);
     }, true);
-    window.addEventListener('pointerup', function () { if (!last) return; last = null; controls.enabled = true; hairBuild(); hairSave(); });
+    window.addEventListener('pointerup', function () { if (!last) return; last = null; controls.enabled = true; hairMapsChanged(true); hairSave(); });
   })();
   var TISSUE_KINDS = [  // [kind, words in the structure's name, bump height (m), second colour (fat, slate, pale crests)]
     [1, ['liver'], 0.0003, null], [2, ['spleen'], 0.0003, null], [3, ['kidney', 'gallbladder', 'bladder'], 0.0002, null],
@@ -4379,14 +4409,17 @@ function render(ctx) {
       var skinMat = new THREE.MeshStandardMaterial({ color: 0xd9a888, roughness: 0.38, metalness: 0, envMapIntensity: 1.0, transparent: true, opacity: 1, depthWrite: false, side: THREE.DoubleSide });
       skinMat.onBeforeCompile = function (sh) {
         sh.uniforms.esNoiseTex = ES_NOISE; sh.uniforms.esOn = TEX.uOn || (TEX.uOn = { value: TEX.on ? 1 : 0 }); sh.uniforms.esSolid = SKINLOOK.u;
+        sh.uniforms.esPaint = SKPAINT.u; sh.uniforms.esPaintOn = SKPAINT.on;
         for (var su in SKINU) sh.uniforms[su] = SKINU[su];
-        sh.vertexShader = 'attribute vec3 esRest;\nattribute vec2 esCurv;\nattribute vec4 esCxF;\nvarying vec3 vEsP;\nvarying vec2 vEsC;\nvarying vec4 vEsF;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvEsP = esRest; vEsC = esCurv; vEsF = esCxF;');
-        sh.fragmentShader = 'uniform float esSolid;\nvarying vec4 vEsF;\n' + SKIN_GLSL_U + '\n' + TISSUE_GLSL + '\n' + SKIN_GLSL + '\n' + sh.fragmentShader
+        sh.vertexShader = 'attribute vec3 esRest;\nattribute vec2 esCurv;\nattribute vec4 esCxF;\nattribute vec2 esUv;\nvarying vec3 vEsP;\nvarying vec2 vEsC;\nvarying vec4 vEsF;\nvarying vec2 vEsUv;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvEsP = esRest; vEsC = esCurv; vEsF = esCxF; vEsUv = esUv;');
+        sh.fragmentShader = 'uniform float esSolid;\nuniform sampler2D esPaint;\nuniform float esPaintOn;\nvarying vec2 vEsUv;\nvarying vec4 vEsF;\n' + SKIN_GLSL_U + '\n' + TISSUE_GLSL + '\n' + SKIN_GLSL + '\n' + sh.fragmentShader
           .replace('#include <color_fragment>', '#include <color_fragment>\nvec4 esK = vec4(0.5, 0.0, 1.0, 0.0); float esPx = length(fwidth(vEsP)); float esCx = smoothstep(esS_cxLo, esS_cxHi, clamp(0.75 * vEsC.y + 0.5 * vEsC.x, 0.0, 1.0));\n'
             // the complexity spread over the fade distance: between the raw value and its spread at 8, 20 and 50 mm
             + 'float esFd = clamp(esS_fade, 0.0, 50.0); float esSp = esFd <= 8.0 ? mix(vEsF.x, vEsF.y, esFd / 8.0) : (esFd <= 20.0 ? mix(vEsF.y, vEsF.z, (esFd - 8.0) / 12.0) : mix(vEsF.z, vEsF.w, (esFd - 20.0) / 30.0));\n'
             + 'float esCxR = smoothstep(esS_cxLo, esS_cxHi, esSp);\n'
-            + 'if (esOn > 0.5) { esK = esSkin(vEsP, esPx, esCxR); diffuseColor.rgb = esSkinColor(diffuseColor.rgb, vEsP, esPx, esCxR); }')
+            + 'if (esOn > 0.5) { esK = esSkin(vEsP, esPx, esCxR); diffuseColor.rgb = esSkinColor(diffuseColor.rgb, vEsP, esPx, esCxR); }\n'
+            // the colour painted (Skin colour map): that colour where painted, the skin's own texture kept over it
+            + 'if (esPaintOn > 0.5 && vEsUv.x >= 0.0 && vEsUv.y >= 0.0) { vec4 esPt = texture2D(esPaint, vEsUv); vec3 esRt = diffuseColor.rgb / max(diffuse, vec3(0.02)); diffuseColor.rgb = mix(diffuseColor.rgb, clamp(esPt.rgb * esRt, 0.0, 1.0), esPt.a); }')
           .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor * esK.z, 0.25, 1.0);')
           .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nif (esOn > 0.5) { normal = esBump(-vViewPosition, normal, esK.x * 0.0005 * esS_relief, faceDirection); roughnessFactor = max(roughnessFactor, min(0.6, length(fwidth(normal)) * 0.9)); }')
           .replace('#include <opaque_fragment>', '#include <opaque_fragment>\n{ vec3 esV = normalize( vViewPosition ), esN = normalize( normal );\n'
@@ -4405,7 +4438,7 @@ function render(ctx) {
             + 'float esAo = clamp( esA + dot( esSpec, vec3( 0.2126, 0.7152, 0.0722 ) ), 0.0, 1.0 );\n'
             + 'gl_FragColor = vec4( ( esDif * esA + esSpec ) / max( esAo, 0.001 ), esAo ); }');
       };
-      skinMat.customProgramCacheKey = function () { return 'esasim-skin-10'; };
+      skinMat.customProgramCacheKey = function () { return 'esasim-skin-11'; };
       var skin = new THREE.Mesh(g, skinMat);
       skin.name = 'skin'; skin.renderOrder = 5;
       SKINLOOK.mat = skinMat; SKINLOOK.mesh = skin; skinApply(); skinSolid(SKINLOOK.solid);
@@ -5343,7 +5376,7 @@ function render(ctx) {
           camera: { position: camera.position.toArray(), target: controls.target.toArray() },
           note: 'The GLB holds every part shown, the skin (with its flat layout as TEXCOORD_0, for the hair maps) and the hair strands (lines with their colours). The hair maps are hair-*.png, laid on that layout.' };
         list.push({ name: cname + '-look.json', blob: new Blob([JSON.stringify(settings, null, 1)], { type: 'application/json' }) });
-        var HN = { len: 'hair-length.png', op: 'hair-opacity.png', col: 'hair-colour.png', curl: 'hair-curliness.png' };
+        var HN = { len: 'hair-length.png', op: 'hair-opacity.png', col: 'hair-colour.png', curl: 'hair-curliness.png', skin: 'skin-colour.png' };
         var maps = HAIR.maps ? HAIR_LAYERS.filter(function (L) { return HAIR.maps[L[0]]; }) : [], left = maps.length;
         var send = function () {
           try { if (ctx.saveFiles) ctx.saveFiles(list, 'Model · ' + cname); else list.forEach(function (f) { ctx.save(f.name, f.blob); }); }
