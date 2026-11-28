@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// Load a CT (ws-load-a-ct) · version 7 · view, JavaScript: function render(ctx)
+// Load a CT (ws-load-a-ct) · version 8 · view, JavaScript: function render(ctx)
 // The View's loading dialog for CT scans: drop or choose a folder from your computer (a whole CD/DVD export is fine), see its series, tick the ones to segment and press Load; or give a folder on a worke
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -253,7 +253,7 @@ function render(ctx) {
   }
   async function post(m, tries = 6) {     // one message to the loader: a failed one is tried again, with a growing pause
     for (let k = 0; ; k++) {
-      try { const r = await ctx.send(CHANNEL, m); if (r && r.ok === false) throw new Error(r.error || 'not sent'); return; }
+      try { const r = await ctx.send(CHANNEL, m, { node: LOAD }); if (r && r.ok === false) throw new Error(r.error || 'not sent'); return; }
       catch (e) { if (k >= tries - 1 || !runActive()) throw e; await new Promise(r => setTimeout(r, 500 * Math.pow(2, k))); }
     }
   }
