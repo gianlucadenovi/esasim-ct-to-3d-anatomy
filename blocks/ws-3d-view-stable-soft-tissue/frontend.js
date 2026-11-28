@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 100 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 101 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -3251,14 +3251,22 @@ function render(ctx) {
     if (HAIR.wire && HAIR.wireKey === g.uuid) return HAIR.wire;
     var S2 = 2048, c = document.createElement('canvas'); c.width = c.height = S2;
     var LY = hairLayout(g), x = c.getContext('2d'), uv = LY.uv, idx = g.index.array, wrap = LY.cyl ? 0.3 * LY.cyl.span : 9;
-    x.strokeStyle = 'rgba(140,170,255,0.55)'; x.lineWidth = 0.5; x.beginPath();
+    // shaded as lit from the front (its normals), so the body's features show; then the triangles' edges, fine (they
+    // show one by one when zoomed in)
+    var nrm = g.attributes.normal ? g.attributes.normal.array : null, NB = 12, paths = [], keep = [];
+    for (var bi = 0; bi < NB; bi++) paths.push(new Path2D());
     for (var f = 0; f < idx.length; f += 3) {
       var a = idx[f], b = idx[f + 1], cc = idx[f + 2];
       if (uv[2 * a] < 0 || uv[2 * b] < 0 || uv[2 * cc] < 0) continue;
       if (Math.max(uv[2 * a], uv[2 * b], uv[2 * cc]) - Math.min(uv[2 * a], uv[2 * b], uv[2 * cc]) > wrap) continue;   // (across the back seam)
-      x.moveTo(uv[2 * a] * S2, (1 - uv[2 * a + 1]) * S2); x.lineTo(uv[2 * b] * S2, (1 - uv[2 * b + 1]) * S2); x.lineTo(uv[2 * cc] * S2, (1 - uv[2 * cc + 1]) * S2); x.closePath();
+      var sh = 0.5;
+      if (nrm) { var nz = (nrm[3 * a + 2] + nrm[3 * b + 2] + nrm[3 * cc + 2]) / 3, ny = (nrm[3 * a + 1] + nrm[3 * b + 1] + nrm[3 * cc + 1]) / 3, nx = (nrm[3 * a] + nrm[3 * b] + nrm[3 * cc]) / 3; sh = Math.max(0, Math.min(1, 0.55 + 0.45 * (Math.abs(nz) * 0.7 + ny * 0.3 + Math.abs(nx) * 0.25) - 0.25)); }
+      var pth = paths[Math.min(NB - 1, Math.floor(sh * NB))];
+      pth.moveTo(uv[2 * a] * S2, (1 - uv[2 * a + 1]) * S2); pth.lineTo(uv[2 * b] * S2, (1 - uv[2 * b + 1]) * S2); pth.lineTo(uv[2 * cc] * S2, (1 - uv[2 * cc + 1]) * S2); pth.closePath();
     }
-    x.stroke();
+    for (bi = 0; bi < NB; bi++) { var gv = Math.round(30 + 200 * (bi + 0.5) / NB); x.fillStyle = 'rgba(' + gv + ',' + gv + ',' + gv + ',0.55)'; x.fill(paths[bi]); }
+    x.strokeStyle = 'rgba(140,170,255,0.22)'; x.lineWidth = 0.3;
+    for (bi = 0; bi < NB; bi++) x.stroke(paths[bi]);
     HAIR.wire = c; HAIR.wireKey = g.uuid;
     return c;
   }
