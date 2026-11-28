@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 73 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 74 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2717,15 +2717,16 @@ function render(ctx) {
   // ⚙ The skin's settings: every value of its look, live (its shader's uniforms and its material), presets for the six
   // skin types of the Fitzpatrick scale, and Copy values (JSON: to send, or to paste in the view's Skin settings, which
   // takes the same JSON as its defaults). What is set is kept with the view.
-  var SKIN_DEF = { base: '#d9a888', redCol: '#cc857a', redAmt: 0.55, fade: 12, mel: 0.35, blood: 0.3, blot: 0.14, cxLo: 0.05, cxHi: 0.9, relief: 1.0, und: 0.8, grain: 0.03, grainCx: 0.06, grainSz: 0.4, grainSzCx: 1.0, dark: 0.2, sheen: 0.3,
-    dotH: 0.7, dotSize: 0.22, dotDen: 0.75, dotSp: 2.5, rough: 0.38, glossFlat: 0.7, glossCx: 1.4, env: 1.0, opBase: 0, opCx: 0.3 };
+  // defaults: fair skin (Fitzpatrick II), as tuned by eye on a CT of the trunk
+  var SKIN_DEF = { base: '#e3bea5', redCol: '#864a41', redAmt: 0.36, fade: 16.5, mel: 0.56, blood: 0.45, blot: 0.07, cxLo: 0, cxHi: 0.49, relief: 2.45, und: 0.15, grain: 0.085, grainCx: 0.3, grainSz: 1.05, grainSzCx: 1.25, dark: 0.2, sheen: 1,
+    dotH: 1.05, dotSize: 0, dotDen: 3, dotSp: 1.6, rough: 0.26, glossFlat: 1.74, glossCx: 2, env: 3, opBase: -0.5, opCx: 0 };
   var SKIN_TYPES = [
-    ['I', 'I · very fair', { base: '#f3d6c6', mel: 0.12, blood: 0.38, redAmt: 0.6, redCol: '#cc857a' }],
-    ['II', 'II · fair', { base: '#ebc1a6', mel: 0.22, blood: 0.34, redAmt: 0.58, redCol: '#cc857a' }],
-    ['III', 'III · medium, light olive', { base: '#d9a888', mel: 0.35, blood: 0.3, redAmt: 0.55, redCol: '#cc857a' }],
-    ['IV', 'IV · olive, light brown', { base: '#b98462', mel: 0.4, blood: 0.22, redAmt: 0.42, redCol: '#c47f6e' }],
-    ['V', 'V · brown', { base: '#8a5a3c', mel: 0.45, blood: 0.15, redAmt: 0.32, redCol: '#b87766' }],
-    ['VI', 'VI · dark brown', { base: '#5a3826', mel: 0.5, blood: 0.1, redAmt: 0.25, redCol: '#a8705f' }]
+    ['I', 'I · very fair', { base: '#f0d0bc', mel: 0.45, blood: 0.5, redAmt: 0.38, redCol: '#864a41', dark: 0.18 }],
+    ['II', 'II · fair', { base: '#e3bea5', mel: 0.56, blood: 0.45, redAmt: 0.36, redCol: '#864a41', dark: 0.2 }],
+    ['III', 'III · medium, light olive', { base: '#d2a785', mel: 0.6, blood: 0.38, redAmt: 0.32, redCol: '#7c4a3d', dark: 0.22 }],
+    ['IV', 'IV · olive, light brown', { base: '#b58361', mel: 0.62, blood: 0.28, redAmt: 0.27, redCol: '#6e4436', dark: 0.24 }],
+    ['V', 'V · brown', { base: '#8a5a3c', mel: 0.64, blood: 0.18, redAmt: 0.22, redCol: '#5c392d', dark: 0.26 }],
+    ['VI', 'VI · dark brown', { base: '#5a3826', mel: 0.66, blood: 0.12, redAmt: 0.18, redCol: '#4a2e25', dark: 0.28 }]
   ];
   var SKIN_BASE = {}, SKINV = {};
   (function () {
