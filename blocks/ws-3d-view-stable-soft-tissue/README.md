@@ -8,7 +8,7 @@ An [EsaSim](https://esacode.com/) blueprint block: a view that draws in the brow
 
 | | |
 |---|---|
-| Block | `ws-3d-view-stable-soft-tissue` · version 129 |
+| Block | `ws-3d-view-stable-soft-tissue` · version 130 |
 | Workspace | Gianluca De Novi's workspace |
 | Author | Gianluca De Novi |
 
