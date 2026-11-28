@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 89 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 90 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2905,15 +2905,18 @@ function render(ctx) {
   function hairState() { return { on: HAIR.on, dens: HAIR.dens, len: HAIR.len, bend: HAIR.bend, rand: HAIR.rand, gloss: HAIR.gloss, col: HAIR.col, store: HAIR.store }; }
   // the hair's look: lit as strands (Kajiya-Kay): bright across the light, and a sheen where the strand lies at the
   // mirror angle between the light (at the camera, a little above) and the eye; as the hair bends, that place moves along it
-  var HAIR_VS = 'attribute vec4 hC;\nattribute vec3 hT;\nvarying vec4 vC;\nvarying vec3 vT;\nvarying vec3 vV;\n'
-    + 'void main() { vC = hC; vT = normalize(normalMatrix * hT); vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = -mv.xyz; gl_Position = projectionMatrix * mv; }';
-  var HAIR_FS = 'uniform float uGloss;\nvarying vec4 vC;\nvarying vec3 vT;\nvarying vec3 vV;\n'
+  var HAIR_VS = 'attribute vec4 hC;\nattribute vec3 hT;\nattribute vec3 hN;\nvarying vec4 vC;\nvarying vec3 vT;\nvarying vec3 vV;\nvarying vec3 vN;\n'
+    + 'void main() { vC = hC; vT = normalize(normalMatrix * hT); vN = normalize(normalMatrix * hN); vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = -mv.xyz; gl_Position = projectionMatrix * mv; }';
+  var HAIR_FS = 'uniform float uGloss;\nvarying vec4 vC;\nvarying vec3 vT;\nvarying vec3 vV;\nvarying vec3 vN;\n'
     + 'void main() {\n vec3 T = normalize(vT), V = normalize(vV), L = normalize(vec3(0.35, 0.55, 1.0)), H = normalize(L + V);\n'
     + ' float tl = dot(T, L), th = dot(T, H), sinL = sqrt(max(0.0, 1.0 - tl * tl)), sinH = sqrt(max(0.0, 1.0 - th * th));\n'
     + ' vec3 base = pow(vC.rgb, vec3(2.2));\n'
     + ' float s1 = pow(sinH, 90.0), s2 = pow(sinH, 14.0);\n'          // a sharp white sheen, and a broader one in the hair's colour
-    + ' vec3 col = base * (0.25 + 0.75 * sinL) + uGloss * (0.9 * s1 * vec3(1.0) + 0.5 * s2 * base * 2.5);\n'
-    + ' gl_FragColor = vec4(col, vC.a * (0.8 + 0.2 * uGloss * s1));\n'
+    // in the skin's light: as dark as the skin under it where it turns from the light (its edges, its hollows), the
+    // sheen only where the light reaches
+    + ' vec3 N = normalize(vN); float lit = clamp(dot(N, L), 0.0, 1.0), sh = 0.06 + 0.94 * lit * lit;\n'
+    + ' vec3 col = base * (0.35 + 0.65 * sinL) * sh + uGloss * lit * (0.45 * s1 * mix(vec3(1.0), base * 4.0, 0.4) + 0.4 * s2 * base * 2.0);\n'
+    + ' gl_FragColor = vec4(col, vC.a);\n'
     + ' #include <tonemapping_fragment>\n #include <colorspace_fragment>\n}';
   // the hair moves with the skin (pressed, sagging): each hair's root on its triangle, the rest of it carried along
   function hairFollow() {
@@ -3006,7 +3009,7 @@ function render(ctx) {
     var Lp = HAIR.maps.len.getContext('2d').getImageData(0, 0, S, S).data, Op = HAIR.maps.op.getContext('2d').getImageData(0, 0, S, S).data, Cp = HAIR.maps.col.getContext('2d').getImageData(0, 0, S, S).data;
     var N = Math.min(200000, Math.round(HAIR.dens * C.tot / (U * U) * 1e4)), rnd = hairRng(1234567), K = 3;
     var mid0 = 4 * ((S >> 1) * S + (S >> 1));                // (no uv: the middle of each map)
-    var P = [], Q = [], TT = [], FI = [], FW = [], FR = [], dirs = [], L0 = HAIR.len / 1000 * U, bend = Math.max(0, Math.min(1, HAIR.bend));
+    var P = [], Q = [], TT = [], NN = [], FI = [], FW = [], FR = [], dirs = [], L0 = HAIR.len / 1000 * U, bend = Math.max(0, Math.min(1, HAIR.bend));
     var e0 = (80 - 65 * bend) * Math.PI / 180, e1 = (40 - 37 * bend) * Math.PI / 180;   // how far the root and the tip rise off the skin
     for (var i = 0; i < N; i++) {
       var r0 = rnd(), r1 = rnd(), r2 = rnd(), rl = rnd(), ra = rnd();
@@ -3052,6 +3055,7 @@ function render(ctx) {
         // the strand's direction, smooth across its bends (the sheen slides along it)
         var p0 = s > 0 ? 3 * (s - 1) : 3 * s, p1 = s < K - 1 ? 3 * (s + 1) : 3 * s;
         TT.push(dx + dirs[p0], dy + dirs[p0 + 1], dz + dirs[p0 + 2], dx + dirs[p1], dy + dirs[p1 + 1], dz + dirs[p1 + 2]);
+        NN.push(nx, ny, nz, nx, ny, nz);                    // (the skin's normal at the root: its light)
         var a0 = 0.85 * op * (1 - 0.45 * s / K), a1 = 0.85 * op * (1 - 0.45 * (s + 1) / K);
         Q.push(cr, cg, cb, a0, cr, cg, cb, a1);
         sx = ex; sy = ey; sz = ez;
@@ -3062,6 +3066,7 @@ function render(ctx) {
     hg.setAttribute('position', new THREE.BufferAttribute(PA, 3));
     hg.setAttribute('hC', new THREE.Float32BufferAttribute(Q, 4));
     hg.setAttribute('hT', new THREE.Float32BufferAttribute(TT, 3));
+    hg.setAttribute('hN', new THREE.Float32BufferAttribute(NN, 3));
     hg.computeBoundingSphere();
     var hm = new THREE.ShaderMaterial({ vertexShader: HAIR_VS, fragmentShader: HAIR_FS, uniforms: { uGloss: { value: HAIR.gloss } }, transparent: true, depthWrite: false });
     HAIR.lines = new THREE.LineSegments(hg, hm); HAIR.lines.name = 'hair'; HAIR.lines.renderOrder = 6; HAIR.lines.frustumCulled = false;
