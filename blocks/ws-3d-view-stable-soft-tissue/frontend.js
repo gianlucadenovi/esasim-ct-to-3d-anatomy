@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 120 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 121 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2989,7 +2989,10 @@ function render(ctx) {
     HAIR.key = key; HAIR.maps = { len: hairBlank('len'), op: hairBlank('op'), col: hairBlank('col'), curl: hairBlank('curl') }; HAIR.undo = { len: [], op: [], col: [], curl: [] };
     // (saved before maps were known by their skin: under the case's name, or 'case'; one left alone is this one's)
     var kept = HAIR.store[key], from = key;
-    if (!kept) { var ok = hairOldKey(); if (HAIR.store[ok]) { kept = HAIR.store[ok]; from = ok; } else if (HAIR.store['case']) { kept = HAIR.store['case']; from = 'case'; } else { var ks = Object.keys(HAIR.store).filter(function (k) { return !/^skin:/.test(k); }); if (ks.length === 1) { kept = HAIR.store[ks[0]]; from = ks[0]; } } }
+    // (older saves, made before the maps were kept by skin, were all painted on the layout made here: only a skin
+    // without its own layout can take them)
+    var gL = SKINLOOK.mesh && SKINLOOK.mesh.geometry, ownLay = !!(gL && gL.attributes.uv);
+    if (!kept && !ownLay) { var ok = hairOldKey(); if (HAIR.store[ok]) { kept = HAIR.store[ok]; from = ok; } else if (HAIR.store['case']) { kept = HAIR.store['case']; from = 'case'; } else { var ks = Object.keys(HAIR.store).filter(function (k) { return !/^skin:/.test(k); }); if (ks.length === 1) { kept = HAIR.store[ks[0]]; from = ks[0]; } } }
     if (kept && from !== key) { HAIR.store[key] = kept; delete HAIR.store[from]; }
     hairStatus(kept ? 'Maps restored' + (kept.t ? ' (saved ' + new Date(kept.t).toLocaleString() + ')' : '') : 'New maps (nothing saved for this skin yet)');
     var left = 0;
