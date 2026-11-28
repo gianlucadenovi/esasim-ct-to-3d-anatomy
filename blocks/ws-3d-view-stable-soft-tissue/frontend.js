@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 101 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 102 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -3251,22 +3251,34 @@ function render(ctx) {
     if (HAIR.wire && HAIR.wireKey === g.uuid) return HAIR.wire;
     var S2 = 2048, c = document.createElement('canvas'); c.width = c.height = S2;
     var LY = hairLayout(g), x = c.getContext('2d'), uv = LY.uv, idx = g.index.array, wrap = LY.cyl ? 0.3 * LY.cyl.span : 9;
-    // shaded as lit from the front (its normals), so the body's features show; then the triangles' edges, fine (they
-    // show one by one when zoomed in)
-    var nrm = g.attributes.normal ? g.attributes.normal.array : null, NB = 12, paths = [], keep = [];
-    for (var bi = 0; bi < NB; bi++) paths.push(new Path2D());
+    // drawn pixel by pixel (a canvas path of a quarter of a million triangles takes the browser tens of seconds): each
+    // triangle shaded as lit from the front (its normals), so the body's features show, and its edges, fine (they show
+    // one by one when zoomed in)
+    var img = x.createImageData(S2, S2), D = img.data, nrm = g.attributes.normal ? g.attributes.normal.array : null;
+    var edge = function (x0, y0, x1, y1) {
+      var n = Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))) + 1;
+      for (var t = 0; t <= n; t++) { var px = Math.round(x0 + (x1 - x0) * t / n), py = Math.round(y0 + (y1 - y0) * t / n); if (px < 0 || py < 0 || px >= S2 || py >= S2) continue; var o = 4 * (py * S2 + px); D[o] = (D[o] + 140) >> 1; D[o + 1] = (D[o + 1] + 170) >> 1; D[o + 2] = (D[o + 2] + 255) >> 1; D[o + 3] = Math.max(D[o + 3], 170); }
+    };
+    var tris = [];
     for (var f = 0; f < idx.length; f += 3) {
       var a = idx[f], b = idx[f + 1], cc = idx[f + 2];
       if (uv[2 * a] < 0 || uv[2 * b] < 0 || uv[2 * cc] < 0) continue;
       if (Math.max(uv[2 * a], uv[2 * b], uv[2 * cc]) - Math.min(uv[2 * a], uv[2 * b], uv[2 * cc]) > wrap) continue;   // (across the back seam)
-      var sh = 0.5;
-      if (nrm) { var nz = (nrm[3 * a + 2] + nrm[3 * b + 2] + nrm[3 * cc + 2]) / 3, ny = (nrm[3 * a + 1] + nrm[3 * b + 1] + nrm[3 * cc + 1]) / 3, nx = (nrm[3 * a] + nrm[3 * b] + nrm[3 * cc]) / 3; sh = Math.max(0, Math.min(1, 0.55 + 0.45 * (Math.abs(nz) * 0.7 + ny * 0.3 + Math.abs(nx) * 0.25) - 0.25)); }
-      var pth = paths[Math.min(NB - 1, Math.floor(sh * NB))];
-      pth.moveTo(uv[2 * a] * S2, (1 - uv[2 * a + 1]) * S2); pth.lineTo(uv[2 * b] * S2, (1 - uv[2 * b + 1]) * S2); pth.lineTo(uv[2 * cc] * S2, (1 - uv[2 * cc + 1]) * S2); pth.closePath();
+      var ax = uv[2 * a] * S2, ay = (1 - uv[2 * a + 1]) * S2, bx = uv[2 * b] * S2, by = (1 - uv[2 * b + 1]) * S2, cx = uv[2 * cc] * S2, cy = (1 - uv[2 * cc + 1]) * S2;
+      var sh = 0.6;
+      if (nrm) { var nz = (nrm[3 * a + 2] + nrm[3 * b + 2] + nrm[3 * cc + 2]) / 3, ny = (nrm[3 * a + 1] + nrm[3 * b + 1] + nrm[3 * cc + 1]) / 3, nx = (nrm[3 * a] + nrm[3 * b] + nrm[3 * cc]) / 3; sh = Math.max(0.1, Math.min(1, 0.3 + 0.6 * Math.abs(nz) + 0.25 * ny + 0.15 * Math.abs(nx))); }
+      var gv = Math.round(35 + 190 * sh);
+      var x0 = Math.max(0, Math.floor(Math.min(ax, bx, cx))), x1 = Math.min(S2 - 1, Math.ceil(Math.max(ax, bx, cx))), y0 = Math.max(0, Math.floor(Math.min(ay, by, cy))), y1 = Math.min(S2 - 1, Math.ceil(Math.max(ay, by, cy)));
+      var den = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy); if (!den) continue;
+      for (var py = y0; py <= y1; py++) for (var px = x0; px <= x1; px++) {
+        var qx = px + 0.5, qy = py + 0.5, l1 = ((by - cy) * (qx - cx) + (cx - bx) * (qy - cy)) / den, l2 = ((cy - ay) * (qx - cx) + (ax - cx) * (qy - cy)) / den;
+        if (l1 < -0.02 || l2 < -0.02 || l1 + l2 > 1.02) continue;
+        var o = 4 * (py * S2 + px); D[o] = D[o + 1] = D[o + 2] = gv; D[o + 3] = 150;
+      }
+      tris.push(ax, ay, bx, by, cx, cy);
     }
-    for (bi = 0; bi < NB; bi++) { var gv = Math.round(30 + 200 * (bi + 0.5) / NB); x.fillStyle = 'rgba(' + gv + ',' + gv + ',' + gv + ',0.55)'; x.fill(paths[bi]); }
-    x.strokeStyle = 'rgba(140,170,255,0.22)'; x.lineWidth = 0.3;
-    for (bi = 0; bi < NB; bi++) x.stroke(paths[bi]);
+    for (var ti = 0; ti < tris.length; ti += 6) { edge(tris[ti], tris[ti + 1], tris[ti + 2], tris[ti + 3]); edge(tris[ti + 2], tris[ti + 3], tris[ti + 4], tris[ti + 5]); edge(tris[ti + 4], tris[ti + 5], tris[ti], tris[ti + 1]); }
+    x.putImageData(img, 0, 0);
     HAIR.wire = c; HAIR.wireKey = g.uuid;
     return c;
   }
