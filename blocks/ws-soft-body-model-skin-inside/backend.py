@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 10 · worker block, Python: def run(ctx)
+# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 11 · worker block, Python: def run(ctx)
 # Turns segmented anatomy into a soft-tissue model the 3D view simulates in real time: organs that sag, sway and push each other under gravity, held by a fixed skeleton and contained by the skin (metaba
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-28
@@ -288,6 +288,372 @@ def to_gltf(img, ijk):
     return [round(float(v) / 1000.0, 4) for v in (lps[0], lps[2], -lps[1])]
 
 
+# ── Unwrapping the skin, for painting (hair maps in the 3D view) ─────────────────────────────────────────────────────
+# Cut along a seam down the back (and down the back of each leg that reaches the edge of the scan), the caps where the
+# scan cuts the body left out, then laid flat in one piece on a rectangle: the top opening across the top, the two sides
+# of the seam on the left and the right, the legs (or the bottom opening) along the bottom; the inside by a harmonic map
+# with mean-value weights, then stretch-minimising passes. No fold-over; the body upright, its front in the middle, its
+# right on the left as seen facing it. Only numpy and scipy.
+def _uw_edges(F):
+    import numpy as np
+    e = np.concatenate([F[:, [0, 1]], F[:, [1, 2]], F[:, [2, 0]]])
+    return np.sort(e, axis=1)
+
+
+def _uw_seam(P, F, log, open_loops=None):
+    """The seam: a tree of edges down the back joining the openings of the skin. Model frame: y up (head), z to the front."""
+    import numpy as np
+    from scipy import sparse
+    from scipy.sparse import csgraph
+    n = len(P)
+    E = np.unique(_uw_edges(F), axis=0)
+    L = np.linalg.norm(P[E[:, 0]] - P[E[:, 1]], axis=1)
+    # how far to the front each vertex is, for its height (0: the back, 1: the front)
+    y, z = P[:, 1], P[:, 2]
+    bins = np.clip(((y - y.min()) / 0.02).astype(int), 0, None)
+    zmin = np.full(bins.max() + 1, np.inf); zmax = np.full(bins.max() + 1, -np.inf)
+    np.minimum.at(zmin, bins, z); np.maximum.at(zmax, bins, z)
+    front = (z - zmin[bins]) / np.maximum(1e-6, zmax[bins] - zmin[bins])
+    w = L * (0.02 + 40.0 * (0.5 * (front[E[:, 0]] + front[E[:, 1]])) ** 2)   # walking along the back is cheap
+    G = sparse.coo_matrix((np.concatenate([w, w]), (np.concatenate([E[:, 0], E[:, 1]]), np.concatenate([E[:, 1], E[:, 0]]))), shape=(n, n)).tocsr()
+    # the openings of the skin (the scan's cut, caps left out): each one's backmost vertex is an end of the seam
+    if open_loops:
+        pts = [int(lp[np.argmin(front[lp])]) for lp in open_loops]
+        pts.sort(key=lambda v: -P[v, 1])                         # the top one first
+    else:
+        pts = [int(np.argmax(y)), int(np.argmin(y))]
+    log("Unwrap: seam down the back, joining %d opening(s) of the skin (where the scan cuts the body)." % len(open_loops or []))
+    seam = set()
+    tree = {pts[0]}
+    for p in pts[1:]:
+        d, pred, _src = csgraph.dijkstra(G, directed=False, indices=list(tree), return_predecessors=True, min_only=True)
+        if not np.isfinite(d[p]):
+            continue
+        v = p
+        while v not in tree and v >= 0:
+            u = pred[v]
+            if u < 0:
+                break
+            seam.add((min(u, v), max(u, v))); tree.add(v); v = u
+        tree.add(p)
+    return seam, front
+
+
+def _uw_split(P, F, orig, which):
+    """Vertices where the faces around them fall into groups joined only through the vertex (pinches): one copy each."""
+    import numpy as np
+    which = set(int(v) for v in which)
+    if not which:
+        return P, F, orig
+    vf = {}
+    for fi, f in enumerate(F):
+        for v in f:
+            if v in which:
+                vf.setdefault(int(v), []).append(fi)
+    newP, neworig, nxt = [P], [orig], len(P)
+    F = F.copy()
+    for v, faces in vf.items():
+        parent = {f: f for f in faces}
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]; x = parent[x]
+            return x
+        byw = {}
+        for fi in faces:
+            for w in F[fi]:
+                if w != v:
+                    byw.setdefault(int(w), []).append(fi)
+        for fs in byw.values():
+            for f2 in fs[1:]:
+                ra, rb = find(fs[0]), find(f2)
+                if ra != rb:
+                    parent[ra] = rb
+        groups = {}
+        for fi in faces:
+            groups.setdefault(find(fi), []).append(fi)
+        for gi, fs in enumerate(groups.values()):
+            if gi == 0:
+                continue
+            for fi in fs:
+                F[fi][F[fi] == v] = nxt
+            newP.append(P[v:v + 1]); neworig.append(orig[v:v + 1]); nxt += 1
+    return np.concatenate(newP), F, np.concatenate(neworig)
+
+
+def _uw_cut(P, F, seam):
+    """Duplicate the vertices along the seam: on each side of it, the faces get their own copy."""
+    import numpy as np
+    F = F.copy()
+    sv = {}
+    for a, b in seam:
+        sv.setdefault(a, []).append(b); sv.setdefault(b, []).append(a)
+    vf = {}
+    for fi, f in enumerate(F):
+        for v in f:
+            if v in sv:
+                vf.setdefault(v, []).append(fi)
+    newP = [P]
+    nxt = len(P)
+    orig = list(range(len(P)))
+    for v, faces in vf.items():
+        # faces around v that share a non-seam edge through v are on the same side
+        parent = {f: f for f in faces}
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]; x = parent[x]
+            return x
+        byedge = {}
+        for fi in faces:
+            for w in F[fi]:
+                if w == v:
+                    continue
+                e = (min(v, w), max(v, w))
+                if e in seam:
+                    continue
+                byedge.setdefault(w, []).append(fi)
+        for w, fs in byedge.items():
+            for f2 in fs[1:]:
+                ra, rb = find(fs[0]), find(f2)
+                if ra != rb:
+                    parent[ra] = rb
+        groups = {}
+        for fi in faces:
+            groups.setdefault(find(fi), []).append(fi)
+        for gi, (_, fs) in enumerate(sorted(groups.items())):
+            if gi == 0:
+                continue
+            for fi in fs:
+                F[fi][F[fi] == v] = nxt
+            newP.append(P[v:v + 1]); orig.append(v); nxt += 1
+    return np.concatenate(newP), F, np.array(orig)
+
+
+def _uw_lscm(P, F, pin):
+    """Least-squares conformal map, two vertices pinned (when the skin has no opening)."""
+    import numpy as np
+    from scipy import sparse
+    from scipy.sparse.linalg import spsolve
+    n = len(P)
+    a, b, c = P[F[:, 0]], P[F[:, 1]], P[F[:, 2]]
+    e1 = b - a; e2 = c - a
+    nrm = np.cross(e1, e2); area2 = np.linalg.norm(nrm, axis=1)
+    ok = area2 > 1e-14
+    x1 = np.linalg.norm(e1, axis=1)
+    ex = e1 / np.maximum(1e-12, x1)[:, None]
+    ey = np.cross(nrm / np.maximum(1e-14, area2)[:, None], ex)
+    x2 = np.einsum('ij,ij->i', e2, ex); y2 = np.einsum('ij,ij->i', e2, ey)
+    X = np.stack([np.zeros_like(x1), x1, x2], 1); Y = np.stack([np.zeros_like(x1), np.zeros_like(x1), y2], 1)
+    s = 1.0 / np.sqrt(np.maximum(1e-14, area2))
+    rows, cols, vals = [], [], []
+    m = len(F)
+    for j in range(3):
+        k1, k2 = (j + 1) % 3, (j + 2) % 3
+        wr = (X[:, k2] - X[:, k1]) * s; wi = (Y[:, k2] - Y[:, k1]) * s
+        vj = F[:, j]
+        t = np.arange(m)
+        rows += [2 * t, 2 * t, 2 * t + 1, 2 * t + 1]
+        cols += [vj, n + vj, vj, n + vj]
+        vals += [wr * ok, -wi * ok, wi * ok, wr * ok]
+    A = sparse.coo_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(cols))), shape=(2 * m, 2 * n)).tocsc()
+    fixed = np.array([pin[0], pin[1], n + pin[0], n + pin[1]])
+    fixval = np.array([0.0, 0.0, 0.0, 1.0])
+    free = np.setdiff1d(np.arange(2 * n), fixed)
+    Af, Ap = A[:, free], A[:, fixed]
+    rhs = -(Ap @ fixval)
+    M = (Af.T @ Af).tocsc()
+    M = M + sparse.identity(M.shape[0], format='csc') * (1e-9 * float(M.diagonal().mean()))
+    x = spsolve(M, Af.T @ rhs)
+    out = np.zeros(2 * n); out[free] = x; out[fixed] = fixval
+    return np.stack([out[:n], out[n:]], 1)
+
+
+def _uw_rect(P, F, loops_orig, orig, log):
+    """The cut skin (a disk) laid on a rectangle: its top opening along the top edge, the two sides of the back seam
+    along the left and right edges, the other openings (legs, the bottom) along the bottom edge; the inside by a
+    harmonic map with mean-value weights (positive: no fold-over), then stretch-minimising passes."""
+    import numpy as np
+    from scipy import sparse
+    from scipy.sparse.linalg import spsolve
+    n = len(P)
+    E = _uw_edges(F)
+    ue, cnt = np.unique(E, axis=0, return_counts=True)
+    bnd = ue[cnt == 1]
+    nb = {}
+    for a, b in bnd:
+        nb.setdefault(a, []).append(b); nb.setdefault(b, []).append(a)
+    # the longest boundary loop (the cut skin's own outline)
+    seen, best = set(), []
+    for s in nb:
+        if s in seen:
+            continue
+        loop, prev, cur = [s], -1, s
+        seen.add(s)
+        while True:
+            nx = [w for w in nb[cur] if w != prev]
+            if not nx:
+                break
+            nxt = nx[0]
+            if nxt == s or nxt in seen:
+                break
+            loop.append(nxt); seen.add(nxt); prev, cur = cur, nxt
+        if len(loop) > len(best):
+            best = loop
+    walk = np.array(best)
+    # which opening each outline vertex is on (none: the seam)
+    top_i = int(np.argmax([P[np.isin(orig, lp)][:, 1].mean() if np.isin(orig, lp).any() else -1e9 for lp in loops_orig])) if loops_orig else -1
+    kind = np.full(len(walk), 0)                                   # 0 seam, 1 top opening, 2 other openings
+    for i, lp in enumerate(loops_orig):
+        on = np.isin(orig[walk], lp)
+        kind[on] = 1 if i == top_i else 2
+    if (kind == 1).any():
+        k1 = np.where(kind == 1)[0]
+        st = [i for i in k1 if kind[i - 1] != 1]
+        walk = np.roll(walk, -st[0]); kind = np.roll(kind, -st[0])
+    seg = np.linalg.norm(np.diff(P[np.r_[walk, walk[:1]]], axis=0), axis=1)
+    cum = np.r_[0, np.cumsum(seg)][:len(walk)]
+    tot = seg.sum()
+    ntop = int((kind == 1).sum())
+    # the outline's parts: top [0, a), right seam side [a, b), bottom [b, c), left seam side [c, end)
+    a = ntop
+    others = np.where(kind[a:] == 2)[0]
+    if len(others):
+        b = a + others[0]; c = a + others[-1] + 1
+    else:
+        mid = a + (len(walk) - a) // 2; b = c = mid
+    W = (cum[a] if a < len(walk) else tot) if ntop else tot / 4
+    Hr = cum[b] - cum[a] if b > a else 0.0
+    Hl = (tot - cum[c]) if c < len(walk) else 0.0
+    H = max(1e-6, 0.5 * (Hr + Hl))
+    uvb = np.zeros((len(walk), 2))
+    for i in range(len(walk)):
+        t = cum[i]
+        if i < a:
+            uvb[i] = (W * t / max(1e-9, cum[a] if a < len(walk) else tot), H)
+        elif i < b:
+            uvb[i] = (W, H * (1 - (t - cum[a]) / max(1e-9, cum[b] - cum[a])))
+        elif i < c:
+            uvb[i] = (W * (1 - (t - cum[b]) / max(1e-9, cum[c] - cum[b])) if c > b else 0.5 * W, 0.0)
+        else:
+            uvb[i] = (0.0, H * (t - cum[c]) / max(1e-9, tot - cum[c]))
+    # mean-value weights, their extremes capped (sliver triangles: angles near 180 degrees, edges near 0 long)
+    Eall = _uw_edges(F); lmed = float(np.median(np.linalg.norm(P[Eall[:, 0]] - P[Eall[:, 1]], axis=1)))
+    rows, cols, vals = [], [], []
+    for j in range(3):
+        i0, i1, i2 = F[:, j], F[:, (j + 1) % 3], F[:, (j + 2) % 3]
+        e1 = P[i1] - P[i0]; e2 = P[i2] - P[i0]
+        l1 = np.linalg.norm(e1, axis=1); l2 = np.linalg.norm(e2, axis=1)
+        cosang = np.einsum('ij,ij->i', e1, e2) / np.maximum(1e-12, l1 * l2)
+        th = np.clip(np.arccos(np.clip(cosang, -1, 1)), np.radians(2), np.radians(150))
+        t2 = np.tan(th / 2)
+        l1 = np.maximum(l1, 0.3 * lmed); l2 = np.maximum(l2, 0.3 * lmed)
+        good = (l1 > 1e-9) & (l2 > 1e-9) & np.isfinite(t2)
+        rows += [i0[good], i0[good]]; cols += [i1[good], i2[good]]
+        vals += [(t2 / np.maximum(1e-9, l1))[good], (t2 / np.maximum(1e-9, l2))[good]]
+    W0 = sparse.coo_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(cols))), shape=(n, n)).tocsr()
+    isb = np.zeros(n, bool); isb[walk] = True
+    free = np.where(~isb)[0]
+    uv = np.zeros((n, 2)); uv[walk] = uvb
+    a3 = np.linalg.norm(np.cross(P[F[:, 1]] - P[F[:, 0]], P[F[:, 2]] - P[F[:, 0]]), axis=1) / 2
+    sig_acc = np.ones(n)
+    # the harmonic map, then stretch-minimising passes (Yoshizawa, Belyaev and Seidel 2004): the pull towards squeezed
+    # places is weakened, so they open up (between the legs)
+    for it in range(7):
+        if it:
+            d1 = uv[F[:, 1]] - uv[F[:, 0]]; d2 = uv[F[:, 2]] - uv[F[:, 0]]
+            a2 = np.abs(d1[:, 0] * d2[:, 1] - d1[:, 1] * d2[:, 0]) / 2
+            ratio = (a3 / max(1e-12, a3.sum())) / np.maximum(1e-12, a2 / max(1e-12, a2.sum()))
+            vs = np.zeros(n); va = np.zeros(n)
+            for j in range(3):
+                np.add.at(vs, F[:, j], np.sqrt(ratio) * a3); np.add.at(va, F[:, j], a3)
+            sig_acc = np.clip(sig_acc * np.clip(vs / np.maximum(1e-12, va), 0.2, 5.0), 1e-3, 1e3)
+        Wi = W0 @ sparse.diags(1.0 / sig_acc)
+        Li = (sparse.diags(np.asarray(Wi.sum(axis=1)).ravel()) - Wi).tocsr()
+        Lf = Li[free][:, free].tocsc(); Lb = Li[free][:, walk]
+        Lf = Lf + sparse.identity(Lf.shape[0], format='csc') * (1e-12 * float(np.abs(Lf.diagonal()).mean() or 1))
+        for k in range(2):
+            uv[free, k] = spsolve(Lf, -(Lb @ uvb[:, k]))
+    log("Unwrap: the skin laid on a rectangle %.2f x %.2f m: the top opening across the top, the back seam on both sides, %s along the bottom." % (W, H, "the legs" if len(loops_orig) > 2 else "the bottom opening" if len(loops_orig) == 2 else "the seam"))
+    return uv
+
+
+def skin_unwrap(P, F, log=print):
+    """Returns (positions, faces, uv, orig): the skin cut along the seam (some vertices doubled: orig gives each one's
+    vertex in P), and its flat layout in [0, 1] (the longer side 1); -1 for the caps' own vertices."""
+    import numpy as np
+    from scipy import sparse
+    from scipy.sparse import csgraph
+    P = np.asarray(P, float); F = np.asarray(F, np.int64)
+    # the caps: where the scan cut the body (faces within 4 mm of its top or bottom): not skin
+    y = P[:, 1]
+    fy = np.stack([y[F[:, 0]], y[F[:, 1]], y[F[:, 2]]], 1)
+    band = 0.004
+    cap = (fy.max(1) < y.min() + band) | (fy.min(1) > y.max() - band)
+    skin = ~cap
+    # the openings left by the caps: loops of edges used by one skin face
+    Es = _uw_edges(F[skin])
+    ue, cnt = np.unique(Es, axis=0, return_counts=True)
+    bnd = ue[cnt == 1]
+    loops = []
+    if len(bnd):
+        nb = int(F.max()) + 1
+        B = sparse.coo_matrix((np.ones(len(bnd)), (bnd[:, 0], bnd[:, 1])), shape=(nb, nb))
+        k, lab = csgraph.connected_components(B, directed=False)
+        verts = np.unique(bnd)
+        for cc in np.unique(lab[verts]):
+            lp = verts[lab[verts] == cc]
+            if len(lp) >= 8:
+                loops.append(lp)
+    log("Unwrap: %d cap face(s) left out (the scan's cut), %d opening(s)." % (int(cap.sum()), len(loops)))
+    seam, front = _uw_seam(P, F, log, loops)
+    # cut the skin faces only (the caps would join the two sides of the seam at the openings); the caps keep the
+    # original vertices
+    P2, Fs2, orig = _uw_cut(P, F[skin], seam)
+    # pinches on the outline (two parts of an opening touching at one vertex): split, so the outline is one loop
+    Eb = _uw_edges(Fs2); ue2, c2 = np.unique(Eb, axis=0, return_counts=True)
+    deg = np.bincount(ue2[c2 == 1].ravel(), minlength=len(P2))
+    P2, Fs2, orig = _uw_split(P2, Fs2, orig, np.where(deg > 2)[0])
+    F2 = F.copy(); F2[skin] = Fs2
+    used = np.unique(F2[skin])
+    remap = -np.ones(len(P2), np.int64); remap[used] = np.arange(len(used))
+    if loops:
+        uvs = _uw_rect(P2[used], remap[F2[skin]], loops, orig[used], log)
+    else:
+        sv = np.array(sorted({v for e in seam for v in e})) if seam else np.array([int(np.argmax(y)), int(np.argmin(y))])
+        pin = (int(sv[np.argmax(P[sv, 1])]), int(sv[np.argmin(P[sv, 1])]))
+        pin = tuple(int(np.where((orig == p) & (remap >= 0))[0][0]) for p in pin)
+        uvs = _uw_lscm(P2[used], remap[F2[skin]], (remap[pin[0]], remap[pin[1]]))
+    uv = np.full((len(P2), 2), np.nan); uv[used] = uvs
+    ok = ~np.isnan(uv[:, 0])
+    if not loops:                                              # (the conformal map: turned upright, head up)
+        A = np.c_[uv[ok], np.ones(int(ok.sum()))]
+        g = np.linalg.lstsq(A, P[orig[ok], 1], rcond=None)[0][:2]
+        ang = np.arctan2(g[0], g[1])
+        c, s = np.cos(ang), np.sin(ang)
+        uv = uv @ np.array([[c, s], [-s, c]])
+    # the patient's right on the left, as seen facing them (model x: the patient's left)
+    fr = (front[orig] > 0.6) & ok
+    if fr.sum() > 10 and np.corrcoef(uv[fr, 0], P[orig][fr, 0])[0, 1] < 0:
+        uv[:, 0] = -uv[:, 0]
+    # the head at the top of the layout, whatever opening was taken for the top
+    if ok.sum() > 10 and np.corrcoef(uv[ok, 1], P[orig[ok], 1])[0, 1] < 0:
+        uv[:, 1] = -uv[:, 1]
+    uv -= np.nanmin(uv, axis=0)
+    uv /= max(1e-9, np.nanmax(uv))
+    uv[~ok] = -1.0
+    # how much the areas are stretched (1: as on the body)
+    a3 = np.linalg.norm(np.cross(P2[F2[:, 1]] - P2[F2[:, 0]], P2[F2[:, 2]] - P2[F2[:, 0]]), axis=1)
+    d = uv[F2[:, 1]] - uv[F2[:, 0]]; e = uv[F2[:, 2]] - uv[F2[:, 0]]
+    a2 = np.abs(d[:, 0] * e[:, 1] - d[:, 1] * e[:, 0]) * skin
+    r = (a2 / max(1e-12, a2.sum())) / np.maximum(1e-12, a3 / max(1e-12, a3[skin].sum()))
+    okf = (a3 > 0) & skin & (r > 0)
+    if okf.any():
+        q = np.percentile(r[okf], [5, 50, 95])
+        log("Unwrap: %d vertices (%d doubled on the seam); area scale on the layout 5%%/50%%/95%%: %.2f / %.2f / %.2f (1: as on the body)" % (len(P2), len(P2) - len(P), q[0], q[1], q[2]))
+    return P2, F2, uv, orig
+
+
 def skin_shell(ct, hu, spacing_mm, log):
     """The body's outline in the CT (above body_hu, the largest piece, holes filled): points on its surface, every
     spacing_mm, and a light surface mesh to draw. Points on the top and bottom cut of the scan are fixed: the body goes on."""
@@ -397,11 +763,19 @@ def skin_shell(ct, hu, spacing_mm, log):
     except Exception:
         pass
     trimesh.repair.fix_normals(mesh)
+    # laid flat for painting (the hair maps): one piece, seam down the back; without it the skin is kept as it is
+    verts_out, faces_out, uvs = np.asarray(mesh.vertices), np.asarray(mesh.faces), None
+    try:
+        verts_out, faces_out, uvs, _o = skin_unwrap(verts_out, faces_out, log)
+    except Exception as e:
+        log("Skin: not unwrapped for painting (%s): the hair maps cannot be painted on this case." % e)
+        verts_out, faces_out, uvs = np.asarray(mesh.vertices), np.asarray(mesh.faces), None
     log("Skin: the body's outline (CT above %g HU, sampled every %s mm), %d triangles; %d points every %g mm, %d of them on the cut of the scan (fixed)." % (
         hu, "x".join("%.1f" % v for v in vsp[::-1]), len(mesh.faces), len(shell), spacing_mm, sum(cut)))
     area = float(mesh.area)                                          # m2 (the scan's part of the body)
     return {"points": [[round(float(v), 4) for v in q] for q in shell], "normals": [[round(float(v), 3) for v in q] for q in shell_n], "fixed": cut, "radius": round(rad, 4), "area_m2": round(area, 4),
-            "mesh": {"positions": [round(float(v), 4) for v in np.asarray(mesh.vertices).ravel()], "faces": np.asarray(mesh.faces).astype(int).ravel().tolist()}}
+            "mesh": dict({"positions": [round(float(v), 4) for v in np.asarray(verts_out).ravel()], "faces": np.asarray(faces_out).astype(int).ravel().tolist()},
+                         **({"uv": [round(float(v), 5) for v in np.asarray(uvs).ravel()]} if uvs is not None else {}))}
 
 
 def assemble(bodies, skin, tissues):
