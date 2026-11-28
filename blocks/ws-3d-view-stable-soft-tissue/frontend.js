@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 106 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 107 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -3147,15 +3147,15 @@ function render(ctx) {
     var sl = function (k, label, min, max, step, tip) { return '<label class="hr-s" title="' + esc(tip || '') + '"><span>' + esc(label) + '</span><input type="range" data-hs="' + k + '" min="' + min + '" max="' + max + '" step="' + step + '"><b data-hv="' + k + '"></b></label>'; };
     p.innerHTML = '<style>.hr-b{all:unset;cursor:pointer;padding:1px 7px;border:1px solid #2a303b;border-radius:6px;white-space:nowrap}.hr-b:hover{border-color:#7b8cff}.hr-b.on{background:#2f4ae0;border-color:#2f4ae0}.hr-tab{display:flex;align-items:center;gap:6px;padding:3px 8px 3px 3px;border-width:2px}.hr-tab canvas{width:56px;height:34px;border-radius:3px;background:#000}'
       + '.hr-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:3px 10px}.hr-s{display:flex;align-items:center;gap:5px}.hr-s span{opacity:.85}.hr-s input{width:84px;accent-color:#7b8cff}.hr-s b{font-weight:400;opacity:.8;min-width:30px;font-variant-numeric:tabular-nums}'
-      + '.hr-c{flex:1;min-height:0;position:relative;margin:4px 10px 0;border:1px solid #2a303b;border-radius:6px;overflow:hidden;background:#05070b}.hr-c canvas{position:absolute;left:0;top:0;width:100%;height:100%;touch-action:none}</style>'
+      + '.hr-c{flex:1;min-height:0;position:relative;margin:0 10px;border:1px solid #2a303b;border-radius:0 6px 6px 6px;overflow:hidden;background:#05070b}.hr-c canvas{position:absolute;left:0;top:0;width:100%;height:100%;touch-action:none}'
+      + '.hr-tabs{display:flex;align-items:flex-end;gap:3px;margin:6px 10px 0;position:relative;z-index:1}'
+      + '.hr-tab{all:unset;cursor:pointer;display:flex;align-items:center;gap:6px;padding:4px 9px 5px 4px;border:1px solid #2a303b;border-bottom:none;border-radius:6px 6px 0 0;background:#0d1119;opacity:.75;margin-bottom:-1px}'
+      + '.hr-tab:hover{opacity:1}.hr-tab.on{background:#05070b;opacity:1;border-color:#7b8cff;box-shadow:inset 0 2px 0 #7b8cff;padding-bottom:6px}.hr-tab canvas{width:44px;height:26px;border-radius:3px;background:#000}'
+      + '.hr-swr{margin-left:auto;display:flex;align-items:center;gap:6px;padding:0 2px 5px;cursor:pointer}.hr-sw{width:30px;height:20px;border-radius:4px;border:1px solid #9aa4b8;box-shadow:inset 0 0 0 1px #000}.hr-swt{font-weight:600;font-variant-numeric:tabular-nums}</style>'
       + '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px 4px"><b style="flex:1">✂ Body hair</b><span class="hr-n" style="opacity:.7"></span>'
       + '<label style="display:flex;gap:5px;align-items:center"><input type="checkbox" class="hr-on" style="margin:0;accent-color:#7b8cff">Show hair</label><button class="hr-b hr-x" title="Close">×</button></div>'
       + '<div class="hr-row">' + sl('dens', 'Hairs per cm²', 1, 300, 1, 'How many hairs grow on each square centimetre of skin (where Length is above 0)') + sl('len', 'Longest (mm)', 1, 120, 1, 'The length of the hairs where Length is white')
       + sl('bend', 'Lying down', 0, 1, 0.01, '0: standing off the skin; 1: lying flat on it, towards the feet') + sl('rand', 'Length variety', 0, 1, 0.01, 'Some hairs shorter than the map says, at random') + sl('gloss', 'Shine', 0, 1, 0.01, 'How much the hairs shine where they catch the light (a sheen that moves along them as they bend)') + '</div>'
-      + '<div class="hr-row" style="gap:6px"><span style="opacity:.85">Painting</span>' + HAIR_LAYERS.map(function (L) {
-        var hint = { len: 'grey × longest', op: '0 hidden · 1 seen', col: 'dark, blond…' }[L[0]];
-        return '<button class="hr-b hr-tab" data-hl="' + L[0] + '" title="Paint the ' + L[1] + ' map"><canvas class="hr-th" data-th="' + L[0] + '" width="56" height="34"></canvas><span style="line-height:1.15"><b>' + L[1] + '</b><br><small style="opacity:.7">' + hint + '</small></span></button>';
-      }).join('') + '</div>'
       + '<div class="hr-row"><span style="opacity:.85">Tool</span>'
       + '<span style="width:8px"></span><button class="hr-b" data-ht="brush" title="Paint the value">Brush</button><button class="hr-b" data-ht="erase" title="Length and opacity to 0; colour back to the default">Eraser</button>'
       + '<button class="hr-b hr-fill" title="The whole map to the value">Fill</button><button class="hr-b hr-clear" title="The map back to its start: no hair, fully visible, the default colour">Clear</button><button class="hr-b hr-undo" title="Undo (Ctrl+Z)">Undo</button></div>'
@@ -3163,6 +3163,11 @@ function render(ctx) {
       + '<label class="hr-s hr-val" title="The value painted: white = 1 (Length: the longest; Opacity: visible), black = 0"><span>Value</span><input type="range" class="hr-vin" min="0" max="1" step="0.01"><b class="hr-vv"></b></label>'
       + '<label class="hr-s hr-colw" title="The colour painted"><span>Colour</span><input type="color" class="hr-cin" style="width:36px;height:18px;padding:0;border:1px solid #2a303b;background:none"></label>'
       + '<label style="display:flex;gap:5px;align-items:center" title="Paint on the skin in the 3D view too (a drag on the skin paints; beside it, the view turns as usual)"><input type="checkbox" class="hr-3d" style="margin:0;accent-color:#7b8cff">Paint on the 3D model</label></div>'
+      + '<div class="hr-tabs">' + HAIR_LAYERS.map(function (L) {
+        var hint = { len: 'grey × longest', op: '0 hidden · 1 seen', col: 'dark, blond…' }[L[0]];
+        return '<button class="hr-tab" data-hl="' + L[0] + '" title="Paint the ' + L[1] + ' map"><canvas class="hr-th" data-th="' + L[0] + '" width="44" height="26"></canvas><span style="line-height:1.15;text-align:left"><b>' + L[1] + '</b><br><small style="opacity:.7">' + hint + '</small></span></button>';
+      }).join('')
+      + '<div class="hr-swr" title="What the brush paints (click: change it)"><span style="opacity:.8">Painting</span><span class="hr-sw"></span><b class="hr-swt"></b></div></div>'
       + '<div class="hr-c"><canvas class="hr-cv"></canvas><div class="hr-msg" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:20px;opacity:.85"></div></div>'
       + '<div class="hr-row" style="padding:4px 10px 8px;opacity:.7"><span class="hr-ft" style="flex:1">The skin laid flat: the head at the top, the front in the middle, the back seam at both sides, the legs at the bottom. Wheel: zoom · right-drag: move · [ ]: brush size</span><button class="hr-b hr-fit">Fit</button></div>';
     ui.appendChild(p);
