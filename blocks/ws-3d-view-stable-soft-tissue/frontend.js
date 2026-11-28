@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 79 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 80 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -816,7 +816,14 @@ function render(ctx) {
       enhanceApply();                                    // Enhance: shadows and bloom, if on
       loadingDone();
       // a soft-body model of the same case (s1400_softbody.json for s1400_anatomy.glb): the tissue moves under gravity
-      var shown = objs.filter(function (o) { return o; })[0], soft = shown && (FILES.soft || []).filter(function (sf) { return shortName(sf.name).replace(/[._-]?softbody(\.json)?$/i, '') === shortName(shown.userData.file || ''); })[0];
+      var shown = objs.filter(function (o) { return o; })[0], soft = shown && (FILES.soft || []).filter(function (sf) { var a = shortName(sf.name).replace(/[._-]?softbody(\.json)?$/i, ''), b = shortName(shown.userData.file || ''); return a === b || a.replace(/^.*[\\/]/, '') === b.replace(/^.*[\\/]/, ''); })[0];
+      // the run is still going and the skin or the CT of this case has not come yet: say so (they are added by themselves)
+      if (shown && ctx.run && ctx.run.active) {
+        var cn = caseName(shown.userData.file || '').replace(/^.*[\\/]/, ''), still = [];
+        if (!soft && (ctx.sources || []).some(function (s) { return /soft|skin/i.test(s.block + ' ' + s.name); })) still.push('the skin');
+        if (!(FILES.ct || []).some(function (c) { return String(c.name).replace(/^.*[\\/]/, '').replace(/_ct\.ctvol$/i, '') === cn; }) && (ctx.sources || []).some(function (s) { return (s.formats || []).indexOf('ctvol') >= 0 || /ct volume|for the cut/i.test(s.block + ' ' + s.name); })) still.push('the CT for the cut');
+        if (still.length) setTimeout(function () { if (seq === FILES.seq) ctx.status('The run is still making ' + still.join(' and ') + ': added here by itself when ready.'); }, 300);
+      }
       if (!soft && shown && (FILES.soft || []).length === 1 && objs.length === 1) soft = FILES.soft[0];
       if (soft) ctx.files.json(soft).then(function (m) { if (seq === FILES.seq) softStart(m, shown); }).catch(function (e) { ctx.status('Could not read ' + soft.name + ': ' + e.message); });
       if (shown) ctLoad(shown, seq);                     // the CT of the same case, for the cut
@@ -3416,7 +3423,7 @@ function render(ctx) {
   }
   // the CT volume of the model shown (<case>_ct.ctvol next to <case>_anatomy.glb), as a 3D texture
   function ctLoad(shown, seq) {
-    var list = FILES.ct || [], key = shortName(shown.userData.file || '');
+    var list = FILES.ct || [], key = caseName(shown.userData.file || '').replace(/^.*[\\/]/, '');
     var f = list.filter(function (c) { return String(c.name).replace(/^.*[\\/]/, '').replace(/_ct\.ctvol$/i, '') === key; })[0] || (list.length === 1 ? list[0] : null);
     if (!f) return;
     var D3 = THREE.Data3DTexture || THREE.DataTexture3D;
