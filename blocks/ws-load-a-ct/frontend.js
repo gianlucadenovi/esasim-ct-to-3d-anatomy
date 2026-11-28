@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// Load a CT (ws-load-a-ct) · version 10 · view, JavaScript: function render(ctx)
+// Load a CT (ws-load-a-ct) · version 11 · view, JavaScript: function render(ctx)
 // The View's loading dialog for CT scans: drop or choose a folder from your computer (a whole CD/DVD export is fine), see its series, tick the ones to segment and press Load; or give a folder on a worke
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -365,8 +365,8 @@ function render(ctx) {
     } else if (k === 'segmenting') card = `<h3>✓ Your scans are on the worker${cases ? ': ' + cases : ''}</h3>
         <div class="hint"><b>Now: ${d.state === 'done' ? 'segmenting and building the 3D models' : 'reading the series and writing the scans'}.</b> On a GPU about 2 minutes a scan, on a CPU about 15. You can close this page: the run goes on, and the 3D anatomy shows the result when it is done (the run's progress is at the top of the page).</div>
         <div class="hint">Nothing to press here.</div>`;
-    else if (k === 'finished') card = `<h3>✓ Done${cases ? ': ' + cases : ''}</h3>
-        <div class="hint">Choose the case in the list of the <b>3D anatomy</b> view; the masks, STL files and the scan in NIfTI are under the run's <b>Results</b>.</div>
+    else if (k === 'finished') card = `<h3>✓ Done${cases ? ': ' + cases : ''}</h3>${showButtons(d)}
+        <div class="hint">${(d.cases || []).length > 1 ? 'Each series is a case of its own: choose which one the <b>3D anatomy</b> shows with the buttons above or its <b>Show</b> list (top left)' : 'The <b>3D anatomy</b> shows it'}; the masks, STL files and the scan in NIfTI are under the run's <b>Results</b>. Series sent in other runs: choose the run at the top of the page.</div>
         <div class="row"><button class="btn pri" data-a="fresh">Load another CT</button></div>`;
     else if (k === 'demo') card = `<h3>This run is loading the demo case, not your scans</h3>
         <div class="hint">It was started with the wired files. Wait for it to end, or press <b>Stop</b> at the top of the page; then press <b>▶ Start</b> here.</div>`;
@@ -374,6 +374,12 @@ function render(ctx) {
         <div class="hint">${esc(d.error || 'See the run\'s log (Logs, top right).')} Then start again:</div>${segRow()}
         <div class="row"><button class="btn pri big" data-a="start">▶ Start</button></div>`;
     return stepper(k) + `<div class="card">${card}</div>`;
+  }
+  // several series loaded: one button each, which the 3D anatomy shows (it hears 'model-pick' with the case's name)
+  function showButtons(d) {
+    const cs = (d && d.cases) || [];
+    if (cs.length < 2 || typeof ctx.peer !== 'function') return '';
+    return `<div class="row" style="align-items:center;gap:6px;flex-wrap:wrap"><span>Show in 3D:</span>${cs.map(c => `<button class="btn" data-show="${esc(c.case)}">${esc(c.case)}</button>`).join('')}</div>`;
   }
   function seriesTable() {
     const s = scan;
@@ -415,6 +421,7 @@ function render(ctx) {
       dz.addEventListener('drop', async e => { e.preventDefault(); dz.classList.remove('drop'); picked(await entriesOf(e.dataTransfer)); });
     }
     body.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => act(b.dataset.a)));
+    body.querySelectorAll('[data-show]').forEach(b => b.addEventListener('click', () => { try { ctx.peer('model-pick', { case: b.dataset.show }); } catch (_) {} }));
     body.querySelectorAll('select[data-k],input[type=text][data-k]').forEach(el => el.addEventListener('change', () => { st[el.dataset.k] = el.value; save(); if (el.tagName === 'SELECT') paint(); }));
     body.querySelectorAll('input[type=text][data-k]').forEach(el => el.addEventListener('input', () => { st[el.dataset.k] = el.value; const b = body.querySelector('[data-a=worker]'); if (b) b.disabled = !st.folder; }));
     body.querySelectorAll('input[type=checkbox][data-i]').forEach(el => el.addEventListener('change', () => { scan.series[+el.dataset.i].on = el.checked; paint(); }));
