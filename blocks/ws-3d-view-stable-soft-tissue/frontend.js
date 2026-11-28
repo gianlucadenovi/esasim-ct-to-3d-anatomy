@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 91 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 92 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2908,14 +2908,16 @@ function render(ctx) {
   var HAIR_VS = 'attribute vec4 hC;\nattribute vec3 hT;\nattribute vec3 hN;\nvarying vec4 vC;\nvarying vec3 vT;\nvarying vec3 vV;\nvarying vec3 vN;\n'
     + 'void main() { vC = hC; vT = normalize(normalMatrix * hT); vN = normalize(normalMatrix * hN); vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = -mv.xyz; gl_Position = projectionMatrix * mv; }';
   var HAIR_FS = 'uniform float uGloss;\nvarying vec4 vC;\nvarying vec3 vT;\nvarying vec3 vV;\nvarying vec3 vN;\n'
-    + 'void main() {\n vec3 T = normalize(vT), V = normalize(vV), L = normalize(vec3(0.35, 0.55, 1.0)), H = normalize(L + V);\n'
-    + ' float tl = dot(T, L), th = dot(T, H), sinL = sqrt(max(0.0, 1.0 - tl * tl)), sinH = sqrt(max(0.0, 1.0 - th * th));\n'
+    + 'void main() {\n vec3 T = normalize(vT), V = normalize(vV), L = normalize(vec3(0.35, 0.55, 1.0)), H = normalize(L + V), N = normalize(vN);\n'
+    // the sheen comes off the hair's scales, tilted towards its root: shifted along the strand, so it sits where it bends
+    + ' vec3 T1 = normalize(T + 0.25 * N), T2 = normalize(T - 0.15 * N);\n'
+    + ' float tl = dot(T, L), th = dot(T1, H), th2 = dot(T2, H), sinL = sqrt(max(0.0, 1.0 - tl * tl)), sinH = sqrt(max(0.0, 1.0 - th * th)), sinH2 = sqrt(max(0.0, 1.0 - th2 * th2));\n'
     + ' vec3 base = pow(vC.rgb, vec3(2.2));\n'
-    + ' float s1 = pow(sinH, 90.0), s2 = pow(sinH, 14.0);\n'          // a sharp white sheen, and a broader one in the hair's colour
+    + ' float s1 = pow(sinH, 400.0), s2 = pow(sinH2, 60.0);\n'          // a thin white sheen, and a broader one in the hair's colour
     // in the skin's light: as dark as the skin under it where it turns from the light (its edges, its hollows), the
     // sheen only where the light reaches
-    + ' vec3 N = normalize(vN); float lit = clamp(dot(N, L), 0.0, 1.0), sh = 0.06 + 0.94 * lit * lit;\n'
-    + ' vec3 col = base * (0.35 + 0.65 * sinL) * sh + uGloss * lit * (0.45 * s1 * mix(vec3(1.0), base * 4.0, 0.4) + 0.4 * s2 * base * 2.0);\n'
+    + ' float lit = clamp(dot(N, L), 0.0, 1.0), sh = 0.06 + 0.94 * lit * lit;\n'
+    + ' vec3 col = base * (0.35 + 0.65 * sinL) * sh + uGloss * lit * lit * (0.16 * s1 * vec3(1.0) + 0.6 * s2 * base);\n'
     + ' gl_FragColor = vec4(col, vC.a);\n'
     + ' #include <tonemapping_fragment>\n #include <colorspace_fragment>\n}';
   // the hair moves with the skin (pressed, sagging): each hair's root on its triangle, the rest of it carried along
