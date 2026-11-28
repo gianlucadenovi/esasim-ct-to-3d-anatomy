@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// Load a CT (ws-load-a-ct) · version 11 · view, JavaScript: function render(ctx)
+// Load a CT (ws-load-a-ct) · version 13 · view, JavaScript: function render(ctx)
 // The View's loading dialog for CT scans: drop or choose a folder from your computer (a whole CD/DVD export is fine), see its series, tick the ones to segment and press Load; or give a folder on a worke
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -365,7 +365,8 @@ function render(ctx) {
     } else if (k === 'segmenting') card = `<h3>✓ Your scans are on the worker${cases ? ': ' + cases : ''}</h3>
         <div class="hint"><b>Now: ${d.state === 'done' ? 'segmenting and building the 3D models' : 'reading the series and writing the scans'}.</b> On a GPU about 2 minutes a scan, on a CPU about 15. You can close this page: the run goes on, and the 3D anatomy shows the result when it is done (the run's progress is at the top of the page).</div>
         <div class="hint">Nothing to press here.</div>`;
-    else if (k === 'finished') card = `<h3>✓ Done${cases ? ': ' + cases : ''}</h3>${showButtons(d)}
+    else if (k === 'finished') card = (view3d === 'ready' ? `<h3>✓ Done${cases ? ': ' + cases : ''}</h3>`
+        : `<h3>✓ The run is done${cases ? ': ' + cases : ''}</h3><div class="hint"><b>⏳ The 3D anatomy is still loading the model</b>: it is collected from the worker, then downloaded (about a minute for a large one). It appears by itself: no need to reload the page.</div>`) + `${showButtons(d)}
         <div class="hint">${(d.cases || []).length > 1 ? 'Each series is a case of its own: choose which one the <b>3D anatomy</b> shows with the buttons above or its <b>Show</b> list (top left)' : 'The <b>3D anatomy</b> shows it'}; the masks, STL files and the scan in NIfTI are under the run's <b>Results</b>. Series sent in other runs: choose the run at the top of the page.</div>
         <div class="row"><button class="btn pri" data-a="fresh">Load another CT</button></div>`;
     else if (k === 'demo') card = `<h3>This run is loading the demo case, not your scans</h3>
@@ -459,6 +460,14 @@ function render(ctx) {
     if (mode !== lastMode && !busy) { lastMode = mode; paint(); return; }
     if (!busy) { const pg = body.querySelector('.pg'); if (pg && !sending) paintProgress(); }
   }
+  // the 3D anatomy says when it is loading a model and when it is ready: the Done card waits for it
+  var view3d = view3d || '';
+  if (ctx.on) ctx.on('peer', (topic) => {
+    if (topic !== 'model-loading' && topic !== 'model-ready') return;
+    const was = view3d; view3d = topic === 'model-ready' ? 'ready' : 'loading';
+    if (was !== view3d && st.tab === 'local' && stage() === 'finished' && !busy) paint();
+  });
+  try { if (typeof ctx.peer === 'function') ctx.peer('model-state?', {}); } catch (_) {}
   ctx.on('update', tick);
   ctx.on('run', () => { readLive(); tick(); paint(); });
   const timer = setInterval(tick, 1500);
