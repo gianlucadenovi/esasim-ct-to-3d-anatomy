@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 80 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 81 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -757,6 +757,19 @@ function render(ctx) {
   if (ctx.on) ctx.on('peer', function (topic) {
     if (topic === 'model-state?' && FILES.state.name) ctx.peer(FILES.state.ready ? 'model-ready' : 'model-loading', { name: FILES.state.name });
   });
+  // A file of the run that is still being collected from the worker can fail to come the first time: it is asked for
+  // again every 4 s (for up to 3 minutes), the status saying what is on its way, until it comes or another model is chosen
+  function fetchRetry(get, what, mySeq, left) {
+    left = left == null ? 45 : left;
+    return Promise.resolve().then(get).catch(function (e) {
+      if (mySeq !== FILES.seq || left <= 1) throw e;
+      ctx.status('Collecting ' + what + ' from the worker…');
+      return new Promise(function (r) { setTimeout(r, 4000); }).then(function () {
+        if (mySeq !== FILES.seq) throw new Error('another model was chosen');
+        return fetchRetry(get, what, mySeq, left - 1);
+      });
+    });
+  }
   function shortName(n) { return String(n).replace(/\.(glb|gltf|obj|stl|ply)$/i, '').replace(/_anatomy$/i, ''); }
   // the case's own name: case07/case07_anatomy.glb is case07
   function caseName(n) { var s = shortName(n).split('/'); return s.length > 1 && s[s.length - 1] === s[s.length - 2] ? s[s.length - 1] : s.join('/'); }
@@ -825,7 +838,7 @@ function render(ctx) {
         if (still.length) setTimeout(function () { if (seq === FILES.seq) ctx.status('The run is still making ' + still.join(' and ') + ': added here by itself when ready.'); }, 300);
       }
       if (!soft && shown && (FILES.soft || []).length === 1 && objs.length === 1) soft = FILES.soft[0];
-      if (soft) ctx.files.json(soft).then(function (m) { if (seq === FILES.seq) softStart(m, shown); }).catch(function (e) { ctx.status('Could not read ' + soft.name + ': ' + e.message); });
+      if (soft) fetchRetry(function () { return ctx.files.json(soft); }, 'the skin', seq).then(function (m) { if (seq === FILES.seq) { softStart(m, shown); ctx.status(''); } }).catch(function (e) { if (seq === FILES.seq) ctx.status('Could not read ' + soft.name + ': ' + e.message); });
       if (shown) ctLoad(shown, seq);                     // the CT of the same case, for the cut
     });
   }
@@ -3428,7 +3441,7 @@ function render(ctx) {
     if (!f) return;
     var D3 = THREE.Data3DTexture || THREE.DataTexture3D;
     if (!D3 || !(renderer.capabilities && renderer.capabilities.isWebGL2 !== false)) { ctx.status('Showing the CT on the cut needs WebGL 2: the cut shows the inside of the models.'); return; }
-    ctx.files.buffer(f).then(function (buf) {
+    fetchRetry(function () { return ctx.files.buffer(f); }, 'the CT for the cut', seq).then(function (buf) {
       var ab = buf instanceof ArrayBuffer ? buf : buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
       if (String.fromCharCode.apply(null, new Uint8Array(ab, 0, 8)) !== 'ESCTVOL1') throw new Error('not a CT volume');
       var hl = new DataView(ab).getUint32(8, true), head = JSON.parse(new TextDecoder().decode(new Uint8Array(ab, 12, hl)));
@@ -12905,6 +12918,15 @@ function render(ctx) {
   ctx.on('resize', resize);
   ctx.on('update', load);
   ctx.on('run', load);                                     // (the run ended: "building" becomes "collecting")
+  // files the run adds later (the skin and the CT come after the models) are noticed even if no update says so
+  var filesSig = '';
+  setInterval(function () {
+    try {
+      var sig = ctx.ports().map(function (p) { return ((ctx.input(p) || {}).files || []).map(function (f) { return f.id; }).join(','); }).join('|');
+      if (filesSig && sig !== filesSig) load();
+      filesSig = sig;
+    } catch (e) { }
+  }, 3000);
   resize();
   load();
   tick();
