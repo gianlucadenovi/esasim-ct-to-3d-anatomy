@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 66 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 67 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2710,6 +2710,117 @@ function render(ctx) {
     if (SKINLOOK.mesh) SKINLOOK.mesh.renderOrder = on ? 3 : 5;        // solid: drawn with the anatomy; see-through: after it
     m.needsUpdate = true;
     if (typeof BALLS !== 'undefined' && BALLS.on) { ballsFade(false); ballsFade(true); }
+    var lc = lookEl && lookEl.querySelector('.lk-skin'); if (lc) lc.checked = SKINLOOK.solid;
+    if (skinPanel) skinPanelSync();
+  }
+  // ⚙ The skin's settings: every value of its look, live (its shader's uniforms and its material), presets for the six
+  // skin types of the Fitzpatrick scale, and Copy values (JSON: to send, or to paste in the view's Skin settings, which
+  // takes the same JSON as its defaults). What is set is kept with the view.
+  var SKIN_DEF = { base: '#d9a888', redCol: '#cc857a', redAmt: 0.55, mel: 0.35, blood: 0.3, blot: 0.14, cxLo: 0.05, cxHi: 0.9, relief: 1.0, und: 0.8, grain: 0.12, grainCx: 0.25,
+    dotH: 0.7, dotSize: 0.22, dotDen: 0.75, dotSp: 2.5, rough: 0.38, glossFlat: 0.7, glossCx: 1.4, env: 1.0, opBase: 0, opCx: 0.3 };
+  var SKIN_TYPES = [
+    ['I', 'I · very fair', { base: '#f3d6c6', mel: 0.12, blood: 0.38, redAmt: 0.6, redCol: '#cc857a' }],
+    ['II', 'II · fair', { base: '#ebc1a6', mel: 0.22, blood: 0.34, redAmt: 0.58, redCol: '#cc857a' }],
+    ['III', 'III · medium, light olive', { base: '#d9a888', mel: 0.35, blood: 0.3, redAmt: 0.55, redCol: '#cc857a' }],
+    ['IV', 'IV · olive, light brown', { base: '#b98462', mel: 0.4, blood: 0.22, redAmt: 0.42, redCol: '#c47f6e' }],
+    ['V', 'V · brown', { base: '#8a5a3c', mel: 0.45, blood: 0.15, redAmt: 0.32, redCol: '#b87766' }],
+    ['VI', 'VI · dark brown', { base: '#5a3826', mel: 0.5, blood: 0.1, redAmt: 0.25, redCol: '#a8705f' }]
+  ];
+  var SKIN_BASE = {}, SKINV = {};
+  (function () {
+    var src = {}, st = (ctx.state || {}).skin || {}, k;
+    try { if (P.skin_params) src = typeof P.skin_params === 'string' ? JSON.parse(P.skin_params) : P.skin_params; } catch (e) { src = {}; }
+    if (!src || typeof src !== 'object') src = {};
+    for (k in SKIN_DEF) SKIN_BASE[k] = (k in src && typeof src[k] === typeof SKIN_DEF[k]) ? src[k] : SKIN_DEF[k];
+    for (k in SKIN_BASE) SKINV[k] = (k in st && typeof st[k] === typeof SKIN_DEF[k]) ? st[k] : SKIN_BASE[k];
+    if (typeof src.solid === 'boolean' && P.skin_look == null) SKINLOOK.solid = src.solid;
+    if (typeof st.solid === 'boolean') SKINLOOK.solid = st.solid;
+    SKINLOOK.u.value = SKINLOOK.solid ? 1 : 0;
+  })();
+  var SKINU = { esS_redCol: { value: new THREE.Vector3(0.8, 0.52, 0.48) }, esS_dotF: { value: 400 } };
+  ['redAmt', 'mel', 'blood', 'blot', 'cxLo', 'cxHi', 'relief', 'und', 'grain', 'grainCx', 'dotH', 'dotSize', 'dotDen', 'glossFlat', 'glossCx', 'opBase', 'opCx'].forEach(function (k) { SKINU['esS_' + k] = { value: 0 }; });
+  var SKIN_GLSL_U = Object.keys(SKINU).map(function (k) { return 'uniform ' + (k === 'esS_redCol' ? 'vec3 ' : 'float ') + k + ';'; }).join('\n');
+  function skinHex(h) { var n = parseInt(String(h).replace('#', ''), 16) || 0; return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; }
+  function skinApply() {
+    var v = SKINV;
+    for (var k in SKINU) { var key = k.slice(4); if (key !== 'redCol' && key !== 'dotF') SKINU[k].value = +v[key] || 0; }
+    SKINU.esS_cxHi.value = Math.max(+v.cxHi, +v.cxLo + 0.01);
+    SKINU.esS_dotF.value = 1000 / Math.max(0.5, +v.dotSp || 2.5);
+    var c = skinHex(v.redCol); SKINU.esS_redCol.value.set(c[0], c[1], c[2]);       // a tint multiplied in, taken as it is
+    var m = SKINLOOK.mat; if (m) { m.color.set(v.base); m.roughness = +v.rough; m.envMapIntensity = +v.env; }
+  }
+  skinApply();
+  function skinState() { var o = { solid: SKINLOOK.solid }; for (var k in SKINV) o[k] = SKINV[k]; return o; }
+  var SKIN_UI = [
+    ['h', 'Look'], ['solid'], ['type'],
+    ['h', 'Colour'], ['base', 'Skin colour', 'color'], ['redCol', 'Tint of complex areas', 'color'], ['redAmt', 'Red tones in complex areas', 0, 1, 0.01],
+    ['mel', 'Melanin mottling', 0, 1, 0.01], ['blood', 'Blood mottling (redness)', 0, 1, 0.01], ['blot', 'Blotchiness', 0, 0.5, 0.01],
+    ['h', 'Complexity (folds, creases, navel, nipples, edges)'], ['cxLo', 'Flat below', 0, 1, 0.01], ['cxHi', 'Fully complex above', 0, 1, 0.01],
+    ['h', 'Relief (normal map)'], ['relief', 'Relief strength', 0, 3, 0.05], ['und', 'Undulation (a few cm)', 0, 2, 0.05], ['grain', 'Fine grain, flat skin', 0, 1, 0.01], ['grainCx', 'Fine grain, complex skin', 0, 1, 0.01],
+    ['dotH', 'Bumps: height', 0, 2, 0.05], ['dotSize', 'Bumps: size', 0, 0.6, 0.01], ['dotDen', 'Bumps: how many', 0, 1.5, 0.01], ['dotSp', 'Bumps: spacing (mm)', 1, 8, 0.1],
+    ['h', 'Surface'], ['rough', 'Roughness', 0.05, 1, 0.01], ['glossFlat', 'Roughness ×, flat skin', 0.2, 2, 0.01], ['glossCx', 'Roughness ×, complex skin', 0.2, 2, 0.01], ['env', 'Reflections', 0, 3, 0.05],
+    ['h', 'See-through (when not solid)'], ['opBase', 'Opacity', -0.5, 0.5, 0.01], ['opCx', 'Extra opacity, complex skin', 0, 1, 0.01]
+  ];
+  var skinPanel = null;
+  function skinFmt(v) { return typeof v === 'number' ? (Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(2)) : v; }
+  function skinPanelSync() {
+    if (!skinPanel) return;
+    skinPanel.querySelectorAll('[data-sk]').forEach(function (el) { el.value = SKINV[el.getAttribute('data-sk')]; });
+    skinPanel.querySelectorAll('[data-skv]').forEach(function (el) { el.textContent = skinFmt(SKINV[el.getAttribute('data-skv')]); });
+    skinPanel.querySelector('.sk-solid').checked = SKINLOOK.solid;
+  }
+  function skinPanelToggle(open) {
+    if (open == null) open = !(skinPanel && skinPanel.style.display !== 'none');
+    if (!skinPanel) skinPanelMake();
+    skinPanel.style.display = open ? 'flex' : 'none';
+    if (open) { skinPanel.style.top = partsEl.style.top || '64px'; skinPanel.style.left = (partsEl.offsetLeft + partsEl.offsetWidth + 8 || 256) + 'px'; skinPanelSync(); }
+  }
+  function skinPanelMake() {
+    skinPanel = document.createElement('div');
+    skinPanel.style.cssText = 'position:absolute;left:256px;top:64px;width:290px;max-height:calc(100% - 90px);display:none;flex-direction:column;background:rgba(10,14,22,.84);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.08);border-radius:10px;pointer-events:auto;overflow:hidden;font-size:11.5px';
+    var h = ['<style>.sk-r{display:flex;align-items:center;gap:6px;padding:2px 0}.sk-r .l{flex:1;min-width:0;opacity:.85}.sk-r input[type=range]{width:100px;accent-color:#7b8cff}.sk-r .v{width:34px;text-align:right;font-variant-numeric:tabular-nums;opacity:.8}'
+      + '.sk-h{font-weight:650;padding:8px 0 2px}.sk-b{all:unset;cursor:pointer;padding:1px 7px;border:1px solid #2a303b;border-radius:6px}.sk-b:hover{border-color:#7b8cff}.sk-r input[type=color]{width:36px;height:18px;padding:0;border:1px solid #2a303b;background:none;cursor:pointer}</style>',
+      '<div style="display:flex;align-items:center;gap:6px;padding:8px 10px 4px"><b style="flex:1">⚙ Skin</b><button class="sk-b sk-reset" title="Back to the defaults">Reset</button><button class="sk-b sk-copy" title="The values as JSON: to send, or to paste in the Skin settings of the 3D view as its defaults">Copy values</button><button class="sk-b sk-x" title="Close">×</button></div>',
+      '<div class="sk-body" style="overflow:auto;padding:0 10px 10px">'];
+    SKIN_UI.forEach(function (r) {
+      if (r[0] === 'h') h.push('<div class="sk-h">' + esc(r[1]) + '</div>');
+      else if (r[0] === 'solid') h.push('<label class="sk-r"><input type="checkbox" class="sk-solid" style="margin:0;accent-color:#7b8cff"><span class="l">Solid, in skin colour (off: see-through)</span></label>');
+      else if (r[0] === 'type') h.push('<div class="sk-r"><span class="l">Skin type (Fitzpatrick)</span><select class="sk-type" style="background:#1b2029;color:#e8ecf2;border:1px solid #2a303b;border-radius:6px;font:inherit;font-size:11.5px"><option value="">Custom</option>' + SKIN_TYPES.map(function (t) { return '<option value="' + t[0] + '">' + esc(t[1]) + '</option>'; }).join('') + '</select></div>');
+      else if (r[2] === 'color') h.push('<label class="sk-r"><span class="l">' + esc(r[1]) + '</span><input type="color" data-sk="' + r[0] + '"></label>');
+      else h.push('<label class="sk-r"><span class="l">' + esc(r[1]) + '</span><input type="range" data-sk="' + r[0] + '" min="' + r[2] + '" max="' + r[3] + '" step="' + r[4] + '"><span class="v" data-skv="' + r[0] + '"></span></label>');
+    });
+    h.push('<textarea class="sk-json" spellcheck="false" style="display:none;width:100%;box-sizing:border-box;height:120px;margin-top:8px;background:#1b2029;color:#e8ecf2;border:1px solid #2a303b;border-radius:6px;font:11px ui-monospace,monospace"></textarea>');
+    h.push('<div class="sk-jrow" style="display:none;gap:6px;margin-top:4px;align-items:center"><span class="sk-msg" style="flex:1;opacity:.75"></span><button class="sk-b sk-apply" title="Use the values in the box">Apply</button></div></div>');
+    skinPanel.innerHTML = h.join('');
+    ui.appendChild(skinPanel);
+    ['pointerdown', 'mousedown', 'touchstart', 'wheel', 'keydown'].forEach(function (ev) { skinPanel.addEventListener(ev, function (e) { e.stopPropagation(); }, { passive: true }); });
+    var q = function (s) { return skinPanel.querySelector(s); };
+    skinPanel.addEventListener('input', function (e) {
+      var t = e.target, k = t.getAttribute && t.getAttribute('data-sk'); if (!k) return;
+      SKINV[k] = t.type === 'color' ? t.value : +t.value;
+      var vs = skinPanel.querySelector('[data-skv="' + k + '"]'); if (vs) vs.textContent = skinFmt(SKINV[k]);
+      q('.sk-type').value = ''; skinApply(); keepView();
+    });
+    skinPanel.addEventListener('change', function (e) { if (e.target.getAttribute && e.target.getAttribute('data-sk')) keepView(true); });
+    q('.sk-solid').addEventListener('change', function () { skinSolid(this.checked); keepView(true); });
+    q('.sk-type').addEventListener('change', function () {
+      var v = this.value, t = SKIN_TYPES.filter(function (x) { return x[0] === v; })[0]; if (!t) return;
+      for (var k in t[2]) SKINV[k] = t[2][k]; skinApply(); skinPanelSync(); keepView(true);
+    });
+    q('.sk-reset').onclick = function () { for (var k in SKIN_BASE) SKINV[k] = SKIN_BASE[k]; skinApply(); skinPanelSync(); q('.sk-type').value = ''; keepView(true); };
+    q('.sk-x').onclick = function () { skinPanelToggle(false); };
+    q('.sk-copy').onclick = function () {
+      var s = JSON.stringify(skinState()), ta = q('.sk-json'), msg = q('.sk-msg');
+      ta.value = s; ta.style.display = 'block'; q('.sk-jrow').style.display = 'flex'; ta.focus(); ta.select();
+      var ok = function () { msg.textContent = 'Copied: paste it in a message, or in the Skin settings of the 3D view.'; };
+      var no = function () { var c = false; try { ta.select(); c = document.execCommand('copy'); } catch (e) { c = false; } msg.textContent = c ? 'Copied.' : 'Selected: press Ctrl+C to copy it.'; };
+      try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(s).then(ok, no); else no(); } catch (e) { no(); }
+    };
+    q('.sk-apply').onclick = function () {
+      var msg = q('.sk-msg');
+      try { var o = JSON.parse(q('.sk-json').value); for (var k in o) if (k in SKIN_DEF && typeof o[k] === typeof SKIN_DEF[k]) SKINV[k] = o[k]; if (typeof o.solid === 'boolean') skinSolid(o.solid); skinApply(); skinPanelSync(); msg.textContent = 'Applied.'; keepView(true); }
+      catch (e) { msg.textContent = 'Not valid JSON.'; }
+    };
   }
   var TISSUE_KINDS = [  // [kind, words in the structure's name, bump height (m), second colour (fat, slate, pale crests)]
     [1, ['liver'], 0.0003, null], [2, ['spleen'], 0.0003, null], [3, ['kidney', 'gallbladder', 'bladder'], 0.0002, null],
@@ -3092,7 +3203,7 @@ function render(ctx) {
     lookEl.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap;padding:0 10px 6px;font-size:11.5px';
     lookEl.innerHTML = '<label style="display:flex;gap:5px;align-items:center"><input class="lk-tex" type="checkbox"' + (TEX.on ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Tissue textures</label>'
       + '<label class="lk-balls-l" style="display:none;gap:5px;align-items:center" title="The spheres of the soft-body model, moving with the tissue"><input class="lk-balls" type="checkbox"' + (BALLS.on ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Metaballs</label>'
-      + '<label class="lk-skin-l" style="display:' + (SKINLOOK.mat ? 'flex' : 'none') + ';gap:5px;align-items:center" title="On: the skin solid, in skin colour. Off: see-through, clear where it faces you"><input class="lk-skin" type="checkbox"' + (SKINLOOK.solid ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Solid skin</label>'
+      + '<span class="lk-skin-l" style="display:' + (SKINLOOK.mat ? 'flex' : 'none') + ';gap:5px;align-items:center"><label style="display:flex;gap:5px;align-items:center" title="On: the skin solid, in skin colour. Off: see-through, clear where it faces you"><input class="lk-skin" type="checkbox"' + (SKINLOOK.solid ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Solid skin</label><button class="pt-b" data-skg="1" title="Skin settings: colour, skin type, red tones, bumps, gloss, see-through or solid" style="padding:0 5px">⚙</button></span>'
       + '<label style="display:flex;gap:5px;align-items:center" title="Soft shadows from the light at the camera across the model, and a soft glow on the brightest highlights (heavier for the graphics card)"><input class="lk-enh" type="checkbox"' + (ENH.on ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Enhance (shadows, bloom)</label>';
     var body = partsEl.querySelector('.pt-body'); body.insertBefore(lookEl, body.firstChild);
     lookEl.querySelector('.lk-tex').addEventListener('change', function () { texturesOn(this.checked); });
@@ -3117,7 +3228,7 @@ function render(ctx) {
     order.forEach(function (k) {
       var ids = groups[k]; if (!ids.length) return;
       var on = ids.filter(function (i) { return PARTS.list[i].mesh.visible; }).length, open = q || PARTS.open[k];
-      h.push('<div class="pt-g" data-g="' + esc(k) + '"><input type="checkbox" data-gc="' + esc(k) + '"' + (on === ids.length ? ' checked' : '') + (on && on < ids.length ? ' data-mixed="1"' : '') + '><span class="pt-n">' + (open ? '▾ ' : '▸ ') + esc(nice(k)) + ' <span class="pt-c">' + on + '/' + ids.length + '</span></span></div>');
+      h.push('<div class="pt-g" data-g="' + esc(k) + '"><input type="checkbox" data-gc="' + esc(k) + '"' + (on === ids.length ? ' checked' : '') + (on && on < ids.length ? ' data-mixed="1"' : '') + '><span class="pt-n">' + (open ? '▾ ' : '▸ ') + esc(nice(k)) + ' <span class="pt-c">' + on + '/' + ids.length + '</span></span>' + (PARTS.list[ids[0]] && PARTS.list[ids[0]].name === 'skin' ? '<button class="pt-b" data-skg="1" title="Skin settings: colour, skin type, red tones, bumps, gloss, see-through or solid" style="padding:0 5px">⚙</button>' : '') + '</div>');
       if (open) ids.forEach(function (i) { var p = PARTS.list[i]; h.push('<div class="pt-r' + (PARTS.sel === i ? ' sel' : '') + '" data-i="' + i + '"><input type="checkbox" data-pc="' + i + '"' + (p.mesh.visible ? ' checked' : '') + '><span class="pt-d" style="background:' + p.color + '"></span><span class="pt-n" title="' + esc(nice(p.name)) + '">' + esc(nice(p.name)) + '</span></div>'); });
     });
     ptList.innerHTML = h.join('');
@@ -3145,6 +3256,7 @@ function render(ctx) {
   }
   partsEl.addEventListener('click', function (e) {
     var t = e.target;
+    if (t.closest && t.closest('[data-skg]')) { e.stopPropagation(); skinPanelToggle(); return; }
     if (t.matches('[data-gc]')) { var k = t.getAttribute('data-gc'); partsShow(PARTS.list.map(function (p, i) { return partKey(p) === k ? i : -1; }).filter(function (i) { return i >= 0; }), t.checked); return; }
     if (t.matches('[data-pc]')) { partsShow([+t.getAttribute('data-pc')], t.checked); return; }
     var g = t.closest('.pt-g'); if (g) { var gk = g.getAttribute('data-g'); PARTS.open[gk] = !PARTS.open[gk]; partsDraw(); return; }
@@ -12686,7 +12798,7 @@ function render(ctx) {
     if (!now && performance.now() - saveAt < 1000) return;
     saveAt = performance.now();
     ctx.saveState({ cam: { p: camera.position.toArray(), t: controls.target.toArray(), q: camera.quaternion.toArray(), flying: flying }, speed: speed, model: FILES.sel, partsMin: PARTS.min, enhance: ENH.on,
-      fleet: { routes: FLEET.routes, heat: FLEET.heat, cine: FLEET.cine, labels: FLEET.labels }, rkcam: RK.cam, crcam: CR.cam, vgcam: VG.cam, hmcam: HM.camPicked || 'director', sound: AUD.on, voice: AUD.voice, voiceName: AUD.voiceName || null });
+      fleet: { routes: FLEET.routes, heat: FLEET.heat, cine: FLEET.cine, labels: FLEET.labels }, rkcam: RK.cam, crcam: CR.cam, vgcam: VG.cam, hmcam: HM.camPicked || 'director', sound: AUD.on, voice: AUD.voice, voiceName: AUD.voiceName || null, skin: skinState() });
   }
   controls.addEventListener('end', function () { keepView(true); });
   $('.fit').addEventListener('click', function () { setTimeout(function () { keepView(true); }, 50); });
