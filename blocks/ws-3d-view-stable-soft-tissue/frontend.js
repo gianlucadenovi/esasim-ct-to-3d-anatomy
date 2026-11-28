@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 78 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 79 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -12897,6 +12897,7 @@ function render(ctx) {
   if (was.fleet) { FLEET.routes = was.fleet.routes !== false; FLEET.heat = !!was.fleet.heat; FLEET.cine = !!was.fleet.cine; FLEET.labels = !!was.fleet.labels; fleetMarks(); }
   ctx.on('resize', resize);
   ctx.on('update', load);
+  ctx.on('run', load);                                     // (the run ended: "building" becomes "collecting")
   resize();
   load();
   tick();
