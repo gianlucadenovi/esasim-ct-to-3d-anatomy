@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 83 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 84 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -12916,7 +12916,7 @@ function render(ctx) {
     if (!now && performance.now() - saveAt < 1000) return;
     saveAt = performance.now();
     ctx.saveState({ cam: { p: camera.position.toArray(), t: controls.target.toArray(), q: camera.quaternion.toArray(), flying: flying }, speed: speed, model: FILES.sel, partsMin: PARTS.min, enhance: ENH.on,
-      fleet: { routes: FLEET.routes, heat: FLEET.heat, cine: FLEET.cine, labels: FLEET.labels }, rkcam: RK.cam, crcam: CR.cam, vgcam: VG.cam, hmcam: HM.camPicked || 'director', sound: AUD.on, voice: AUD.voice, voiceName: AUD.voiceName || null, skin: skinState() });
+      fleet: { routes: FLEET.routes, heat: FLEET.heat, cine: FLEET.cine, labels: FLEET.labels }, rkcam: RK.cam, crcam: CR.cam, vgcam: VG.cam, hmcam: HM.camPicked || 'director', sound: AUD.on, voice: AUD.voice, voiceName: AUD.voiceName || null, skin: skinState() }, true);   // (true: the next run's view starts from it too)
   }
   controls.addEventListener('end', function () { keepView(true); });
   $('.fit').addEventListener('click', function () { setTimeout(function () { keepView(true); }, 50); });
