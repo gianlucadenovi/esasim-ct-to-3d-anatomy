@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 117 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 118 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -5195,6 +5195,7 @@ function render(ctx) {
   var btnCss = 'all:unset;cursor:pointer;padding:3px 9px;border:1px solid #2a303b;border-radius:7px;background:rgba(10,14,22,.72);backdrop-filter:blur(6px);font-size:12px;white-space:nowrap';
   tools.innerHTML = (P.show_fps ? '<span class="fps" title="Frames drawn a second" style="padding:3px 8px;border-radius:7px;background:rgba(10,14,22,.72);font-size:12px;font-variant-numeric:tabular-nums;min-width:44px;text-align:center">– fps</span>' : '')
     + '<button class="sm" style="' + btnCss + '" title="Fly the camera with a 3Dconnexion SpaceMouse (Chrome, Edge or Opera)">3D mouse</button>'
+    + '<button class="savem" style="' + btnCss + '" title="Save the model shown as it is now: a GLB with its parts, the skin and the hair strands, the hair maps (PNG) and the skin and hair settings (JSON), into a dataset or a download">Save model</button>'
     + '<button class="pic" style="' + btnCss + '" title="Save a picture of the view">Picture</button>'
     + '<button class="recb" style="' + btnCss + '" title="Record a video of the view">● Record</button>'
     + '<button class="capset" style="' + btnCss + '" title="Picture and video settings">⚙</button>';
@@ -5202,6 +5203,97 @@ function render(ctx) {
   var fpsEl = tools.querySelector('.fps'), FPSM = { n: 0, t0: performance.now() };
   var smBtn = tools.querySelector('.sm'), picBtn = tools.querySelector('.pic'), recBtn = tools.querySelector('.recb');
   smBtn.onclick = function () { ctx.spacemouse(); };
+  // ---- Save model: what is shown, as it is now (soft tissue where it hangs, the hair as grown), as files that keep it
+  // when the next run shows another case. A GLB written here (no exporter in the view): one node per visible part with
+  // its colour, the skin with its flat layout (uv), the hair as line strands with their colours.
+  function glbOf(items) {
+    var json = { asset: { version: '2.0', generator: 'EsaSim 3D view' }, scene: 0, scenes: [{ nodes: [] }], nodes: [], meshes: [], materials: [], accessors: [], bufferViews: [], buffers: [{ byteLength: 0 }] };
+    var chunks = [], off = 0;
+    var view = function (arr, target) {
+      var b = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength), pad = (4 - (b.byteLength % 4)) % 4;
+      json.bufferViews.push(Object.assign({ buffer: 0, byteOffset: off, byteLength: b.byteLength }, target ? { target: target } : {}));
+      chunks.push(b); if (pad) chunks.push(new Uint8Array(pad)); off += b.byteLength + pad;
+      return json.bufferViews.length - 1;
+    };
+    var acc = function (arr, comp, type, count, extra) { json.accessors.push(Object.assign({ bufferView: view(arr, comp === 5125 ? 34963 : 34962), componentType: comp, count: count, type: type }, extra || {})); return json.accessors.length - 1; };
+    items.forEach(function (it) {
+      var n = it.pos.length / 3, mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+      for (var i = 0; i < it.pos.length; i += 3) for (var a = 0; a < 3; a++) { var q = it.pos[i + a]; if (q < mn[a]) mn[a] = q; if (q > mx[a]) mx[a] = q; }
+      if (!(n > 0)) return;
+      var attrs = { POSITION: acc(it.pos, 5126, 'VEC3', n, { min: mn, max: mx }) };
+      if (it.nrm) attrs.NORMAL = acc(it.nrm, 5126, 'VEC3', n);
+      if (it.uv) attrs.TEXCOORD_0 = acc(it.uv, 5126, 'VEC2', n);
+      if (it.col) attrs.COLOR_0 = acc(it.col, 5121, 'VEC4', n, { normalized: true });
+      var prim = { attributes: attrs, mode: it.lines ? 1 : 4, material: json.materials.length };
+      if (it.idx) prim.indices = acc(it.idx, 5125, 'SCALAR', it.idx.length);
+      var c = it.color || [1, 1, 1, 1];
+      json.materials.push({ name: it.name, pbrMetallicRoughness: { baseColorFactor: c, metallicFactor: 0, roughnessFactor: it.lines ? 0.5 : 0.6 }, alphaMode: c[3] < 0.999 || it.col ? 'BLEND' : 'OPAQUE', doubleSided: true });
+      json.meshes.push({ name: it.name, primitives: [prim] });
+      json.nodes.push({ name: it.name, mesh: json.meshes.length - 1 });
+      json.scenes[0].nodes.push(json.nodes.length - 1);
+    });
+    json.buffers[0].byteLength = off;
+    var js = new TextEncoder().encode(JSON.stringify(json)), jpad = (4 - (js.byteLength % 4)) % 4;
+    var total = 12 + 8 + js.byteLength + jpad + 8 + off, out = new Uint8Array(total), dv = new DataView(out.buffer), p = 0;
+    dv.setUint32(0, 0x46546C67, true); dv.setUint32(4, 2, true); dv.setUint32(8, total, true); p = 12;
+    dv.setUint32(p, js.byteLength + jpad, true); dv.setUint32(p + 4, 0x4E4F534A, true); p += 8; out.set(js, p); p += js.byteLength; for (var s = 0; s < jpad; s++) out[p++] = 0x20;
+    dv.setUint32(p, off, true); dv.setUint32(p + 4, 0x004E4942, true); p += 8;
+    chunks.forEach(function (b) { out.set(b, p); p += b.byteLength; });
+    return new Blob([out], { type: 'model/gltf-binary' });
+  }
+  function modelItems() {
+    var root = FILES.shown; if (!root) return [];
+    root.updateMatrixWorld(true);
+    var inv = new THREE.Matrix4().copy(root.matrixWorld).invert(), M = new THREE.Matrix4(), NM = new THREE.Matrix3(), v = new THREE.Vector3(), items = [];
+    var shown = function (o) { for (var q = o; q; q = q.parent) { if (!q.visible) return false; if (q === root) return true; } return true; };
+    root.traverse(function (o) {
+      if (!(o.isMesh || o.isLineSegments) || !o.geometry || !o.geometry.attributes.position || !shown(o)) return;
+      if (o.isLineSegments && o !== HAIR.lines) return;                 // (helpers: only the hair's lines)
+      var g = o.geometry, pa = g.attributes.position, n = pa.count, pos = new Float32Array(3 * n);
+      M.multiplyMatrices(inv, o.matrixWorld); NM.getNormalMatrix(M);
+      for (var i = 0; i < n; i++) { v.fromBufferAttribute(pa, i).applyMatrix4(M); pos[3 * i] = v.x; pos[3 * i + 1] = v.y; pos[3 * i + 2] = v.z; }
+      var it = { name: o === HAIR.lines ? 'hair' : (o.name || 'part'), pos: pos };
+      if (o === HAIR.lines) {
+        it.lines = true; var hc = g.attributes.hC; it.col = new Uint8Array(hc.array.subarray ? hc.array.subarray(0, 4 * n) : hc.array);
+      } else {
+        if (!g.attributes.normal) g.computeVertexNormals();
+        var na = g.attributes.normal, nrm = new Float32Array(3 * n);
+        for (i = 0; i < n; i++) { v.fromBufferAttribute(na, i).applyMatrix3(NM).normalize(); nrm[3 * i] = v.x; nrm[3 * i + 1] = v.y; nrm[3 * i + 2] = v.z; }
+        it.nrm = nrm;
+        if (g.index) it.idx = Uint32Array.from(g.index.array);
+        if (o === SKINLOOK.mesh) { it.name = 'skin'; var L = hairLayout(g); if (L && L.uv) it.uv = Float32Array.from(L.uv); }
+        var m = Array.isArray(o.material) ? o.material[0] : o.material, cc = m && m.color ? m.color : new THREE.Color(1, 1, 1);
+        if (o === SKINLOOK.mesh && typeof SKINV !== 'undefined' && SKINV.base) cc = new THREE.Color(SKINV.base);
+        it.color = [cc.r, cc.g, cc.b, o === SKINLOOK.mesh ? 1 : (m && m.transparent ? +m.opacity || 1 : 1)];
+      }
+      items.push(it);
+    });
+    return items;
+  }
+  var savemBtn = tools.querySelector('.savem');
+  savemBtn.onclick = function () {
+    if (!FILES.shown) return;
+    var was = savemBtn.textContent; savemBtn.textContent = 'Saving…'; savemBtn.disabled = true;
+    setTimeout(function () {
+      try {
+        var cname = (caseName(FILES.shown.userData.file || '') || 'model').replace(/^.*[\\/]/, '').replace(/[^\w.-]+/g, '_') || 'model';
+        var list = [{ name: cname + '.glb', blob: glbOf(modelItems()) }];
+        var settings = { case: cname, saved: new Date().toISOString(), skin: skinState(), hair: Object.assign({}, hairState(), { store: undefined }),
+          camera: { position: camera.position.toArray(), target: controls.target.toArray() },
+          note: 'The GLB holds every part shown, the skin (with its flat layout as TEXCOORD_0, for the hair maps) and the hair strands (lines with their colours). The hair maps are hair-*.png, laid on that layout.' };
+        list.push({ name: cname + '-look.json', blob: new Blob([JSON.stringify(settings, null, 1)], { type: 'application/json' }) });
+        var HN = { len: 'hair-length.png', op: 'hair-opacity.png', col: 'hair-colour.png', curl: 'hair-curliness.png' };
+        var maps = HAIR.maps ? HAIR_LAYERS.filter(function (L) { return HAIR.maps[L[0]]; }) : [], left = maps.length;
+        var send = function () {
+          try { if (ctx.saveFiles) ctx.saveFiles(list, 'Model · ' + cname); else list.forEach(function (f) { ctx.save(f.name, f.blob); }); }
+          catch (e) { list.forEach(function (f) { try { ctx.save(f.name, f.blob); } catch (e2) { } }); }
+          savemBtn.textContent = was; savemBtn.disabled = false;
+        };
+        if (!left) { send(); return; }
+        maps.forEach(function (L) { HAIR.maps[L[0]].toBlob(function (b) { list.push({ name: cname + '-' + HN[L[0]], blob: b }); if (--left === 0) send(); }, 'image/png'); });
+      } catch (e) { savemBtn.textContent = was; savemBtn.disabled = false; console.error(e); }
+    }, 30);
+  };
   var selCss = 'background:#1b2029;color:#e8ecf2;border:1px solid #2a303b;border-radius:6px;font-size:12px;padding:2px 4px;width:100%';
   var panel = document.createElement('div');
   panel.style.cssText = 'position:absolute;right:12px;top:46px;width:270px;background:rgba(10,14,22,.92);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px 12px;pointer-events:auto;display:none;gap:7px;flex-direction:column;z-index:3';
