@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 88 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 89 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -3068,7 +3068,7 @@ function render(ctx) {
     HAIR.fol = { g: g, fi: Uint32Array.from(FI), w: Float32Array.from(FW), root: Float32Array.from(FR), rest: PA.slice(), nv: 2 * K };
     hairFollow();                                         // (where the skin is now)
     mesh.add(HAIR.lines);                                  // (with the skin: hidden with it, moved with it)
-    if (HAIR.panel) { var n = HAIR.panel.querySelector('.hr-n'); if (n) n.textContent = Math.round(P.length / (6 * K)).toLocaleString() + ' hairs'; }
+    if (HAIR.panel) { var n = HAIR.panel.querySelector('.hr-n'); if (n) { var bb = new THREE.Box3().setFromBufferAttribute(g.attributes.position), hb2 = new THREE.Box3().setFromBufferAttribute(hg.attributes.position), f3 = function (v) { return v.toArray().map(function (t) { return t.toFixed(2); }).join(','); }; n.textContent = Math.round(P.length / (6 * K)).toLocaleString() + ' hairs | U' + U + ' N' + N + ' faces' + C.fl.length + '/' + (idx.length / 3) + ' skin ' + f3(bb.min) + '..' + f3(bb.max) + ' hair ' + f3(hb2.min) + '..' + f3(hb2.max) + ' skinVis ' + mesh.visible + ' mat ' + (mesh.material.transparent ? 'T' : 'O') + (mesh.material.depthWrite ? 'W' : '-'); } }
   }
 
   // ---- the dialog: the settings, the skin laid flat with its wireframe, three maps to paint
