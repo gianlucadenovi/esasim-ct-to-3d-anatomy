@@ -8,7 +8,7 @@ An [EsaSim](https://esacode.com/) blueprint block: a view that draws in the brow
 
 | | |
 |---|---|
-| Block | `ws-3d-view-stable-soft-tissue` · version 68 |
+| Block | `ws-3d-view-stable-soft-tissue` · version 69 |
 | Workspace | Gianluca De Novi's workspace |
 | Author | Gianluca De Novi |
 
@@ -35,6 +35,7 @@ An [EsaSim](https://esacode.com/) blueprint block: a view that draws in the brow
 | `textures` Tissue textures | bool | `true` | Anatomy: each tissue gets its own surface, computed on the graphics card (liver lobules, muscle fibres, bowel folds, the heart's fat, the lung's air sacs, bone darker in its hollows…). Also a switch in the Parts list |
 | `metaballs` Show the metaballs | bool | `false` | Soft tissue: draw the spheres of the soft-body model moving with the tissue, the anatomy see-through around them. Also a switch in the Parts list |
 | `skin_look` Skin | select | `"See-through"` | Anatomy with a skin: see-through (clear where it faces you, so the organs show) or solid, opaque and in skin colour (use the cut or hide it in the Parts list to see inside). Also a switch in the Parts list |
+| `skin_params` Skin settings | textarea | `""` | The skin's look as JSON, as Copy values in the ⚙ skin panel gives it (colour, red tones, mottling, bumps, gloss, opacity): the view's defaults, which Reset goes back to. Empty: the built-in values |
 | `grid` Show the grid | bool | `true` |  |
 | `trails` Show trajectories | bool | `true` |  |
 | `speed` Playback speed | number | `1` |  |

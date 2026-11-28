@@ -145,6 +145,13 @@
             "help": "Anatomy with a skin: see-through (clear where it faces you, so the organs show) or solid, opaque and in skin colour (use the cut or hide it in the Parts list to see inside). Also a switch in the Parts list"
         },
         {
+            "key": "skin_params",
+            "label": "Skin settings",
+            "type": "textarea",
+            "default": "",
+            "help": "The skin's look as JSON, as Copy values in the ⚙ skin panel gives it (colour, red tones, mottling, bumps, gloss, opacity): the view's defaults, which Reset goes back to. Empty: the built-in values"
+        },
+        {
             "key": "grid",
             "label": "Show the grid",
             "type": "bool",
@@ -324,6 +331,6 @@
         "resize": "both"
     },
     "esasim": {
-        "version": 68
+        "version": 69
     }
 }
