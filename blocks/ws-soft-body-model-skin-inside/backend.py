@@ -1,8 +1,8 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 5 · worker block, Python: def run(ctx)
+# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 6 · worker block, Python: def run(ctx)
 # Turns segmented anatomy into a soft-tissue model the 3D view simulates in real time: organs that sag, sway and push each other under gravity, held by a fixed skeleton and contained by the skin (metaba
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
-# Saved: 2026-11-27
+# Saved: 2026-11-28
 #
 # Inputs   ctx.inputs["id"] is a list of files: .path .name .size .read_text() .read_json()
 #   labels      Files (gz, nii, nrrd, mha) Labels · several · Masks, one file per structure, in each case's segmentations/ folder
@@ -78,6 +78,7 @@ WALL_GAP_MM = 45.0                                                  # neighbouri
 MIN_ML = 1.0                                                        # soft structures smaller than this are left out
 SKIN_MM = 3.0                                                       # skin thickness (epidermis and dermis), for its mass
 SKIN_DENSITY = 1100.0
+SKIN_FACES = 150000                                                 # triangles of the skin drawn (detail of the body's outline)
 
 
 def run(ctx):
@@ -296,8 +297,9 @@ def skin_shell(ct, hu, spacing_mm, log):
     from skimage import measure
     a = sitk.GetArrayFromImage(ct)
     sp = np.array(ct.GetSpacing(), float)[::-1]
-    step = max(1, int(round(4.0 / sp.min())))                       # about 4 mm voxels are enough for the outline
-    b = a[::step, ::step, ::step] > hu
+    # about 2 mm on each axis (thick slices are all kept): the outline's detail (navel, folds, the breasts, the buttocks)
+    step = np.maximum(1, np.round(2.0 / sp)).astype(int)
+    b = a[::step[0], ::step[1], ::step[2]] > hu
     lab, n = ndimage.label(b)
     if n == 0:
         return None
@@ -305,10 +307,12 @@ def skin_shell(ct, hu, spacing_mm, log):
     b = lab == (1 + int(np.argmax(sizes)))
     for k in range(b.shape[0]):                                      # air in the lungs and the bowel is inside the body
         b[k] = ndimage.binary_fill_holes(b[k])
-    b = ndimage.binary_closing(b, iterations=2)
+    # closed small gaps, the scan's first and last slices kept (padded with themselves: the closing does not eat the ends)
+    b = ndimage.binary_closing(np.pad(b, 2, mode="edge"), iterations=2)[2:-2, 2:-2, 2:-2]
     vsp = sp * step
     pad = np.pad(b, 1).astype(np.float32)
-    verts, faces, nrm, _ = measure.marching_cubes(ndimage.gaussian_filter(pad, 0.8), 0.5, step_size=1, allow_degenerate=False)
+    sig = np.clip(1.2 / vsp, 0.5, 1.0)                               # about 1.2 mm of smoothing: no voxel steps, the detail stays
+    verts, faces, nrm, _ = measure.marching_cubes(ndimage.gaussian_filter(pad, sig), 0.5, step_size=1, allow_degenerate=False)
     ijk = ((verts - 1.0) * step)[:, ::-1]
     d = np.array(ct.GetDirection(), float).reshape(3, 3)
     lps = np.array(ct.GetOrigin(), float) + (ijk * np.array(ct.GetSpacing(), float)) @ d.T
@@ -340,12 +344,13 @@ def skin_shell(ct, hu, spacing_mm, log):
     import trimesh
     mesh = trimesh.Trimesh(pts, faces, process=True)
     try:
-        if len(mesh.faces) > 24000:
-            mesh = mesh.simplify_quadric_decimation(face_count=24000)
+        if len(mesh.faces) > SKIN_FACES:
+            mesh = mesh.simplify_quadric_decimation(face_count=SKIN_FACES)
     except Exception:
         pass
     trimesh.repair.fix_normals(mesh)
-    log("Skin: the body's outline (CT above %g HU), %d points every %g mm, %d of them on the cut of the scan (fixed)." % (hu, len(shell), spacing_mm, sum(cut)))
+    log("Skin: the body's outline (CT above %g HU, sampled every %s mm), %d triangles; %d points every %g mm, %d of them on the cut of the scan (fixed)." % (
+        hu, "x".join("%.1f" % v for v in vsp[::-1]), len(mesh.faces), len(shell), spacing_mm, sum(cut)))
     area = float(mesh.area)                                          # m2 (the scan's part of the body)
     return {"points": [[round(float(v), 4) for v in q] for q in shell], "normals": [[round(float(v), 3) for v in q] for q in shell_n], "fixed": cut, "radius": round(rad, 4), "area_m2": round(area, 4),
             "mesh": {"positions": [round(float(v), 4) for v in np.asarray(mesh.vertices).ravel()], "faces": np.asarray(mesh.faces).astype(int).ravel().tolist()}}
