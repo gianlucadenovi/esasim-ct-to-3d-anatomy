@@ -1,8 +1,8 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Load CT scans (DICOM discs, NIfTI, NRRD, MHA) (ws-load-ct-scans-dicom-discs-nifti-nrrd) · version 4 · worker block, Python: def run(ctx)
+# Load CT scans (DICOM discs, NIfTI, NRRD, MHA) (ws-load-ct-scans-dicom-discs-nifti-nrrd) · version 5 · worker block, Python: def run(ctx)
 # Turns any CT source (a CD/DVD export with DICOMDIR, DICOM/ and IHE_PDI/, loose DICOM, NIfTI, NRRD, MHA, zips) into one volume per case, <case>/ct.nii.gz: series grouped by their DICOM IDs, copies read
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
-# Saved: 2026-11-27
+# Saved: 2026-11-28
 #
 # Inputs   ctx.inputs["id"] is a list of files: .path .name .size .read_text() .read_json()
 #   files       Files                     Files · several · optional · The wired files: the scans, in any layout (DICOM folders, NIfTI/NRRD/MHA, zips); with the default source, loaded when no one uploads from the View
@@ -71,6 +71,7 @@ def run(ctx):
     p = ctx.params
     source = str(p.get("source") or SOURCES[0])
     t0 = time.time()
+    UPLOAD.clear()
     tell(ctx, "starting", source=source)
     wired = [(f.path, rel_of(f)) for f in ctx.inputs.get("files", [])]
     items = None
@@ -408,8 +409,13 @@ def public(found):
 
 
 # ── receiving files from the Load a CT view ──────────────────────────────────────────────────────────────────────
+UPLOAD = {}                      # the View's upload this run took: later messages say so (the panel shows "your scans")
+
+
 def tell(ctx, state, **extra):
     msg = {"state": state, "t": time.time()}
+    if UPLOAD.get("session") and "session" not in extra:
+        msg.update(uploaded=True, session=UPLOAD["session"])
     msg.update(extra)
     try:
         ctx.telemetry(TELE, msg)
@@ -514,7 +520,8 @@ def receive(ctx, wait_s, fallback_s=None):
             with gzip.open(f["path"], "rb") as src, open(f["path"][:-len(".gzpart")], "wb") as dst:
                 shutil.copyfileobj(src, dst)
             os.remove(f["path"])
-    tell(ctx, "received", session=session, files=len(files), received=len(files), bytes=total, total=total)
+    UPLOAD["session"] = session
+    tell(ctx, "received", session=session, uploaded=True, files=len(files), received=len(files), bytes=total, total=total)
     ctx.log("All %d files arrived (%.1f MB)." % (len(files), total / 1e6))
     return root
 
