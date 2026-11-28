@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 16 · worker block, Python: def run(ctx)
+# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 17 · worker block, Python: def run(ctx)
 # Turns segmented anatomy into a soft-tissue model the 3D view simulates in real time: organs that sag, sway and push each other under gravity, held by a fixed skeleton and contained by the skin (metaba
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-28
@@ -80,6 +80,7 @@ SKIN_MM = 3.0                                                       # skin thick
 SKIN_DENSITY = 1100.0
 SKIN_FACES = 250000                                                 # triangles of the skin drawn (detail of the body's outline)
 UP = 1                                                              # the skin traced this many times finer than the scan's pixels (2: 4x the memory)
+PAD_SHARE = 0.05                                                    # the pad's band: pixels with a thin line in this share of the slices or more
 CLEFT_HU = 40.0                                                     # a fold's line: this much darker than the skin on both sides (HU)
 
 
@@ -745,6 +746,97 @@ def strip_pad(v, vsp, hu, log=print):
     return total
 
 
+def strip_pad_band(v, vsp, hu, log=print):
+    """The table pad lies along the whole scan at nearly the same place in every slice (pressed in a little more or less by
+    the body): pixels where a thin line (gone after a ~1.5 mm opening) shows in many slices are its band. In that band
+    every thin line is the pad, however short (where the body touches it, it breaks into short pieces that stayed on the
+    skin as slivers): they become air. The body, thick, is never touched."""
+    import numpy as np
+    from scipy import ndimage
+    px = float(min(vsp[1], vsp[2]))
+    r = max(1, int(round(1.5 / px)))
+    yy, xx = np.ogrid[-r:r + 1, -r:r + 1]
+    disk = xx * xx + yy * yy <= r * r
+    nz = v.shape[0]
+    if nz < 10:
+        return 0
+    C = np.zeros(v.shape[1:], np.float32)
+    thin = []
+    for k in range(nz):
+        m = v[k] > hu
+        th = m & ~ndimage.binary_opening(m, structure=disk)
+        thin.append(np.packbits(th))
+        C += th
+    C /= nz
+    band = ndimage.binary_dilation(C >= PAD_SHARE, iterations=max(1, int(round(2.0 / px))))
+    if not band.any():
+        return 0
+    shp = v.shape[1:]
+    tot = 0; nsl = 0
+    st8 = np.ones((3, 3), bool)
+    for k in range(nz):
+        th = np.unpackbits(thin[k])[:shp[0] * shp[1]].reshape(shp).astype(bool)
+        lab, n = ndimage.label(th, structure=st8)
+        if n == 0:
+            continue
+        cnt = ndimage.sum(np.ones(shp), lab, range(1, n + 1))
+        inb = ndimage.sum(band, lab, range(1, n + 1))
+        sel = np.zeros(n + 1, bool)
+        sel[1:] = (inb >= 0.7 * cnt) & (cnt * px >= 3.0)
+        drop = sel[lab]
+        if drop.any():
+            m = v[k] > hu
+            thick = ndimage.binary_opening(m, structure=disk)
+            drop = ndimage.binary_dilation(drop, iterations=1) & band & ~thick
+            v[k][drop] = -1000.0
+            tot += int(drop.sum()); nsl += 1
+    if tot:
+        log("Skin: the table pad's band found (where a thin line shows in %d%%+ of the slices): its pieces taken off in %d of %d slices." % (round(100 * PAD_SHARE), nsl, nz))
+    return tot
+
+
+def split_contacts(v, hu, log=print):
+    """Thick slices: where two parts of the body meet in one slice only (a labium against a thigh), with the air around
+    the body at that very spot in the slice above and the one below, the contact is the slice's thickness, not the body:
+    it becomes air, so the parts stay apart. Only where it opens onto the air around the body in that slice and reaches
+    3 pixels or more into it (the outline's own pixel of jitter from slice to slice is left alone)."""
+    import numpy as np
+    from scipy import ndimage
+    nz = v.shape[0]
+    if nz < 3:
+        return 0
+    st8 = np.ones((3, 3), bool)
+
+    def outside(s):
+        air = s <= hu
+        la, na = ndimage.label(air, structure=st8)
+        edge = np.unique(np.concatenate([la[0], la[-1], la[:, 0], la[:, -1]]))
+        return np.isin(la, edge[edge > 0])
+
+    prev, cur = outside(v[0]), outside(v[1])
+    tot = 0; nsl = 0
+    for k in range(1, nz - 1):
+        nxt = outside(v[k + 1])
+        cand = prev & nxt & ~cur & (v[k] > hu)
+        if cand.any():
+            lab, n = ndimage.label(cand, structure=st8)
+            touch = ndimage.binary_dilation(cur, structure=st8)
+            keep = np.unique(lab[touch & cand]); keep = keep[keep > 0]
+            if len(keep):                                             # deep (3 px or more from the air): not the outline's jitter
+                dep = ndimage.distance_transform_edt(~cur)
+                deep = ndimage.maximum(dep, lab, keep)
+                keep = keep[np.asarray(deep) >= 3.0]
+            op = np.isin(lab, keep)
+            if op.any():
+                v[k][op] = np.minimum(v[k][op], hu - 200.0)
+                tot += int(op.sum()); nsl += 1
+                cur = outside(v[k])
+        prev, cur = cur, nxt
+    if tot:
+        log("Skin: parts of the body touching in one slice only kept apart (labia and thighs), %d pixels in %d slices." % (tot, nsl))
+    return tot
+
+
 def open_clefts(v, vsp, hu, log=print):
     """Folds whose two skins touch (between the labia, the buttocks, a thigh against the body): in a slice their gap is a
     line thinner than a pixel, darker than the skin on both sides but above the body threshold. Such lines (a dip of
@@ -814,6 +906,7 @@ def skin_surface_fine(v, vsp, hu, log=print):
         lin = (u - hu) / np.maximum(g, 50.0)                          # where it crosses hu, from the grey values
         near = np.abs(d) <= 1.5 * h
         d[near] = np.clip(lin[near], -1.5 * h, 1.5 * h)
+        d[0, :] = d[-1, :] = d[:, 0] = d[:, -1] = -CL                 # where the body leaves the scan's field: closed there
         S[k + 1] = np.clip(d, -CL, CL)
     V, F, nv = [], [], 0
     sig = (0, 0.6, 0.6)
@@ -888,6 +981,10 @@ def skin_shell(ct, hu, spacing_mm, log):
     except Exception as e:
         log("Skin: the table pad could not be looked for (%s)." % e)
     try:
+        strip_pad_band(v, vsp, hu, log)                               # its pieces left against the back
+    except Exception as e:
+        log("Skin: the table pad's band could not be looked for (%s)." % e)
+    try:
         strip_pad(v, vsp, hu, log)                                    # and its surface lying against the back
     except Exception as e:
         log("Skin: the table pad's surface could not be looked for (%s)." % e)
@@ -895,6 +992,15 @@ def skin_shell(ct, hu, spacing_mm, log):
         open_clefts(v, vsp, hu, log)                                  # folds whose skins touch stay open
     except Exception as e:
         log("Skin: the folds could not be looked into (%s)." % e)
+    try:
+        split_contacts(v, hu, log)                                    # parts touching in one slice only stay apart
+    except Exception as e:
+        log("Skin: contacts between slices could not be looked into (%s)." % e)
+    try:
+        strip_pad_band(v, vsp, hu, log)                               # again: what the folds just set apart from the back
+        strip_table(v, vsp, hu, lambda *a: None)
+    except Exception as e:
+        log("Skin: the table pad's band could not be looked for (%s)." % e)
     body = v > hu
     lab, n = ndimage.label(body)
     body = lab == (1 + int(np.argmax(ndimage.sum(body, lab, range(1, n + 1)))))
