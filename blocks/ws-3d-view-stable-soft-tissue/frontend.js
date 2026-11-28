@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 72 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 73 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2760,7 +2760,7 @@ function render(ctx) {
     ['mel', 'Melanin mottling', 0, 1, 0.01], ['blood', 'Blood mottling (redness)', 0, 1, 0.01], ['blot', 'Blotchiness', 0, 0.5, 0.01],
     ['h', 'Complexity (folds, creases, navel, nipples, edges)'], ['cxLo', 'Flat below', 0, 1, 0.01], ['cxHi', 'Fully complex above', 0, 1, 0.01], ['fade', 'Skin complexity fade distance (mm)', 0, 50, 0.5],
     ['h', 'Relief (normal map)'], ['relief', 'Relief strength', 0, 3, 0.05], ['und', 'Undulation (a few cm)', 0, 2, 0.05], ['grainSz', 'Fine grain: size, flat skin (mm)', 0.1, 3, 0.05], ['grainSzCx', 'Fine grain: size, complex skin (mm)', 0.1, 3, 0.05], ['grain', 'Fine grain, flat skin', 0, 0.3, 0.005], ['grainCx', 'Fine grain, complex skin', 0, 0.3, 0.005],
-    ['dotH', 'Bumps: height', 0, 2, 0.05], ['dotSize', 'Bumps: size', 0, 0.6, 0.01], ['dotDen', 'Bumps: how many', 0, 1.5, 0.01], ['dotSp', 'Bumps: spacing (mm)', 1, 8, 0.1],
+    ['dotH', 'Bumps: height', 0, 2, 0.05], ['dotSize', 'Bumps: size', 0, 0.6, 0.01], ['dotDen', 'Bumps: how many (per cell, up to 3)', 0, 3, 0.01], ['dotSp', 'Bumps: spacing (mm)', 0.5, 8, 0.1],
     ['h', 'Surface'], ['rough', 'Roughness', 0.05, 1, 0.01], ['glossFlat', 'Roughness ×, flat skin', 0.2, 2, 0.01], ['glossCx', 'Roughness ×, complex skin', 0.2, 2, 0.01], ['env', 'Reflections', 0, 3, 0.05], ['sheen', 'Grain glints (gloss varies with the grain)', 0, 1, 0.01],
     ['h', 'See-through (when not solid)'], ['opBase', 'Opacity', -0.5, 0.5, 0.01], ['opCx', 'Extra opacity, complex skin', 0, 1, 0.01]
   ];
@@ -2996,11 +2996,11 @@ function render(ctx) {
     // cx: how complex the skin is there (folds, creases, the navel, the nipples, the cut edges; 0 where flat and smooth)
     // small bumps: soft dots (gaussian) on a jittered lattice about 2.5 mm apart; more of them and larger where the skin is
     // complex, their size going to 0 where it is flat
-    'float esDots(vec3 q, float cx) {',
+    'float esDots(vec3 q, float cx, float den) {',
     '  vec3 i = floor(q), f = fract(q); float s = 0.0;',
     '  for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {',
     '    vec3 g = vec3(float(x), float(y), float(z)), o = texture(esNoiseTex, (i + g + 0.5) / 64.0).rgb, r = g + o - f;',
-    '    float on = step(o.b, esS_dotDen * (0.2 + cx)), rad = (0.36 + o.r) * esS_dotSize * cx;',
+    '    float on = step(o.b, den * min(1.0, 0.25 + cx)), rad = (0.36 + o.r) * esS_dotSize * cx;',
     '    s += on * (0.6 + 0.4 * o.g) * exp(-dot(r, r) / max(rad * rad, 1e-5)); }',
     '  return s; }',
     // relief (x), extra opacity (y: more where complex), gloss factor (z: glossy where flat, matte where complex)
@@ -3008,7 +3008,12 @@ function render(ctx) {
     '  float mid = esFbmP(p + 2.0, px, 35.0);',                                  // a soft undulation, a few cm
     // the fine grain: very fine on flat skin, coarser towards complex areas (two grains, blended: no stretching)
     '  float fine = mix(esFbmP(p, px, esS_grainF), esFbmP(p + 3.1, px, esS_grainFc), cx);',                                      // a fine, simple grain
-    '  float dots = esFade(px, 3.0 * esS_dotF) * smoothstep(0.0, 0.25, cx) * esDots(p * esS_dotF, cx);',
+    // up to three bumps per cell: three lattices, offset and a little rotated in scale, each filled as the count passes 1, 2
+    '  vec3 dq = p * esS_dotF; float dn = esS_dotDen;',
+    '  float dsum = esDots(dq, cx, clamp(dn, 0.0, 1.0));',
+    '  if (dn > 1.0) dsum += esDots(dq * 1.13 + vec3(5.3, 1.7, 9.1), cx, clamp(dn - 1.0, 0.0, 1.0));',
+    '  if (dn > 2.0) dsum += esDots(dq * 1.29 + vec3(11.7, 7.3, 2.9), cx, clamp(dn - 2.0, 0.0, 1.0));',
+    '  float dots = esFade(px, 3.0 * esS_dotF) * smoothstep(0.0, 0.25, cx) * dsum;',
     '  float h = 0.5 + esS_und * (mid - 0.5) + (esS_grain + esS_grainCx * cx) * (fine - 0.5) + esS_dotH * dots;',
     // glints: the grain's crests glossier, its hollows more matte
     '  float rough = mix(esS_glossFlat, esS_glossCx, cx) + 0.15 * (esFbm(p * 15.0) - 0.5) + 0.2 * dots - esS_sheen * 1.2 * (fine - 0.5);',
@@ -3688,7 +3693,7 @@ function render(ctx) {
             + 'float esAo = clamp( esA + dot( esSpec, vec3( 0.2126, 0.7152, 0.0722 ) ), 0.0, 1.0 );\n'
             + 'gl_FragColor = vec4( ( esDif * esA + esSpec ) / max( esAo, 0.001 ), esAo ); }');
       };
-      skinMat.customProgramCacheKey = function () { return 'esasim-skin-8'; };
+      skinMat.customProgramCacheKey = function () { return 'esasim-skin-9'; };
       var skin = new THREE.Mesh(g, skinMat);
       skin.name = 'skin'; skin.renderOrder = 5;
       SKINLOOK.mat = skinMat; SKINLOOK.mesh = skin; skinApply(); skinSolid(SKINLOOK.solid);
