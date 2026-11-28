@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 92 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 93 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2922,11 +2922,14 @@ function render(ctx) {
     + ' #include <tonemapping_fragment>\n #include <colorspace_fragment>\n}';
   // the hair moves with the skin (pressed, sagging): each hair's root on its triangle, the rest of it carried along
   function hairFollow() {
-    var L = HAIR.lines, F = HAIR.fol, mesh = SKINLOOK.mesh; if (!L || !F || !mesh || !mesh.visible || F.g !== mesh.geometry) return;
+    var L = HAIR.lines, F = HAIR.fol, mesh = SKINLOOK.mesh;
+    HAIR.dbg = { calls: ((HAIR.dbg || {}).calls || 0) + 1, same: !!(F && mesh && F.g === mesh.geometry), vis: !!(mesh && mesh.visible), md: 0, par: L && L.parent ? (L.parent === mesh) : 'none', mpos: mesh ? mesh.position.toArray().map(function (t) { return t.toFixed(3); }).join(',') + ' s' + mesh.scale.x.toFixed(2) : '' };
+    if (!L || !F || !mesh || !mesh.visible || F.g !== mesh.geometry) return;
     var cur = mesh.geometry.attributes.position.array, idx = mesh.geometry.index.array, out = L.geometry.attributes.position.array, R = F.rest, nv = F.nv, nh = F.fi.length;
     for (var h = 0; h < nh; h++) {
       var f = F.fi[h], a = 3 * idx[3 * f], b = 3 * idx[3 * f + 1], c = 3 * idx[3 * f + 2], w1 = F.w[2 * h], w2 = F.w[2 * h + 1], w0 = 1 - w1 - w2;
       var dx = w0 * cur[a] + w1 * cur[b] + w2 * cur[c] - F.root[3 * h], dy = w0 * cur[a + 1] + w1 * cur[b + 1] + w2 * cur[c + 1] - F.root[3 * h + 1], dz = w0 * cur[a + 2] + w1 * cur[b + 2] + w2 * cur[c + 2] - F.root[3 * h + 2];
+      var dd = Math.abs(dx) + Math.abs(dy) + Math.abs(dz); if (dd > HAIR.dbg.md) HAIR.dbg.md = dd;
       for (var j = 0, k = 3 * h * nv; j < nv; j++, k += 3) { out[k] = R[k] + dx; out[k + 1] = R[k + 1] + dy; out[k + 2] = R[k + 2] + dz; }
     }
     L.geometry.attributes.position.needsUpdate = true;
@@ -3178,6 +3181,7 @@ function render(ctx) {
     p.querySelector('.hr-3d').checked = HAIR.paint3d;
     var msg = p.querySelector('.hr-msg');
     var g = hairGeo();
+    if (HAIR.dbg) p.querySelector('.hr-n').textContent = JSON.stringify(HAIR.dbg) + ' n' + (HAIR.fol ? HAIR.fol.fi.length : 0) + ' rest-vs-pos ' + (function () { var m = SKINLOOK.mesh, ga = m && m.geometry.attributes, s = 0; if (!ga || !ga.esRest) return '-'; for (var i = 0; i < ga.position.array.length; i += 300) s = Math.max(s, Math.abs(ga.position.array[i] - ga.esRest.array[i])); return s.toFixed(4); })();
     msg.style.display = g ? 'none' : 'flex';
     msg.innerHTML = SKINLOOK.mesh ? 'This skin was made before it could be laid flat for painting.<br>Run the flow again: the new skin comes laid flat, and its hair maps can be painted here.' : 'No skin yet: the hair grows on the skin, which the run makes last.';
   }
