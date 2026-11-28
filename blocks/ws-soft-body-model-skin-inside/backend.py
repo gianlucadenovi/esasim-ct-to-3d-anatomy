@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 15 · worker block, Python: def run(ctx)
+# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 16 · worker block, Python: def run(ctx)
 # Turns segmented anatomy into a soft-tissue model the 3D view simulates in real time: organs that sag, sway and push each other under gravity, held by a fixed skeleton and contained by the skin (metaba
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-28
@@ -79,6 +79,8 @@ MIN_ML = 1.0                                                        # soft struc
 SKIN_MM = 3.0                                                       # skin thickness (epidermis and dermis), for its mass
 SKIN_DENSITY = 1100.0
 SKIN_FACES = 250000                                                 # triangles of the skin drawn (detail of the body's outline)
+UP = 1                                                              # the skin traced this many times finer than the scan's pixels (2: 4x the memory)
+CLEFT_HU = 40.0                                                     # a fold's line: this much darker than the skin on both sides (HU)
 
 
 def run(ctx):
@@ -743,6 +745,111 @@ def strip_pad(v, vsp, hu, log=print):
     return total
 
 
+def open_clefts(v, vsp, hu, log=print):
+    """Folds whose two skins touch (between the labia, the buttocks, a thigh against the body): in a slice their gap is a
+    line thinner than a pixel, darker than the skin on both sides but above the body threshold. Such lines (a dip of
+    CLEFT_HU or more under the skin on both sides, within 2 pixels) are opened where they run on from the air around the
+    body in the same slice: the fold then stays open however deep it goes. Dips that do not reach the air (noise, fat
+    between muscles) are left alone."""
+    import numpy as np
+    from scipy import ndimage
+    n = 0; nsl = 0
+    st8 = np.ones((3, 3), bool)
+    for k in range(v.shape[0]):
+        s = v[k]
+        if not (s > hu).any():
+            continue
+        # a dip: along some direction (across the line), skin (above hu + 250: not fat) on both sides within 2 pixels, each CLEFT_HU brighter
+        p = np.pad(s, 2, mode="edge")
+        H, W = s.shape
+        def at(dy, dx):
+            return p[2 + dy:2 + dy + H, 2 + dx:2 + dx + W]
+        dip = np.zeros(s.shape, bool)
+        for dy, dx in ((0, 1), (1, 0), (1, 1), (1, -1)):
+            a = np.maximum(at(dy, dx), at(2 * dy, 2 * dx))
+            b = np.maximum(at(-dy, -dx), at(-2 * dy, -2 * dx))
+            lo = np.minimum(a, b)
+            dip |= (lo - s >= CLEFT_HU) & (lo > hu + 250.0)
+        air = s <= hu
+        la, na = ndimage.label(air, structure=st8)
+        edge = np.unique(np.concatenate([la[0], la[-1], la[:, 0], la[:, -1]]))
+        out = np.isin(la, edge[edge > 0])
+        lg, ng = ndimage.label(dip | out, structure=st8)
+        keep = np.unique(lg[out]); keep = keep[keep > 0]
+        op = np.isin(lg, keep) & dip & ~air
+        if op.any():
+            s[op] = np.minimum(s[op], hu - 200.0)
+            n += int(op.sum()); nsl += 1
+    if n:
+        log("Skin: folds whose skins touch kept open (a dark line running on from the air), %d pixels in %d slices." % (n, nsl))
+    return n
+
+
+def skin_surface_fine(v, vsp, hu, log=print):
+    """The surface, finer than the scan where it matters: each slice's outline as a signed distance (to the pixel's
+    fraction where the CT crosses hu; UP times finer pixels if set), and between slices the outline morphs from one slice
+    to the next every 0.6 mm or so (shape, not grey values: no step at each slice on surfaces that lie almost flat in the
+    slice). Marching cubes in pieces along the body (the memory), joined exactly. Returns vertices in the indices of v
+    (z, y, x) and the faces."""
+    import numpy as np
+    from scipy import ndimage
+    from skimage import measure
+    up = UP
+    h = float(min(vsp[1], vsp[2])) / up                              # mm per fine pixel
+    zf = max(1, min(6, int(round(vsp[0] / 0.65))))                  # fine planes per slice (2.5 mm: 4, 0.625 mm)
+    CL = 30.0
+    nz = v.shape[0]
+    ny, nx = v.shape[1] * up, v.shape[2] * up
+    S = np.empty((nz + 2, ny, nx), np.float16)
+    S[0] = S[-1] = -CL                                                # the scan's first and last slices close the skin
+    for k in range(nz):
+        u = ndimage.zoom(v[k], up, order=3, mode="nearest", grid_mode=True) if up > 1 else v[k]
+        b = u > hu
+        if not b.any():
+            S[k + 1] = -CL; continue
+        d = (ndimage.distance_transform_edt(b) - ndimage.distance_transform_edt(~b)) * h
+        d -= np.sign(d) * 0.5 * h                                     # (the outline between the pixels)
+        gy, gx = np.gradient(u, h)
+        g = np.hypot(gy, gx)
+        lin = (u - hu) / np.maximum(g, 50.0)                          # where it crosses hu, from the grey values
+        near = np.abs(d) <= 1.5 * h
+        d[near] = np.clip(lin[near], -1.5 * h, 1.5 * h)
+        S[k + 1] = np.clip(d, -CL, CL)
+    V, F, nv = [], [], 0
+    sig = (0, 0.6, 0.6)
+    K = 6
+    for a in range(0, nz + 1, K):
+        b = min(nz + 1, a + K)
+        planes = []
+        for i in range(a, b):
+            p0, p1, p2, p3 = (S[max(0, i - 1)].astype(np.float32), S[i].astype(np.float32), S[i + 1].astype(np.float32), S[min(nz + 1, i + 2)].astype(np.float32))
+            for j in range(zf):
+                t = j / zf
+                planes.append(0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3))
+        planes.append(S[b].astype(np.float32))
+        c = np.stack(planes)
+        del planes
+        c = ndimage.gaussian_filter(c, sig)
+        if c.max() <= 0 or c.min() >= 0:
+            continue
+        vv, ff, _, _ = measure.marching_cubes(c, 0.0, allow_degenerate=False)
+        vv[:, 0] += a * zf
+        F.append(ff + nv); V.append(vv); nv += len(vv)
+        del c
+    del S
+    V = np.concatenate(V); F = np.concatenate(F)
+    q = np.round(V * 64).astype(np.int64)                            # the planes two pieces share: the same vertices
+    key = (q[:, 0] << 42) | (q[:, 1] << 21) | q[:, 2]                 # (MC puts them on the grid's edges: 1/64 tells them apart)
+    del q
+    _, first, inv = np.unique(key, return_index=True, return_inverse=True)
+    del key
+    V = V[first]; F = inv.reshape(-1)[F]
+    F = F[(F[:, 0] != F[:, 1]) & (F[:, 1] != F[:, 2]) & (F[:, 0] != F[:, 2])]
+    V[:, 0] = V[:, 0] / zf - 1.0
+    V[:, 1:] = (V[:, 1:] + 0.5) / up - 0.5
+    return V, F, zf, h
+
+
 def skin_shell(ct, hu, spacing_mm, log):
     """The body's outline in the CT (above body_hu, the largest piece, holes filled): points on its surface, every
     spacing_mm, and a light surface mesh to draw. Points on the top and bottom cut of the scan are fixed: the body goes on."""
@@ -784,6 +891,10 @@ def skin_shell(ct, hu, spacing_mm, log):
         strip_pad(v, vsp, hu, log)                                    # and its surface lying against the back
     except Exception as e:
         log("Skin: the table pad's surface could not be looked for (%s)." % e)
+    try:
+        open_clefts(v, vsp, hu, log)                                  # folds whose skins touch stay open
+    except Exception as e:
+        log("Skin: the folds could not be looked into (%s)." % e)
     body = v > hu
     lab, n = ndimage.label(body)
     body = lab == (1 + int(np.argmax(ndimage.sum(body, lab, range(1, n + 1)))))
@@ -806,33 +917,44 @@ def skin_shell(ct, hu, spacing_mm, log):
         v[k][inner] = np.maximum(v[k][inner], 400.0)                 # deep inside: body
         v[k][~near] = -1000.0                                        # whatever is apart from the body is air
     del body
-    # thick slices: the CT interpolated between them (cubic) to about the in-plane size, so where a fold opens or closes
-    # from one slice to the next the surface bends smoothly instead of tearing into a ledge
-    scale = step.astype(float)
-    zf = min(2, int(round(vsp[0] / min(vsp[1], vsp[2]))))            # (at most twice: the memory)
-    if zf >= 2 and v.shape[0] > 3:
-        nz2 = (v.shape[0] - 1) * zf + 1
-        v = ndimage.zoom(v, (nz2 / v.shape[0], 1, 1), order=3, mode="nearest", grid_mode=False)
-        np.clip(v, -1000.0, 400.0, out=v)
-        vsp = vsp.copy(); vsp[0] /= zf; scale[0] /= zf
-    v = np.pad(v, 1, constant_values=-1000.0)                        # the scan's first and last slices close the skin
-    v = ndimage.gaussian_filter(v, np.clip(0.7 / vsp, 0.3, 0.6))     # a touch: the noise, not the detail
-    verts, faces, nrm, _ = measure.marching_cubes(v, float(hu), allow_degenerate=False)
+    # The surface, finer where it matters: outlines to a fraction of a pixel, morphing from slice to slice, the mesh then
+    # lightened by how far it strays from that surface (quadrics): triangles stay small where the body is detailed (folds,
+    # face, hands) and grow where it is flat (back, belly)
+    V, faces, zf, hfine = skin_surface_fine(v, vsp, hu, log)
     del v
-    verts = verts - 1.0
-    ijk = (verts * scale + np.array([z0, y0, x0], float) + (step - 1) / 2.0)[:, ::-1]
+    nfine = len(faces)
+    import trimesh
+    ijk = (V * step + np.array([z0, y0, x0], float) + (step - 1) / 2.0)[:, ::-1]
     d = np.array(ct.GetDirection(), float).reshape(3, 3)
     lps = np.array(ct.GetOrigin(), float) + (ijk * np.array(ct.GetSpacing(), float)) @ d.T
     pts = np.column_stack([lps[:, 0], lps[:, 2], -lps[:, 1]]) / 1000.0
-    # outward normals (the field's descent, from the body to the air), in the same frame
-    g = (nrm / vsp)[:, ::-1] @ d.T
-    nr = np.column_stack([g[:, 0], g[:, 2], -g[:, 1]])
-    nr /= np.maximum(1e-9, np.linalg.norm(nr, axis=1))[:, None]
-    if float(np.mean(np.sum((pts - pts.mean(axis=0)) * nr, axis=1))) < 0:
+    del V, ijk, lps
+    try:
+        import fast_simplification
+        if len(faces) > SKIN_FACES:
+            p2, f2 = fast_simplification.simplify(pts.astype(np.float32), faces.astype(np.int64), target_reduction=1.0 - SKIN_FACES / float(len(faces)), agg=7)
+            pts, faces = np.asarray(p2, float), np.asarray(f2)
+    except Exception as e:
+        log("Skin: not lightened by error (%s), evenly instead." % e)
+        mesh = trimesh.Trimesh(pts, faces, process=False)
+        mesh = mesh.simplify_quadric_decimation(face_count=SKIN_FACES)
+        pts, faces = np.asarray(mesh.vertices), np.asarray(mesh.faces)
+    mesh = trimesh.Trimesh(pts, faces, process=True)
+    parts = mesh.split(only_watertight=False)                        # one skin: crumbs left by the folds go
+    if len(parts) > 1:
+        mesh = max(parts, key=lambda m: len(m.faces))
+    try:                                                             # 2 light passes that keep the volume (Taubin): the last ripple
+        trimesh.smoothing.filter_taubin(mesh, lamb=0.5, nu=-0.53, iterations=2)
+    except Exception:
+        pass
+    trimesh.repair.fix_normals(mesh)
+    P = np.asarray(mesh.vertices)
+    nr = np.asarray(mesh.vertex_normals)
+    if float(np.mean(np.sum((P - P.mean(axis=0)) * nr, axis=1))) < 0:
         nr = -nr
     # points every spacing_mm on the surface (a grid of cells, the point nearest each cell's centre)
     cell = spacing_mm / 1000.0
-    keys = np.floor(pts / cell).astype(np.int64)
+    keys = np.floor(P / cell).astype(np.int64)
     order = np.lexsort(keys.T)
     seen, idx = set(), []
     for i in order:
@@ -843,32 +965,23 @@ def skin_shell(ct, hu, spacing_mm, log):
     # the skin's metaballs lie inside the skin: each touches the outline from inside at its point (centre = point - normal
     # x radius); neighbours overlap (radius 0.6 x spacing), so their iso-surface follows the outline and nothing sits outside
     rad = 0.6 * spacing_mm / 1000.0
-    shell = pts[idx] - nr[idx] * rad
+    shell = P[idx] - nr[idx] * rad
     shell_n = nr[idx]
-    zmin, zmax = (verts[:, 0].min(), verts[:, 0].max())
-    cut = [bool(verts[i, 0] <= zmin + 1.5 or verts[i, 0] >= zmax - 1.5) for i in idx]
-    # the mesh to draw: lighter
-    import trimesh
-    mesh = trimesh.Trimesh(pts, faces, process=True)
-    try:
-        if len(mesh.faces) > SKIN_FACES:
-            mesh = mesh.simplify_quadric_decimation(face_count=SKIN_FACES)
-    except Exception:
-        pass
-    try:                                                             # 2 light passes that keep the volume (Taubin): the last ripple
-        trimesh.smoothing.filter_taubin(mesh, lamb=0.5, nu=-0.53, iterations=2)
-    except Exception:
-        pass
-    trimesh.repair.fix_normals(mesh)
-    # laid flat for painting (the hair maps): one piece, seam down the back; without it the skin is kept as it is
-    verts_out, faces_out, uvs = np.asarray(mesh.vertices), np.asarray(mesh.faces), None
+    # on the top and bottom cut of the scan: within half a slice of the first or last one (along the scan's axis)
+    ax = np.array(ct.GetDirection(), float).reshape(3, 3)[:, 2]
+    axv = np.array([ax[0], ax[2], -ax[1]])
+    t = P @ axv
+    lo, hi = float(t.min()), float(t.max())
+    tol = 0.75 * float(ct.GetSpacing()[2]) * step[0] / 1000.0
+    cut = [bool(t[i] <= lo + tol or t[i] >= hi - tol) for i in idx]
+    verts_out, faces_out, uvs = P, np.asarray(mesh.faces), None
     try:
         verts_out, faces_out, uvs, _o = skin_unwrap(verts_out, faces_out, log)
     except Exception as e:
         log("Skin: not unwrapped for painting (%s): the hair maps cannot be painted on this case." % e)
-        verts_out, faces_out, uvs = np.asarray(mesh.vertices), np.asarray(mesh.faces), None
-    log("Skin: the body's outline (CT above %g HU, sampled every %s mm), %d triangles; %d points every %g mm, %d of them on the cut of the scan (fixed)." % (
-        hu, "x".join("%.1f" % v for v in vsp[::-1]), len(mesh.faces), len(shell), spacing_mm, sum(cut)))
+        verts_out, faces_out, uvs = P, np.asarray(mesh.faces), None
+    log("Skin: the body's outline (CT above %g HU), traced every %.2f x %.2f x %.2f mm (slices morphed into each other), %d triangles lightened to %d where it is flat; %d points every %g mm, %d of them on the cut of the scan (fixed)." % (
+        hu, hfine, hfine, vsp[0] / zf, nfine, len(mesh.faces), len(shell), spacing_mm, sum(cut)))
     area = float(mesh.area)                                          # m2 (the scan's part of the body)
     return {"points": [[round(float(v), 4) for v in q] for q in shell], "normals": [[round(float(v), 3) for v in q] for q in shell_n], "fixed": cut, "radius": round(rad, 4), "area_m2": round(area, 4),
             "mesh": dict({"positions": [round(float(v), 4) for v in np.asarray(verts_out).ravel()], "faces": np.asarray(faces_out).astype(int).ravel().tolist()},
