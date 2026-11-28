@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 97 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 98 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2933,7 +2933,37 @@ function render(ctx) {
     L.geometry.attributes.position.needsUpdate = true;
   }
   function hairCaseKey() { return FILES.shown ? caseName(FILES.shown.userData.file || '').replace(/^.*[\\/]/, '') || 'case' : 'case'; }
-  function hairGeo() { var m = SKINLOOK.mesh; return m && m.geometry && m.geometry.attributes.uv ? m.geometry : null; }
+  function hairGeo() { var m = SKINLOOK.mesh; return m && m.geometry && m.geometry.index ? m.geometry : null; }
+  // the skin laid flat: the Soft body model's own layout (uv) when it has one, else one made here, around the body:
+  // each point by its angle round the body's long axis (the back, towards the spine, at both sides; the front in the
+  // middle; the patient's right on the left) and its height (the head up), at the same scale both ways
+  function hairLayout(g) {
+    var n = g.attributes.position.count;
+    if (g.userData.hairL && g.userData.hairL.n === n && g.userData.hairL.has === !!g.attributes.uv) return g.userData.hairL;
+    var L = { n: n, has: !!g.attributes.uv, cyl: null, uv: null };
+    if (g.attributes.uv) L.uv = g.attributes.uv.array;
+    else {
+      var p = (g.attributes.esRest || g.attributes.position).array, cx = 0, cz = 0, y0 = Infinity, y1 = -Infinity, i;
+      for (i = 0; i < n; i++) { cx += p[3 * i]; cz += p[3 * i + 2]; if (p[3 * i + 1] < y0) y0 = p[3 * i + 1]; if (p[3 * i + 1] > y1) y1 = p[3 * i + 1]; }
+      cx /= n; cz /= n;
+      var bx = 0, bz = -1, sx = 0, sz = 0, sn = 0;               // the back: where the spine is
+      if (PARTS && PARTS.list) PARTS.list.forEach(function (pt) {
+        if (!/vertebra|sacrum|spinal/i.test(pt.name || '') || !pt.mesh || !pt.mesh.geometry) return;
+        var a = (pt.mesh.geometry.attributes.esRest || pt.mesh.geometry.attributes.position).array;
+        for (var j = 0; j + 2 < a.length; j += 30) { sx += a[j]; sz += a[j + 2]; sn++; }
+      });
+      if (sn) { var dbx = sx / sn - cx, dbz = sz / sn - cz, bl = Math.sqrt(dbx * dbx + dbz * dbz); if (bl > 1e-6) { bx = dbx / bl; bz = dbz / bl; } }
+      var r = 0, rc = 0; for (i = 0; i < n; i += 7) { r += Math.sqrt((p[3 * i] - cx) * (p[3 * i] - cx) + (p[3 * i + 2] - cz) * (p[3 * i + 2] - cz)); rc++; } r /= rc || 1;
+      var C = 2 * Math.PI * r, H = y1 - y0, s = 0.96 / Math.max(C, H, 1e-9), ym = (y0 + y1) / 2, flip = false;
+      var uRaw = function (x, z) { var dx = x - cx, dz = z - cz, th = Math.atan2(bx * dz - bz * dx, bx * dx + bz * dz); if (th < 0) th += 2 * Math.PI; return th / (2 * Math.PI); };
+      flip = uRaw(cx + 1, cz) < 0.5;                        // (+x, the patient's left, to the right of the middle)
+      L.cyl = { uOf: function (x, y, z) { var u = uRaw(x, z); if (flip) u = 1 - u; return [0.5 + (u - 0.5) * C * s, 0.5 + (y - ym) * s]; }, span: C * s };
+      L.uv = new Float32Array(2 * n);
+      for (i = 0; i < n; i++) { var q = L.cyl.uOf(p[3 * i], p[3 * i + 1], p[3 * i + 2]); L.uv[2 * i] = q[0]; L.uv[2 * i + 1] = q[1]; }
+    }
+    g.userData.hairL = L;
+    return L;
+  }
   function hairBlank(kind) {
     var c = document.createElement('canvas'); c.width = c.height = HAIR.S;
     var g = c.getContext('2d'); g.fillStyle = kind === 'len' ? '#808080' : kind === 'op' ? '#fff' : HAIR.col; g.fillRect(0, 0, HAIR.S, HAIR.S);
@@ -2982,8 +3012,9 @@ function render(ctx) {
     if (!mesh || !g || !HAIR.on || !HAIR.maps) return;
     if (!g.attributes.normal) g.computeVertexNormals();
     // (a skin made before it could be laid flat has no uv: its hair is even, as the maps' middle says)
-    var pos = (g.attributes.esRest || g.attributes.position).array, nrm = g.attributes.normal.array, uv = g.attributes.uv ? g.attributes.uv.array : null, idx = g.index ? g.index.array : null;
-    if (!idx) return;
+    if (!g.index) return;
+    var LY = hairLayout(g);
+    var pos = (g.attributes.esRest || g.attributes.position).array, nrm = g.attributes.normal.array, uv = LY.uv, idx = g.index.array;
     // the skin's unit: metres (a body is about 1 m across), else millimetres
     if (!g.boundingSphere) g.computeBoundingSphere();
     var U = g.boundingSphere && g.boundingSphere.radius > 20 ? 1000 : 1;
@@ -3036,17 +3067,16 @@ function render(ctx) {
       var fi = C.fl[lo], ia = idx[3 * fi], ib = idx[3 * fi + 1], ic = idx[3 * fi + 2];
       if (r1 + r2 > 1) { r1 = 1 - r1; r2 = 1 - r2; }
       var w0 = 1 - r1 - r2;
-      var k = mid0;
-      if (uv) {
-        var u = w0 * uv[2 * ia] + r1 * uv[2 * ib] + r2 * uv[2 * ic], v = w0 * uv[2 * ia + 1] + r1 * uv[2 * ib + 1] + r2 * uv[2 * ic + 1];
-        var px = Math.min(S - 1, Math.max(0, Math.floor(u * S))), py = Math.min(S - 1, Math.max(0, Math.floor((1 - v) * S)));
-        k = 4 * (py * S + px);
-      }
+      var x = w0 * pos[3 * ia] + r1 * pos[3 * ib] + r2 * pos[3 * ic], y = w0 * pos[3 * ia + 1] + r1 * pos[3 * ib + 1] + r2 * pos[3 * ic + 1], z = w0 * pos[3 * ia + 2] + r1 * pos[3 * ib + 2] + r2 * pos[3 * ic + 2];
+      var k = mid0, u, v;
+      if (LY.cyl) { var cu = LY.cyl.uOf(x, y, z); u = cu[0]; v = cu[1]; }   // (by the point itself: no seam to cross)
+      else { u = w0 * uv[2 * ia] + r1 * uv[2 * ib] + r2 * uv[2 * ic]; v = w0 * uv[2 * ia + 1] + r1 * uv[2 * ib + 1] + r2 * uv[2 * ic + 1]; }
+      var px = Math.min(S - 1, Math.max(0, Math.floor(u * S))), py = Math.min(S - 1, Math.max(0, Math.floor((1 - v) * S)));
+      k = 4 * (py * S + px);
       var len = Lp[k] / 255, op = Op[k] / 255;
       if (len < 0.01 || op < 0.01) continue;
       len *= L0 * (1 - HAIR.rand * rl);
       if (len < 0.0002 * U) continue;
-      var x = w0 * pos[3 * ia] + r1 * pos[3 * ib] + r2 * pos[3 * ic], y = w0 * pos[3 * ia + 1] + r1 * pos[3 * ib + 1] + r2 * pos[3 * ic + 1], z = w0 * pos[3 * ia + 2] + r1 * pos[3 * ib + 2] + r2 * pos[3 * ic + 2];
       var nx = w0 * nrm[3 * ia] + r1 * nrm[3 * ib] + r2 * nrm[3 * ic], ny = w0 * nrm[3 * ia + 1] + r1 * nrm[3 * ib + 1] + r2 * nrm[3 * ic + 1], nz = w0 * nrm[3 * ia + 2] + r1 * nrm[3 * ib + 2] + r2 * nrm[3 * ic + 2];
       var nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1; nx /= nl; ny /= nl; nz /= nl;
       // towards the feet along the skin (the model's -y, less what goes into the skin); where the skin faces up or
@@ -3123,7 +3153,7 @@ function render(ctx) {
       + '<label class="hr-s hr-colw" title="The colour painted"><span>Colour</span><input type="color" class="hr-cin" style="width:36px;height:18px;padding:0;border:1px solid #2a303b;background:none"></label>'
       + '<label style="display:flex;gap:5px;align-items:center" title="Paint on the skin in the 3D view too (a drag on the skin paints; beside it, the view turns as usual)"><input type="checkbox" class="hr-3d" style="margin:0;accent-color:#7b8cff">Paint on the 3D model</label></div>'
       + '<div class="hr-c"><canvas class="hr-cv"></canvas><div class="hr-msg" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:20px;opacity:.85"></div></div>'
-      + '<div class="hr-row" style="padding:4px 10px 8px;opacity:.7"><span style="flex:1">The skin laid flat: the head at the top, the front in the middle, the back seam at both sides, the legs at the bottom. Wheel: zoom · right-drag: move · [ ]: brush size</span><button class="hr-b hr-fit">Fit</button></div>';
+      + '<div class="hr-row" style="padding:4px 10px 8px;opacity:.7"><span class="hr-ft" style="flex:1">The skin laid flat: the head at the top, the front in the middle, the back seam at both sides, the legs at the bottom. Wheel: zoom · right-drag: move · [ ]: brush size</span><button class="hr-b hr-fit">Fit</button></div>';
     ui.appendChild(p);
     ['pointerdown', 'mousedown', 'touchstart', 'wheel', 'keydown', 'contextmenu'].forEach(function (ev) { p.addEventListener(ev, function (e) { e.stopPropagation(); }, { passive: ev !== 'wheel' && ev !== 'contextmenu' }); });
     var q = function (s) { return p.querySelector(s); };
@@ -3194,7 +3224,9 @@ function render(ctx) {
     var msg = p.querySelector('.hr-msg');
     var g = hairGeo();
     msg.style.display = g ? 'none' : 'flex';
-    msg.innerHTML = SKINLOOK.mesh ? 'This skin was made before it could be laid flat for painting.<br>Run the flow again: the new skin comes laid flat, and its hair maps can be painted here.' : 'No skin yet: the hair grows on the skin, which the run makes last.';
+    msg.innerHTML = 'No skin yet: the hair grows on the skin, which the run makes last.';
+    var ft = p.querySelector('.hr-ft');
+    if (ft) ft.textContent = (g && hairLayout(g).cyl ? 'The skin laid flat around the body (made here: run the flow again for the exact layout, which keeps sizes true): ' : 'The skin laid flat: ') + 'the head at the top, the front in the middle, the back at both sides, the legs at the bottom. Wheel: zoom · right-drag: move · [ ]: brush size';
   }
   function hairCanvasXY(e) { var r = HAIR.panel.querySelector('.hr-cv').getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
   function hairMapAt(e) { var c = hairCanvasXY(e), V = HAIR.view; return { x: (c.x - V.ox) / V.z, y: (c.y - V.oy) / V.z }; }
@@ -3203,7 +3235,7 @@ function render(ctx) {
     var g = hairGeo(), cv = HAIR.panel && HAIR.panel.querySelector('.hr-cv'); if (!cv) return;
     var W = cv.clientWidth || 600, H = cv.clientHeight || 400, u0 = 0, u1 = 1, v0 = 0, v1 = 1;
     if (g) {
-      var uv = g.attributes.uv.array; u0 = v0 = 1; u1 = v1 = 0;
+      var uv = hairLayout(g).uv; u0 = v0 = 1; u1 = v1 = 0;
       for (var i = 0; i < uv.length; i += 2) if (uv[i] >= 0) { if (uv[i] < u0) u0 = uv[i]; if (uv[i] > u1) u1 = uv[i]; if (uv[i + 1] < v0) v0 = uv[i + 1]; if (uv[i + 1] > v1) v1 = uv[i + 1]; }
     }
     var S = HAIR.S, x0 = u0 * S, x1 = u1 * S, y0 = (1 - v1) * S, y1 = (1 - v0) * S;
@@ -3215,11 +3247,12 @@ function render(ctx) {
     var g = hairGeo(); if (!g) return null;
     if (HAIR.wire && HAIR.wireKey === g.uuid) return HAIR.wire;
     var S2 = 2048, c = document.createElement('canvas'); c.width = c.height = S2;
-    var x = c.getContext('2d'), uv = g.attributes.uv.array, idx = g.index.array;
+    var LY = hairLayout(g), x = c.getContext('2d'), uv = LY.uv, idx = g.index.array, wrap = LY.cyl ? 0.3 * LY.cyl.span : 9;
     x.strokeStyle = 'rgba(140,170,255,0.55)'; x.lineWidth = 0.5; x.beginPath();
     for (var f = 0; f < idx.length; f += 3) {
       var a = idx[f], b = idx[f + 1], cc = idx[f + 2];
       if (uv[2 * a] < 0 || uv[2 * b] < 0 || uv[2 * cc] < 0) continue;
+      if (Math.max(uv[2 * a], uv[2 * b], uv[2 * cc]) - Math.min(uv[2 * a], uv[2 * b], uv[2 * cc]) > wrap) continue;   // (across the back seam)
       x.moveTo(uv[2 * a] * S2, (1 - uv[2 * a + 1]) * S2); x.lineTo(uv[2 * b] * S2, (1 - uv[2 * b + 1]) * S2); x.lineTo(uv[2 * cc] * S2, (1 - uv[2 * cc + 1]) * S2); x.closePath();
     }
     x.stroke();
@@ -3281,9 +3314,10 @@ function render(ctx) {
     for (var h = 0; h < hits.length; h++) {
       if (PARTS && PARTS.axis !== 'off' && PARTS.plane.distanceToPoint(hits[h].point) < 0) continue;   // (cut away)
       var f = hits[h].face; if (!f) continue;
-      var uv = g.attributes.uv.array, pa = g.attributes.position;
+      var LY = hairLayout(g), uv = LY.uv, pa = g.attributes.position;
       if (uv[2 * f.a] < 0 || uv[2 * f.b] < 0 || uv[2 * f.c] < 0) return null;
       var lp = mesh.worldToLocal(hits[h].point.clone());
+      if (LY.cyl) { var cq = LY.cyl.uOf(lp.x, lp.y, lp.z); return { x: cq[0] * HAIR.S, y: (1 - cq[1]) * HAIR.S }; }
       hrA.fromBufferAttribute(pa, f.a); hrB.fromBufferAttribute(pa, f.b); hrC.fromBufferAttribute(pa, f.c);
       hrTri.set(hrA, hrB, hrC); hrTri.getBarycoord(lp, hrBar);
       var u = hrBar.x * uv[2 * f.a] + hrBar.y * uv[2 * f.b] + hrBar.z * uv[2 * f.c], v = hrBar.x * uv[2 * f.a + 1] + hrBar.y * uv[2 * f.b + 1] + hrBar.z * uv[2 * f.c + 1];
