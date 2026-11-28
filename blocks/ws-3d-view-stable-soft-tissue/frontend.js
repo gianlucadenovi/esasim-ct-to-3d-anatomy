@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 107 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 108 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -3145,7 +3145,7 @@ function render(ctx) {
     var p = HAIR.panel = document.createElement('div');
     p.style.cssText = 'position:absolute;left:256px;top:64px;width:640px;max-width:calc(100% - 270px);height:560px;max-height:calc(100% - 80px);display:none;flex-direction:column;background:rgba(10,14,22,.9);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.08);border-radius:10px;pointer-events:auto;overflow:hidden;font-size:11.5px;resize:both';
     var sl = function (k, label, min, max, step, tip) { return '<label class="hr-s" title="' + esc(tip || '') + '"><span>' + esc(label) + '</span><input type="range" data-hs="' + k + '" min="' + min + '" max="' + max + '" step="' + step + '"><b data-hv="' + k + '"></b></label>'; };
-    p.innerHTML = '<style>.hr-b{all:unset;cursor:pointer;padding:1px 7px;border:1px solid #2a303b;border-radius:6px;white-space:nowrap}.hr-b:hover{border-color:#7b8cff}.hr-b.on{background:#2f4ae0;border-color:#2f4ae0}.hr-tab{display:flex;align-items:center;gap:6px;padding:3px 8px 3px 3px;border-width:2px}.hr-tab canvas{width:56px;height:34px;border-radius:3px;background:#000}'
+    p.innerHTML = '<style>.hr-b{all:unset;cursor:pointer;padding:1px 7px;border:1px solid #2a303b;border-radius:6px;white-space:nowrap}.hr-b:hover{border-color:#7b8cff}.hr-b.on{background:#2f4ae0;border-color:#2f4ae0}'
       + '.hr-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:3px 10px}.hr-s{display:flex;align-items:center;gap:5px}.hr-s span{opacity:.85}.hr-s input{width:84px;accent-color:#7b8cff}.hr-s b{font-weight:400;opacity:.8;min-width:30px;font-variant-numeric:tabular-nums}'
       + '.hr-c{flex:1;min-height:0;position:relative;margin:0 10px;border:1px solid #2a303b;border-radius:0 6px 6px 6px;overflow:hidden;background:#05070b}.hr-c canvas{position:absolute;left:0;top:0;width:100%;height:100%;touch-action:none}'
       + '.hr-tabs{display:flex;align-items:flex-end;gap:3px;margin:6px 10px 0;position:relative;z-index:1}'
@@ -3185,8 +3185,9 @@ function render(ctx) {
     });
     p.querySelectorAll('[data-hl]').forEach(function (b) { b.onclick = function () { HAIR.layer = b.getAttribute('data-hl'); hairPanelSync(); hairDraw(); }; });
     p.querySelectorAll('[data-ht]').forEach(function (b) { b.onclick = function () { HAIR.tool = b.getAttribute('data-ht'); hairPanelSync(); }; });
-    q('.hr-vin').addEventListener('input', function () { HAIR.val = +this.value; q('.hr-vv').textContent = Math.round(HAIR.val * 100) + '%'; });
-    q('.hr-cin').addEventListener('input', function () { HAIR.paintCol = this.value; });
+    q('.hr-vin').addEventListener('input', function () { HAIR.val = +this.value; q('.hr-vv').textContent = Math.round(HAIR.val * 100) + '%'; hairSwatch(); });
+    q('.hr-cin').addEventListener('input', function () { HAIR.paintCol = this.value; hairSwatch(); });
+    q('.hr-swr').onclick = function () { if (HAIR.layer === 'col') q('.hr-cin').click(); else q('.hr-vin').focus(); };
     q('.hr-fill').onclick = function () { hairFill(false); };
     q('.hr-clear').onclick = function () { hairFill(true); };
     q('.hr-undo').onclick = hairUndo;
@@ -3224,6 +3225,16 @@ function render(ctx) {
     cv.addEventListener('pointerleave', function () { HAIR.mouse = null; hairDraw(); });
     if (window.ResizeObserver) new ResizeObserver(function () { hairDraw(); }).observe(q('.hr-c'));
   }
+  // what the brush paints, beside the tabs: its grey (and what it means) or its colour
+  function hairSwatch() {
+    var p = HAIR.panel; if (!p) return;
+    var sw = p.querySelector('.hr-sw'), t = p.querySelector('.hr-swt'); if (!sw || !t) return;
+    var css = hairPaintStyle(); sw.style.background = css;
+    var erase = HAIR.tool === 'erase', v = erase ? 0 : HAIR.val;
+    if (HAIR.layer === 'col') { var c = hairRGB(css); t.textContent = '#' + c.map(function (n) { return ('0' + n.toString(16)).slice(-2); }).join('') + (erase ? ' (default)' : ''); }
+    else if (HAIR.layer === 'len') t.textContent = Math.round(v * 100) + '% · ' + (Math.round(v * HAIR.len * 10) / 10) + ' mm' + (erase ? ' (eraser)' : '');
+    else t.textContent = Math.round(v * 100) + '% ' + (v <= 0 ? 'hidden' : v >= 1 ? 'seen' : 'see-through') + (erase ? ' (eraser)' : '');
+  }
   function hairFmt(k) { var v = HAIR[k]; return k === 'bend' || k === 'rand' || k === 'gloss' ? Math.round(v * 100) + '%' : String(Math.round(v)); }
   function hairPanelSync() {
     var p = HAIR.panel; if (!p) return;
@@ -3237,6 +3248,7 @@ function render(ctx) {
     p.querySelector('.hr-vin').value = HAIR.val; p.querySelector('.hr-vv').textContent = Math.round(HAIR.val * 100) + '%';
     p.querySelector('.hr-cin').value = HAIR.paintCol || HAIR.col;
     p.querySelector('.hr-3d').checked = HAIR.paint3d;
+    hairSwatch();
     var msg = p.querySelector('.hr-msg');
     var g = hairGeo();
     msg.style.display = g ? 'none' : 'flex';
