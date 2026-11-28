@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 99 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 100 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -3057,7 +3057,8 @@ function render(ctx) {
     var Lp = HAIR.maps.len.getContext('2d').getImageData(0, 0, S, S).data, Op = HAIR.maps.op.getContext('2d').getImageData(0, 0, S, S).data, Cp = HAIR.maps.col.getContext('2d').getImageData(0, 0, S, S).data;
     var N = Math.min(500000, Math.round(HAIR.dens * C.tot / (U * U) * 1e4)), rnd = hairRng(1234567), K = 3;
     var mid0 = 4 * ((S >> 1) * S + (S >> 1));                // (no uv: the middle of each map)
-    var P = [], Q = [], TT = [], NN = [], FI = [], FW = [], FR = [], dirs = [], L0 = HAIR.len / 1000 * U, bend = Math.max(0, Math.min(1, HAIR.bend));
+    var NV = N * 2 * K, P = new Float32Array(3 * NV), Q = new Float32Array(4 * NV), TT = new Float32Array(3 * NV), NN = new Float32Array(3 * NV);
+    var FI = new Uint32Array(N), FW = new Float32Array(2 * N), FR = new Float32Array(3 * N), dirs = [], nh = 0, pv = 0, L0 = HAIR.len / 1000 * U, bend = Math.max(0, Math.min(1, HAIR.bend));
     var e0 = (80 - 65 * bend) * Math.PI / 180, e1 = (40 - 37 * bend) * Math.PI / 180;   // how far the root and the tip rise off the skin
     for (var i = 0; i < N; i++) {
       var r0 = rnd(), r1 = rnd(), r2 = rnd(), rl = rnd(), ra = rnd();
@@ -3090,7 +3091,7 @@ function render(ctx) {
       var qx = tx * cp + bx * sp, qy = ty * cp + by * sp, qz = tz * cp + bz * sp;
       var cr = Cp[k] / 255, cg = Cp[k + 1] / 255, cb = Cp[k + 2] / 255;
       var sx = x + nx * 0.0002 * U, sy = y + ny * 0.0002 * U, sz = z + nz * 0.0002 * U, seg = len / K;
-      FI.push(fi); FW.push(r1, r2); FR.push(x, y, z);
+      FI[nh] = fi; FW[2 * nh] = r1; FW[2 * nh + 1] = r2; FR[3 * nh] = x; FR[3 * nh + 1] = y; FR[3 * nh + 2] = z; nh++;
       for (var s = 0; s < K; s++) {
         var fr = (s + 0.5) / K, e = e0 + (e1 - e0) * fr, ce = Math.cos(e), se = Math.sin(e);
         dirs[3 * s] = nx * se + qx * ce; dirs[3 * s + 1] = ny * se + qy * ce; dirs[3 * s + 2] = nz * se + qz * ce;
@@ -3098,29 +3099,31 @@ function render(ctx) {
       for (s = 0; s < K; s++) {
         var dx = dirs[3 * s], dy = dirs[3 * s + 1], dz = dirs[3 * s + 2];
         var ex = sx + dx * seg, ey = sy + dy * seg, ez = sz + dz * seg;
-        P.push(sx, sy, sz, ex, ey, ez);
+        var o3 = 3 * pv, o4 = 4 * pv;
+        P[o3] = sx; P[o3 + 1] = sy; P[o3 + 2] = sz; P[o3 + 3] = ex; P[o3 + 4] = ey; P[o3 + 5] = ez;
         // the strand's direction, smooth across its bends (the sheen slides along it)
         var p0 = s > 0 ? 3 * (s - 1) : 3 * s, p1 = s < K - 1 ? 3 * (s + 1) : 3 * s;
-        TT.push(dx + dirs[p0], dy + dirs[p0 + 1], dz + dirs[p0 + 2], dx + dirs[p1], dy + dirs[p1 + 1], dz + dirs[p1 + 2]);
-        NN.push(nx, ny, nz, nx, ny, nz);                    // (the skin's normal at the root: its light)
+        TT[o3] = dx + dirs[p0]; TT[o3 + 1] = dy + dirs[p0 + 1]; TT[o3 + 2] = dz + dirs[p0 + 2]; TT[o3 + 3] = dx + dirs[p1]; TT[o3 + 4] = dy + dirs[p1 + 1]; TT[o3 + 5] = dz + dirs[p1 + 2];
+        NN[o3] = NN[o3 + 3] = nx; NN[o3 + 1] = NN[o3 + 4] = ny; NN[o3 + 2] = NN[o3 + 5] = nz;   // (the skin's normal at the root: its light)
         var a0 = 0.85 * op * (1 - 0.45 * s / K), a1 = 0.85 * op * (1 - 0.45 * (s + 1) / K);
-        Q.push(cr, cg, cb, a0, cr, cg, cb, a1);
+        Q[o4] = Q[o4 + 4] = cr; Q[o4 + 1] = Q[o4 + 5] = cg; Q[o4 + 2] = Q[o4 + 6] = cb; Q[o4 + 3] = a0; Q[o4 + 7] = a1;
+        pv += 2;
         sx = ex; sy = ey; sz = ez;
       }
     }
-    if (!P.length) return;
-    var hg = new THREE.BufferGeometry(), PA = new Float32Array(P);
+    if (!nh) return;
+    var hg = new THREE.BufferGeometry(), PA = P.slice(0, 3 * pv);
     hg.setAttribute('position', new THREE.BufferAttribute(PA, 3));
-    hg.setAttribute('hC', new THREE.Float32BufferAttribute(Q, 4));
-    hg.setAttribute('hT', new THREE.Float32BufferAttribute(TT, 3));
-    hg.setAttribute('hN', new THREE.Float32BufferAttribute(NN, 3));
+    hg.setAttribute('hC', new THREE.BufferAttribute(Q.slice(0, 4 * pv), 4));
+    hg.setAttribute('hT', new THREE.BufferAttribute(TT.slice(0, 3 * pv), 3));
+    hg.setAttribute('hN', new THREE.BufferAttribute(NN.slice(0, 3 * pv), 3));
     hg.computeBoundingSphere();
     var hm = new THREE.ShaderMaterial({ vertexShader: HAIR_VS, fragmentShader: HAIR_FS, uniforms: { uGloss: { value: HAIR.gloss } }, transparent: true, depthWrite: false });
     HAIR.lines = new THREE.LineSegments(hg, hm); HAIR.lines.name = 'hair'; HAIR.lines.renderOrder = 6; HAIR.lines.frustumCulled = false;
-    HAIR.fol = { g: g, fi: Uint32Array.from(FI), w: Float32Array.from(FW), root: Float32Array.from(FR), rest: PA.slice(), nv: 2 * K, ver: g.attributes.position.version };
+    HAIR.fol = { g: g, fi: FI.slice(0, nh), w: FW.slice(0, 2 * nh), root: FR.slice(0, 3 * nh), rest: PA.slice(), nv: 2 * K, ver: g.attributes.position.version };
     hairFollow();                                         // (where the skin is now)
     mesh.add(HAIR.lines);                                  // (with the skin: hidden with it, moved with it)
-    if (HAIR.panel) { var n = HAIR.panel.querySelector('.hr-n'); if (n) n.textContent = Math.round(P.length / (6 * K)).toLocaleString() + ' hairs'; }
+    if (HAIR.panel) { var n = HAIR.panel.querySelector('.hr-n'); if (n) n.textContent = nh.toLocaleString() + ' hairs'; }
   }
 
   // ---- the dialog: the settings, the skin laid flat with its wireframe, three maps to paint
