@@ -8,7 +8,7 @@ An [EsaSim](https://esacode.com/) blueprint block: a view that draws in the brow
 
 | | |
 |---|---|
-| Block | `ws-3d-view-stable-soft-tissue` · version 63 |
+| Block | `ws-3d-view-stable-soft-tissue` · version 64 |
 | Workspace | Gianluca De Novi's workspace |
 | Author | Gianluca De Novi |
 
@@ -34,6 +34,7 @@ An [EsaSim](https://esacode.com/) blueprint block: a view that draws in the brow
 | `stage_sun` Stage sun height (degrees) | number | `35` |  |
 | `textures` Tissue textures | bool | `true` | Anatomy: each tissue gets its own surface, computed on the graphics card (liver lobules, muscle fibres, bowel folds, the heart's fat, the lung's air sacs, bone darker in its hollows…). Also a switch in the Parts list |
 | `metaballs` Show the metaballs | bool | `false` | Soft tissue: draw the spheres of the soft-body model moving with the tissue, the anatomy see-through around them. Also a switch in the Parts list |
+| `skin_look` Skin | select | `"See-through"` | Anatomy with a skin: see-through (clear where it faces you, so the organs show) or solid, opaque and in skin colour (use the cut or hide it in the Parts list to see inside). Also a switch in the Parts list |
 | `grid` Show the grid | bool | `true` |  |
 | `trails` Show trajectories | bool | `true` |  |
 | `speed` Playback speed | number | `1` |  |

@@ -134,6 +134,17 @@
             "help": "Soft tissue: draw the spheres of the soft-body model moving with the tissue, the anatomy see-through around them. Also a switch in the Parts list"
         },
         {
+            "key": "skin_look",
+            "label": "Skin",
+            "type": "select",
+            "default": "See-through",
+            "options": [
+                "See-through",
+                "Solid skin colour"
+            ],
+            "help": "Anatomy with a skin: see-through (clear where it faces you, so the organs show) or solid, opaque and in skin colour (use the cut or hide it in the Parts list to see inside). Also a switch in the Parts list"
+        },
+        {
             "key": "grid",
             "label": "Show the grid",
             "type": "bool",
@@ -308,11 +319,11 @@
         }
     ],
     "view": {
-        "w": 12,
-        "h": 12,
+        "w": 6,
+        "h": 7,
         "resize": "both"
     },
     "esasim": {
-        "version": 63
+        "version": 64
     }
 }

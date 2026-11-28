@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 63 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 64 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -19,6 +19,7 @@
 //   stage_sun   number    Stage sun height (degrees) = 35
 //   textures    bool      Tissue textures = true
 //   metaballs   bool      Show the metaballs = false
+//   skin_look   select    Skin = "See-through" of See-through | Solid skin colour
 //   grid        bool      Show the grid = true
 //   trails      bool      Show trajectories = true
 //   speed       number    Playback speed = 1
