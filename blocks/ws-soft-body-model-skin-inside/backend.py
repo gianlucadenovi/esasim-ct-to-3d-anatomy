@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 8 · worker block, Python: def run(ctx)
+# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 9 · worker block, Python: def run(ctx)
 # Turns segmented anatomy into a soft-tissue model the 3D view simulates in real time: organs that sag, sway and push each other under gravity, held by a fixed skeleton and contained by the skin (metaba
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-28
@@ -78,7 +78,7 @@ WALL_GAP_MM = 45.0                                                  # neighbouri
 MIN_ML = 1.0                                                        # soft structures smaller than this are left out
 SKIN_MM = 3.0                                                       # skin thickness (epidermis and dermis), for its mass
 SKIN_DENSITY = 1100.0
-SKIN_FACES = 150000                                                 # triangles of the skin drawn (detail of the body's outline)
+SKIN_FACES = 200000                                                 # triangles of the skin drawn (detail of the body's outline)
 
 
 def run(ctx):
@@ -324,20 +324,40 @@ def skin_shell(ct, hu, spacing_mm, log):
     body = v > hu
     lab, n = ndimage.label(body)
     body = lab == (1 + int(np.argmax(ndimage.sum(body, lab, range(1, n + 1)))))
-    del lab
+    # Air inside the body (lungs, bowel) is body; air that reaches the air around the body, in 3D, stays air however deep
+    # it goes into a fold (between the labia, the buttocks, thighs that touch), even where a slice encloses it
+    air = ~body
+    lab, n = ndimage.label(air)
+    edge = np.unique(np.concatenate([lab[:, 0, :].ravel(), lab[:, -1, :].ravel(), lab[:, :, 0].ravel(), lab[:, :, -1].ravel()]))
+    outside = np.isin(lab, edge[edge > 0])
+    inside_air = air & ~outside
+    del lab, air
+    ring = ndimage.binary_dilation(inside_air, iterations=1) & ~outside
+    v[ring] = np.maximum(v[ring], 400.0)                             # enclosed air (and its rim) is body
+    body |= inside_air
+    del ring, inside_air, outside
     r_in = max(1, int(round(4.0 / vsp[1:].min())))
     for k in range(body.shape[0]):
-        filled = ndimage.binary_fill_holes(body[k])
-        inner = ndimage.binary_erosion(filled, iterations=r_in)
-        near = ndimage.binary_dilation(filled, iterations=r_in)
-        v[k][inner] = np.maximum(v[k][inner], 400.0)                 # air inside the body is body
+        inner = ndimage.binary_erosion(body[k], iterations=r_in)
+        near = ndimage.binary_dilation(body[k], iterations=r_in)
+        v[k][inner] = np.maximum(v[k][inner], 400.0)                 # deep inside: body
         v[k][~near] = -1000.0                                        # whatever is apart from the body is air
+    del body
+    # thick slices: the CT interpolated between them (cubic) to about the in-plane size, so where a fold opens or closes
+    # from one slice to the next the surface bends smoothly instead of tearing into a ledge
+    scale = step.astype(float)
+    zf = int(round(vsp[0] / min(vsp[1], vsp[2])))
+    if zf >= 2 and v.shape[0] > 3:
+        nz2 = (v.shape[0] - 1) * zf + 1
+        v = ndimage.zoom(v, (nz2 / v.shape[0], 1, 1), order=3, mode="nearest", grid_mode=False)
+        np.clip(v, -1000.0, 400.0, out=v)
+        vsp = vsp.copy(); vsp[0] /= zf; scale[0] /= zf
     v = np.pad(v, 1, constant_values=-1000.0)                        # the scan's first and last slices close the skin
     v = ndimage.gaussian_filter(v, np.clip(0.7 / vsp, 0.3, 0.6))     # a touch: the noise, not the detail
     verts, faces, nrm, _ = measure.marching_cubes(v, float(hu), allow_degenerate=False)
     del v
     verts = verts - 1.0
-    ijk = (verts * step + np.array([z0, y0, x0], float) + (step - 1) / 2.0)[:, ::-1]
+    ijk = (verts * scale + np.array([z0, y0, x0], float) + (step - 1) / 2.0)[:, ::-1]
     d = np.array(ct.GetDirection(), float).reshape(3, 3)
     lps = np.array(ct.GetOrigin(), float) + (ijk * np.array(ct.GetSpacing(), float)) @ d.T
     pts = np.column_stack([lps[:, 0], lps[:, 2], -lps[:, 1]]) / 1000.0
