@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 127 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 128 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2932,6 +2932,7 @@ function render(ctx) {
   function skinPaintUpd() {
     var g = hairGeo(), c = HAIR.maps && HAIR.maps.skin;
     if (!g || !c) { SKPAINT.on.value = 0; return; }
+    if (!g.attributes.uv && HAIR.pending) return;          // (the layout made here needs the anatomy in place: with the hair)
     if (!g.attributes.esUv) g.setAttribute('esUv', new THREE.BufferAttribute(Float32Array.from(hairLayout(g).uv), 2));
     if (!SKPAINT.tex || SKPAINT.tex.image !== c) {
       if (SKPAINT.tex) SKPAINT.tex.dispose();
@@ -3078,7 +3079,6 @@ function render(ctx) {
     // triangles are not yet the ones drawn)
     HAIR.pending = false;
     hairMapsFor(hairCaseKey(), function () { HAIR.pending = true; skinPaintUpd(); });
-    skinPaintUpd();
   }
   function hairSave() {
     clearTimeout(HAIR.saveT);
@@ -13676,7 +13676,7 @@ function render(ctx) {
     if (mode === 'car' && CR_TEL) return;   // the telemetry window draws only its charts
     if (mode === 'humanoid' && HM_TEL) return;   // the telemetry window draws only its charts
     if (HAIR.pending && SKINLOOK.mesh && SKINLOOK.mesh.parent && SKINLOOK.mesh.parent.parent) {   // the skin's hair, now that it is in place
-      HAIR.pending = false; HAIR.cache = null; hairBuild();
+      HAIR.pending = false; HAIR.cache = null; hairBuild(); skinPaintUpd();
       if (HAIR.panel && HAIR.panel.style.display !== 'none') { hairFit(); hairDraw(); hairPanelSync(); }
     }
     if (HAIR.lines && HAIR.fol && SKINLOOK.mesh) {        // the hair goes wherever the skin is drawn now
