@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 75 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 76 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -694,9 +694,12 @@ function render(ctx) {
   // centred where there is no floor. They sit in one group, turned around its centre when the 3D mouse moves the model.
   var FILES = { all: [], sel: (ctx.state || {}).model || '', root: null, seq: 0 };
   var mdlSel = document.createElement('select');
-  mdlSel.title = 'The model shown';
-  mdlSel.style.cssText = 'display:none;margin:2px 0 4px;max-width:260px;background:#1b2029;color:#e8ecf2;border:1px solid #2a303b;border-radius:6px;font:inherit;font-size:12px;pointer-events:auto';
-  $('.hud').insertBefore(mdlSel, $('.rows'));
+  mdlSel.title = 'Which one to show: each case (each series loaded) is a model of its own';
+  mdlSel.style.cssText = 'margin:0;max-width:260px;background:#1b2029;color:#e8ecf2;border:1px solid #7b8cff;border-radius:6px;font:inherit;font-size:12px;font-weight:600;pointer-events:auto';
+  var mdlBox = document.createElement('label');                  // "Show" and the list, above the model's name
+  mdlBox.style.cssText = 'display:none;align-items:center;gap:6px;margin:2px 0 4px;font-size:12px;pointer-events:auto';
+  mdlBox.innerHTML = '<span style="opacity:.8">Show</span>'; mdlBox.appendChild(mdlSel);
+  $('.hud').insertBefore(mdlBox, $('.rows'));
   mdlSel.addEventListener('change', function () { FILES.sel = mdlSel.value; keepView(true); loadFiles(FILES.all); if (LINK.on) ctx.peer('model-pick', { name: FILES.sel }); });
   // Linked views (Link views), with 3D files: the view being moved sends its camera to the other views on the page,
   // which follow; in units of the model's size from its centre, so a view that scales or places the model otherwise
@@ -731,8 +734,10 @@ function render(ctx) {
       controls.target.copy(tt.multiplyScalar(m.r).add(m.c)); camera.position.copy(controls.target).add(off);
       if (off.y < 0) controls.maxPolarAngle = Math.PI;   // the other view looks from below: follow it there
       controls.update();
-    } else if (topic === 'model-pick' && d.name && P.models === 'one at a time' && FILES.sel !== d.name && FILES.all.some(function (f) { return f.name === d.name; })) {
-      FILES.sel = d.name; mdlSel.value = d.name; loadFiles(FILES.all);
+    } else if (topic === 'model-pick' && (d.name || d.case) && P.models === 'one at a time') {
+      // by the file's name, or by a case's name (the Load a CT panel's Show in 3D)
+      var hit = FILES.all.filter(function (f) { return f.name === d.name || (d.case && caseName(f.name) === d.case); })[0];
+      if (hit && FILES.sel !== hit.name) { FILES.sel = hit.name; mdlSel.value = hit.name; keepView(true); loadFiles(FILES.all); }
     }
   });
   // The load order of the page: this view loads a model first and says so ('model-loading', then 'model-ready', also
@@ -746,19 +751,21 @@ function render(ctx) {
     if (topic === 'model-state?' && FILES.state.name) ctx.peer(FILES.state.ready ? 'model-ready' : 'model-loading', { name: FILES.state.name });
   });
   function shortName(n) { return String(n).replace(/\.(glb|gltf|obj|stl|ply)$/i, '').replace(/_anatomy$/i, ''); }
+  // the case's own name: case07/case07_anatomy.glb is case07
+  function caseName(n) { var s = shortName(n).split('/'); return s.length > 1 && s[s.length - 1] === s[s.length - 2] ? s[s.length - 1] : s.join('/'); }
   function loadFiles(list) {
     clearEntities(); runs = []; runSel.style.display = 'none'; barEl.style.display = 'none';
     ctx.status(list.length ? 'Loading the 3D model…' : ''); // not "Waiting for a scene" any more: the models are here
     FILES.all = list;
     var one = P.models === 'one at a time' && list.length > 1;
     if (one) {
-      mdlSel.innerHTML = list.map(function (f) { return '<option value="' + esc(f.name) + '">' + esc(shortName(f.name)) + '</option>'; }).join('');
+      mdlSel.innerHTML = list.map(function (f) { return '<option value="' + esc(f.name) + '">' + esc(caseName(f.name)) + '</option>'; }).join('');
       var first = String(P.first_model || '').trim().toLowerCase();
       var pick = list.filter(function (f) { return f.name === FILES.sel; })[0]
         || (first && (list.filter(function (f) { return f.name.toLowerCase() === first; })[0] || list.filter(function (f) { return f.name.toLowerCase().indexOf(first) >= 0; })[0])) || list[0];
       FILES.sel = pick.name; mdlSel.value = pick.name; list = [pick];
     }
-    mdlSel.style.display = one && P.model_list !== false ? '' : 'none';   // (a Model list block can choose instead)
+    mdlBox.style.display = one && P.model_list !== false ? 'flex' : 'none';   // (a Model list block can choose instead)
     hudTitle.textContent = P.model_title === false ? '' : one ? 'Model ' + (FILES.all.indexOf(list[0]) + 1) + ' of ' + FILES.all.length : list.map(function (f) { return f.name; }).join(', ');
     if (!list.length) return;
     var root = new THREE.Group(), seq = ++FILES.seq, floorOn = P.floor !== false;
