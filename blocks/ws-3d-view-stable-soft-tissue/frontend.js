@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 96 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 97 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2958,7 +2958,10 @@ function render(ctx) {
     if (HAIR.lines && HAIR.lines.parent) HAIR.lines.parent.remove(HAIR.lines);
     HAIR.lines = null;
     var hb = lookEl && lookEl.querySelector('[data-hairg]'); if (hb) hb.style.display = '';
-    hairMapsFor(hairCaseKey(), function () { hairBuild(); if (HAIR.panel && HAIR.panel.style.display !== 'none') { hairFit(); hairDraw(); hairPanelSync(); } });
+    // (grown at the next frame drawn with the skin in the scene: while the model is still being set up, the skin's
+    // triangles are not yet the ones drawn)
+    HAIR.pending = false;
+    hairMapsFor(hairCaseKey(), function () { HAIR.pending = true; });
   }
   function hairSave() {
     clearTimeout(HAIR.saveT);
@@ -2990,7 +2993,7 @@ function render(ctx) {
     for (var yi = 1; yi < pos.length; yi += 3) { if (pos[yi] < y0) y0 = pos[yi]; if (pos[yi] > y1) y1 = pos[yi]; }
     var capD = 0.006 * U;
     // the skin's faces with a place on the layout, and their areas (once per skin)
-    if (!HAIR.cache || HAIR.cache.g !== g) {
+    if (!HAIR.cache || HAIR.cache.g !== g || HAIR.cache.ix !== g.index || HAIR.cache.iv !== g.index.version) {
       var nf = idx.length / 3, fl = [], cum = [], tot = 0;
       // the skin's usual triangle (its median area): a triangle many times bigger is not skin but a lid over an opening
       // where the scan cuts the body (a few big ones across it), and gets no hair
@@ -3016,7 +3019,7 @@ function render(ctx) {
         }
         tot += ar; fl.push(f); cum.push(tot);
       }
-      HAIR.cache = { g: g, fl: Uint32Array.from(fl), cum: Float64Array.from(cum), tot: tot };
+      HAIR.cache = { g: g, ix: g.index, iv: g.index.version, fl: Uint32Array.from(fl), cum: Float64Array.from(cum), tot: tot };
     }
     var C = HAIR.cache, S = HAIR.S;
     if (!C.fl.length) return;
@@ -3087,7 +3090,7 @@ function render(ctx) {
     HAIR.fol = { g: g, fi: Uint32Array.from(FI), w: Float32Array.from(FW), root: Float32Array.from(FR), rest: PA.slice(), nv: 2 * K, ver: g.attributes.position.version };
     hairFollow();                                         // (where the skin is now)
     mesh.add(HAIR.lines);                                  // (with the skin: hidden with it, moved with it)
-    if (HAIR.panel) { var n = HAIR.panel.querySelector('.hr-n'); if (n) { var qs = function (arr, off, st) { var v = []; for (var i = off; i < arr.length; i += st) v.push(arr[i]); v.sort(function (p, q) { return p - q; }); return [0.05, 0.5, 0.95].map(function (t) { return v[Math.floor(t * (v.length - 1))].toFixed(3); }).join('/'); }; n.textContent = Math.round(P.length / (6 * K)) + ' hairs | rootX ' + qs(FR, 0, 30) + ' rootY ' + qs(FR, 1, 30) + ' skinX ' + qs(pos, 0, 30) + ' skinY ' + qs(pos, 1, 30) + ' fl ' + C.fl.length + ' tot ' + C.tot.toFixed(3) + ' r0s ' + (function () { var r = hairRng(1234567), a = []; for (var i = 0; i < 5; i++) a.push(r().toFixed(2)); return a.join(','); })(); } }
+    if (HAIR.panel) { var n = HAIR.panel.querySelector('.hr-n'); if (n) n.textContent = Math.round(P.length / (6 * K)).toLocaleString() + ' hairs'; }
   }
 
   // ---- the dialog: the settings, the skin laid flat with its wireframe, three maps to paint
@@ -13333,6 +13336,10 @@ function render(ctx) {
   function draw() {
     if (mode === 'car' && CR_TEL) return;   // the telemetry window draws only its charts
     if (mode === 'humanoid' && HM_TEL) return;   // the telemetry window draws only its charts
+    if (HAIR.pending && SKINLOOK.mesh && SKINLOOK.mesh.parent && SKINLOOK.mesh.parent.parent) {   // the skin's hair, now that it is in place
+      HAIR.pending = false; HAIR.cache = null; hairBuild();
+      if (HAIR.panel && HAIR.panel.style.display !== 'none') { hairFit(); hairDraw(); hairPanelSync(); }
+    }
     if (HAIR.lines && HAIR.fol && SKINLOOK.mesh) {        // the hair goes wherever the skin is drawn now
       var hpa = SKINLOOK.mesh.geometry.attributes.position;
       if (hpa.version !== HAIR.fol.ver) { HAIR.fol.ver = hpa.version; hairFollow(); }
