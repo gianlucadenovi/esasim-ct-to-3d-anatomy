@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 13 · worker block, Python: def run(ctx)
+# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 14 · worker block, Python: def run(ctx)
 # Turns segmented anatomy into a soft-tissue model the 3D view simulates in real time: organs that sag, sway and push each other under gravity, held by a fixed skeleton and contained by the skin (metaba
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-28
@@ -697,6 +697,9 @@ def strip_table(v, vsp, hu, log=print):
     return tot
 
 
+__FN__
+
+
 def skin_shell(ct, hu, spacing_mm, log):
     """The body's outline in the CT (above body_hu, the largest piece, holes filled): points on its surface, every
     spacing_mm, and a light surface mesh to draw. Points on the top and bottom cut of the scan are fixed: the body goes on."""
@@ -734,6 +737,10 @@ def skin_shell(ct, hu, spacing_mm, log):
         strip_table(v, vsp, hu, log)                                  # the table pad under the back is not the body
     except Exception as e:
         log("Skin: the table pad could not be looked for (%s)." % e)
+    try:
+        strip_pad(v, vsp, hu, log)                                    # and its surface lying against the back
+    except Exception as e:
+        log("Skin: the table pad's surface could not be looked for (%s)." % e)
     body = v > hu
     lab, n = ndimage.label(body)
     body = lab == (1 + int(np.argmax(ndimage.sum(body, lab, range(1, n + 1)))))
