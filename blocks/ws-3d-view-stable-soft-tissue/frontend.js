@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 64 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 65 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2879,26 +2879,31 @@ function render(ctx) {
   ].join('\n');
   // human skin: x relief, y extra opacity, z gloss factor; and its colour
   var SKIN_GLSL = [
-    'vec4 esSkin(vec3 p, float px) {',
-    // pores, about 0.8 mm apart; fine furrows crossing in two directions (the skin's microrelief), a little warped
-    '  float mid = esFbmP(p + 2.0, px, 35.0);',
-    '  float crs = 0.0;',
-    '  float pore = esFade(px, 2400.0) * (1.0 - smoothstep(0.06, 0.22, esCell(p * 1200.0).x));',
-    '  vec3 w = vec3(esNoise(p * 60.0), esNoise(p * 60.0 + 7.0), esNoise(p * 60.0 + 13.0));',
-    // the skin's microrelief: a fine polygonal network of shallow furrows (no preferred direction), a little warped
-    '  vec2 cc = esCell(p * 450.0 + 0.8 * w); float fur = esFade(px, 900.0) * (1.0 - smoothstep(0.0, 0.08, cc.y - cc.x));',
-    '  float bmp = esFbmP(p, px, 300.0);',
-    '  float h = 0.5 + 1.2 * (mid - 0.5) - 0.5 * crs + 0.35 * (bmp - 0.5) - 0.6 * pore - 0.5 * fur;',
-    '  float rough = 1.0 + 0.5 * (esFbm(p * 15.0) - 0.5) + 0.2 * pore + 0.15 * fur;',
-    '  return vec4(h, 0.25 * pore + 0.3 * fur + 0.2 * crs, rough, 0.0); }',
-    // melanin (brownish patches), freckles, redness where blood shows through
-    'vec3 esSkinColor(vec3 base, vec3 p, float px) {',
-    '  float mel = esFbm(p * 8.0 + 3.0), hb = esFbm(p * 14.0 + 9.0);',
-    '  float frk = esFade(px, 600.0) * (1.0 - smoothstep(0.08, 0.2, esCell(p * 300.0 + 4.0).x)) * smoothstep(0.55, 0.8, esFbm(p * 20.0));',
-    '  float blot = esFbm(p * 40.0 + 6.0);',
-    '  vec3 c = base * (0.88 + 0.24 * (blot - 0.5) + 0.12 * (esFbmP(p, px, 120.0) - 0.5));',
-    '  c = mix(c, c * vec3(0.74, 0.58, 0.46), 0.5 * smoothstep(0.42, 0.75, mel) + 0.45 * frk);',
-    '  c = mix(c, c * vec3(1.1, 0.8, 0.78), 0.45 * smoothstep(0.48, 0.8, hb));',
+    // cx: how complex the skin is there (folds, creases, the navel, the nipples, the cut edges; 0 where flat and smooth)
+    // small bumps: soft dots (gaussian) on a jittered lattice about 2.5 mm apart; more of them and larger where the skin is
+    // complex, their size going to 0 where it is flat
+    'float esDots(vec3 q, float cx) {',
+    '  vec3 i = floor(q), f = fract(q); float s = 0.0;',
+    '  for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {',
+    '    vec3 g = vec3(float(x), float(y), float(z)), o = texture(esNoiseTex, (i + g + 0.5) / 64.0).rgb, r = g + o - f;',
+    '    float on = step(o.b, 0.15 + 0.75 * cx), rad = (0.08 + 0.22 * o.r) * cx;',
+    '    s += on * (0.6 + 0.4 * o.g) * exp(-dot(r, r) / max(rad * rad, 1e-5)); }',
+    '  return s; }',
+    // relief (x), extra opacity (y: more where complex), gloss factor (z: glossy where flat, matte where complex)
+    'vec4 esSkin(vec3 p, float px, float cx) {',
+    '  float mid = esFbmP(p + 2.0, px, 35.0);',                                  // a soft undulation, a few cm
+    '  float fine = esFbmP(p, px, 300.0);',                                      // a fine, simple grain
+    '  float dots = esFade(px, 1200.0) * smoothstep(0.0, 0.25, cx) * esDots(p * 400.0, cx);',
+    '  float h = 0.5 + 0.8 * (mid - 0.5) + (0.12 + 0.25 * cx) * (fine - 0.5) + 0.7 * dots;',
+    '  float rough = mix(0.7, 1.4, cx) + 0.15 * (esFbm(p * 15.0) - 0.5) + 0.2 * dots;',
+    '  return vec4(h, 0.5 * cx + 0.15 * dots, rough, 0.0); }',
+    // the colour: gentle melanin and blood mottling (plain noise), and darker red tones where the skin is complex
+    'vec3 esSkinColor(vec3 base, vec3 p, float px, float cx) {',
+    '  float mel = esFbm(p * 8.0 + 3.0), hb = esFbm(p * 14.0 + 9.0), blot = esFbm(p * 40.0 + 6.0);',
+    '  vec3 c = base * (0.92 + 0.14 * (blot - 0.5) + 0.08 * (esFbmP(p, px, 120.0) - 0.5));',
+    '  c = mix(c, c * vec3(0.82, 0.7, 0.6), 0.35 * smoothstep(0.45, 0.8, mel));',
+    '  c = mix(c, c * vec3(1.06, 0.84, 0.8), 0.3 * smoothstep(0.5, 0.8, hb));',
+    '  c = mix(c, c * vec3(0.8, 0.52, 0.48), 0.55 * cx * (0.8 + 0.4 * hb));',
     '  return c; }'
   ].join('\n');
   function tissueShader(mat, mesh) {
