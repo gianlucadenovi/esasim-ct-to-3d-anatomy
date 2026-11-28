@@ -1,8 +1,8 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// Load a CT (ws-load-a-ct) · version 5 · view, JavaScript: function render(ctx)
+// Load a CT (ws-load-a-ct) · version 7 · view, JavaScript: function render(ctx)
 // The View's loading dialog for CT scans: drop or choose a folder from your computer (a whole CD/DVD export is fine), see its series, tick the ones to segment and press Load; or give a folder on a worke
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
-// Saved: 2026-11-27
+// Saved: 2026-11-28
 //
 // Inputs   ctx.input("id") gives { files, stream }; ctx.rows("id"), ctx.json("id"), ctx.text("id")
 //   live        Stream                    Live · several · optional · The loader's live telemetry (channel ct_load), through a Telemetry block
@@ -51,6 +51,11 @@ function render(ctx) {
   .ct .btn:hover{background:rgba(127,127,127,.25)}.ct .btn:disabled{opacity:.4;cursor:default}
   .ct .btn.pri{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
   .ct .btn.big{font-size:13.5px;padding:7px 16px;box-shadow:0 0 0 3px rgba(76,141,255,.3)}
+  .ct .wiz{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;margin:2px 0 8px}
+  .ct .wiz span{padding:2px 8px;border-radius:10px;opacity:.5}.ct .wiz span.done{opacity:.85;color:var(--ok)}
+  .ct .wiz span.now{opacity:1;background:var(--acc);color:#fff;font-weight:600}.ct .wiz i{opacity:.35;font-style:normal}
+  .ct .card{border:1px solid var(--ln);border-radius:10px;padding:10px 12px}
+  .ct .card h3{margin:0 0 8px;font-size:14px}
   .ct .hint{opacity:.68;font-size:11.5px;line-height:1.5;margin:6px 0}
   .ct .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}
   .ct label.f{display:flex;flex-direction:column;gap:2px;font-size:11px;opacity:.9}
@@ -227,7 +232,8 @@ function render(ctx) {
         if (!runActive()) throw e;
         sending.failed = (sending.failed || 0) + 1; sending.err = (e && e.message) || String(e);
       }
-      sending.sent++; sending.bytes += f.file.size; paintProgress();
+      sending.sent++; sending.bytes += f.file.size;
+      if (st.tab !== 'local' || Date.now() - (sending.painted || 0) > 400) { sending.painted = Date.now(); paintProgress(); }
     }
     await Promise.all(flying);
     await post({ cmd: 'end', session: st.session });
@@ -302,22 +308,70 @@ function render(ctx) {
     return `<details><summary class="hint">What the worker found (${list.length} series)</summary><table><tr><th>Series</th><th>Images</th><th>Result</th></tr>${list.map(s =>
       `<tr class="${s.case ? '' : 'off'}"><td>${esc(s.series)}</td><td class="n">${s.images}</td><td>${esc(s.result)}</td></tr>`).join('')}</table></details>`;
   }
+  // ── From this computer: one step at a time, from what the run is doing ─────────────────────────────────────────
+  function streamItems() { return (((ctx.input && ctx.input('live')) || {}).stream || []).map(it => it && (it.data !== undefined ? it.data : it)).filter(d => d && d.state); }
+  function stage() {
+    const d = readLive(), active = runActive(), S = d && d.state;
+    const uploaded = (d && d.uploaded) || streamItems().some(x => x.state === 'received' || x.uploaded);
+    if (sending) return 'sending';
+    if (!active) {
+      const rs = ctx.run && ctx.run.status;
+      if (st.fresh) return 'start';
+      if (rs === 'succeeded' && S === 'done' && uploaded) return 'finished';
+      if (rs === 'failed' && uploaded) return 'failed';
+      return 'start';
+    }
+    if (!d || S === 'starting') return 'starting';
+    if (S === 'waiting') return scan ? 'picked' : 'folder';
+    if (S === 'receiving') return scan ? 'picked' : 'folder';       // (a transfer that stopped: choose the folder, Send goes on)
+    if (S === 'error') return 'failed';
+    if (uploaded) return 'segmenting';
+    return 'demo';
+  }
+  const STEPS = [['start', '① Start'], ['folder', '② Choose the folder'], ['send', '③ Send'], ['segmenting', '④ Segment'], ['finished', '⑤ Done']];
+  const STEP_OF = { start: 'start', starting: 'start', folder: 'folder', picked: 'send', sending: 'send', segmenting: 'segmenting', finished: 'finished', demo: 'start', failed: 'start' };
+  function stepper(k) {
+    const at = STEPS.findIndex(x => x[0] === STEP_OF[k]);
+    return `<div class="wiz">${STEPS.map((x, i) => `<span class="${i === at ? 'now' : i < at ? 'done' : ''}">${i < at ? '✓ ' : ''}${x[1].slice(2)}</span>`).join('<i>›</i>')}</div>`;
+  }
   function localHtml() {
-    const tbl = scan ? seriesTable() : '';
-    const files = chosenFiles(), size = files.reduce((n, f) => n + f.file.size, 0), nOn = scan ? scan.series.filter(s => s.on).length : 0;
-    const waiting = runActive() && (loaderWaiting() || !readLive() || readLive().state === 'starting'), ready = loaderWaiting();
-    const steps = waiting ? '' : `<div class="row"><b>①</b> Choose the segmentation, then press <b>Start</b>; <b>②</b> drop the folder with the scans; <b>③</b> tick the series and press <b>Send</b>.</div>
-      ${segRow()}<div class="row"><button class="btn pri" data-a="start">▶ Start</button><span class="hint">The run starts on a worker and waits for your scans (up to 30 minutes).</span></div>`;
-    const head = waiting
-      ? (ready ? `<b>② The worker is waiting: drop the folder with the scans here</b>` : `<b>The run is starting…</b> you can already drop the folder here`)
-      : `<b>Drop the folder with the scans here</b> to see its series first`;
-    return `${steps}<div class="dz${waiting && !scan ? ' drop' : ''}">
-        ${head}, or <button class="btn${waiting && !scan ? ' pri' : ''}" data-a="dir">Choose a folder…</button> <button class="btn" data-a="files">Choose files…</button>
-        <div class="hint">A whole CD/DVD export works as it is (DICOMDIR, DICOM/, IHE_PDI/, viewer files): the images are grouped into series by their DICOM IDs, copies are read once, and pictures, pages and reports are left out. Also NIfTI, NRRD, MHA/MHD and zips.</div>
-      </div>
-      ${busy ? `<div class="hint">${esc(busy)}</div>` : ''}${tbl}
-      ${scan && !sending ? `<div class="row"><button class="btn pri big" data-a="load"${nOn ? '' : ' disabled'}>${waiting ? `③ Send ${nOn} series and segment (${mb(size)})` : `Start and send ${nOn} series (${mb(size)})`}</button>
-      <span class="hint">${waiting ? '' : 'The page shows the views again when the run starts and your browser forgets the files: you will choose the folder once more and press Send. (Press ▶ Start first to choose it only once.) '}Only the images of the ticked series are sent, compressed, to the worker that runs the flow. Patient names and IDs are not read here, and the worker writes pixels and geometry only.</span></div>` : ''}`;
+    const k = stage(), d = readLive() || {};
+    const cases = (d.cases || []).map(c => `<code>${esc(c.case)}</code>`).join(', ');
+    let card = '';
+    if (k === 'start') card = `<h3>① Choose how to segment, then press Start</h3>${segRow()}
+        <div class="row"><button class="btn pri big" data-a="start">▶ Start</button></div>
+        <div class="hint">A run starts on a worker and waits for your scans. Next you choose the folder: the browser forgets a folder chosen before the run starts, so it is chosen after.</div>`;
+    else if (k === 'starting') card = `<h3>Starting the run on a worker…</h3><div class="hint">Usually a few seconds. The box to drop your folder appears here as soon as the worker is ready.</div>`;
+    else if (k === 'folder') card = `<h3>② The worker is waiting: choose the folder with the scans</h3>
+        <div class="dz drop"><b>Drop the folder here</b> (a whole CD/DVD export is fine, such as CT2013), or
+          <button class="btn pri" data-a="dir">Choose a folder…</button> <button class="btn" data-a="files">Choose files…</button>
+          <div class="hint">The images are grouped into series by their DICOM IDs; copies are read once; pictures, pages and reports are left out. Also NIfTI, NRRD, MHA/MHD and zips. Patient names and IDs are not read.</div></div>
+        ${busy ? `<div class="hint">${esc(busy)}</div>` : ''}
+        <div class="hint">The run waits while this page is open.</div>`;
+    else if (k === 'picked') {
+      const files = chosenFiles(), size = files.reduce((n, f) => n + f.file.size, 0), nOn = scan.series.filter(x => x.on).length;
+      card = `<h3>③ Check the series, then press Send</h3>${seriesTable()}
+        <div class="row"><button class="btn pri big" data-a="load"${nOn ? '' : ' disabled'}>Send ${nOn} series and segment (${mb(size)})</button>
+        <button class="btn" data-a="again">Choose another folder</button></div>
+        <div class="hint">Only the images of the ticked series are sent, compressed, to the worker. Each ticked series becomes one case.</div>`;
+    } else if (k === 'sending') {
+      const p = sending.total ? 100 * sending.bytes / sending.total : 0;
+      card = `<h3>Sending your scans to the worker… keep this page open</h3>
+        <div class="bar"><i style="width:${Math.round(p)}%"></i></div>
+        <div class="hint">${sending.resume && !sending.sent ? 'Asking the worker which files it still needs…' : `${sending.sent} of ${sending.n} files · ${mb(sending.bytes)} of ${mb(sending.total)}`}${sending.round > 1 ? ` · round ${sending.round}: the files that did not arrive` : ''}${sending.failed ? ` · ${sending.failed} to send again (${esc(sending.err || '')})` : ''}</div>
+        <div class="row"><button class="btn" data-a="cancel">Cancel</button></div>`;
+    } else if (k === 'segmenting') card = `<h3>✓ Your scans are on the worker${cases ? ': ' + cases : ''}</h3>
+        <div class="hint"><b>Now: ${d.state === 'done' ? 'segmenting and building the 3D models' : 'reading the series and writing the scans'}.</b> On a GPU about 2 minutes a scan, on a CPU about 15. You can close this page: the run goes on, and the 3D anatomy shows the result when it is done (the run's progress is at the top of the page).</div>
+        <div class="hint">Nothing to press here.</div>`;
+    else if (k === 'finished') card = `<h3>✓ Done${cases ? ': ' + cases : ''}</h3>
+        <div class="hint">Choose the case in the list of the <b>3D anatomy</b> view; the masks, STL files and the scan in NIfTI are under the run's <b>Results</b>.</div>
+        <div class="row"><button class="btn pri" data-a="fresh">Load another CT</button></div>`;
+    else if (k === 'demo') card = `<h3>This run is loading the demo case, not your scans</h3>
+        <div class="hint">It was started with the wired files. Wait for it to end, or press <b>Stop</b> at the top of the page; then press <b>▶ Start</b> here.</div>`;
+    else if (k === 'failed') card = `<h3>The run stopped with an error</h3>
+        <div class="hint">${esc(d.error || 'See the run\'s log (Logs, top right).')} Then start again:</div>${segRow()}
+        <div class="row"><button class="btn pri big" data-a="start">▶ Start</button></div>`;
+    return stepper(k) + `<div class="card">${card}</div>`;
   }
   function seriesTable() {
     const s = scan;
@@ -344,8 +398,8 @@ function render(ctx) {
   }
   function paint() {
     root.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.t === st.tab));
-    const prog = progressHtml();
-    body.innerHTML = (note ? `<div class="err">${esc(note)}</div>` : '') + `<div class="pg">${prog}</div>` +
+    const prog = st.tab === 'local' ? '' : progressHtml();
+    body.innerHTML = (note ? `<div class="err">${esc(note)}</div>` : '') + (st.tab === 'local' ? '' : `<div class="pg">${prog}</div>`) +
       (st.tab === 'worker' ? workerHtml() : st.tab === 'wired' ? wiredHtml() : localHtml());
     const dz = body.querySelector('.dz');
     if (dz) {
@@ -359,12 +413,14 @@ function render(ctx) {
     body.querySelectorAll('input[type=checkbox][data-i]').forEach(el => el.addEventListener('change', () => { scan.series[+el.dataset.i].on = el.checked; paint(); }));
   }
   function paintBusy() { const h = body.querySelector('.dz + .hint'); if (h) h.textContent = busy; else paint(); }
-  function paintProgress() { const pg = body.querySelector('.pg'); if (pg) pg.innerHTML = progressHtml(); const c = pg && pg.querySelector('[data-a=cancel]'); if (c) c.addEventListener('click', () => act('cancel')); }
+  function paintProgress() { if (st.tab === 'local') { if (!busy) paint(); return; } const pg = body.querySelector('.pg'); if (pg) pg.innerHTML = progressHtml(); const c = pg && pg.querySelector('[data-a=cancel]'); if (c) c.addEventListener('click', () => act('cancel')); }
   function act(a) {
     if (a === 'dir') pickDir.click();
     else if (a === 'files') pickFiles.click();
-    else if (a === 'load') loadLocal();
-    else if (a === 'start') startReceiving();
+    else if (a === 'load') sendNow();
+    else if (a === 'start') { st.fresh = false; save(); startReceiving(); }
+    else if (a === 'again') { scan = null; MEM.scan = null; paint(); }
+    else if (a === 'fresh') { st.fresh = true; scan = null; MEM.scan = null; save(); paint(); }
     else if (a === 'worker') { const lp = {}; lp[LOAD] = { source: 'Folder on the worker', folder: st.folder, series: st.choice, only: st.only }; start(lp, { pending: false }); }
     else if (a === 'wired') { const lp = {}; lp[LOAD] = { source: 'Files wired in', series: st.choice === CHOICE[2] ? CHOICE[0] : st.choice }; start(lp, { pending: false }); }
     else if (a === 'cancel') { try { ctx.send(CHANNEL, { cmd: 'cancel' }); } catch (_) {} st.pending = false; save(); forget(); note = 'Cancelled.'; paint(); }
@@ -374,7 +430,7 @@ function render(ctx) {
     if (st.pending && d && d.session === st.session && ['received', 'looking', 'reading', 'done', 'error'].includes(d.state)) { st.pending = false; save(); forget(); }
     if (runActive() && haveFiles() && d && (d.state === 'waiting' || (d.state === 'receiving' && d.session !== st.session))) resume();
     if (runActive() && d && d.state === 'waiting' && Date.now() - lastHold > 15000) { lastHold = Date.now(); post({ cmd: 'hold' }, 2).catch(() => {}); }
-    const mode = [runActive(), loaderWaiting(), haveFiles(), !!sending].join();
+    const mode = [runActive(), loaderWaiting(), haveFiles(), !!sending, stage(), (readLive() || {}).state].join();
     if (mode !== lastMode && !busy) { lastMode = mode; paint(); return; }
     if (!busy) { const pg = body.querySelector('.pg'); if (pg && !sending) paintProgress(); }
   }
