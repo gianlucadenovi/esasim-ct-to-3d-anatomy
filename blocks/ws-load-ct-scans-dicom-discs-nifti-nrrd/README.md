@@ -8,7 +8,7 @@ An [EsaSim](https://esacode.com/) blueprint block: it runs on a worker, in Pytho
 
 | | |
 |---|---|
-| Block | `ws-load-ct-scans-dicom-discs-nifti-nrrd` · version 5 |
+| Block | `ws-load-ct-scans-dicom-discs-nifti-nrrd` · version 6 |
 | Workspace | Gianluca De Novi's workspace |
 | Author | Gianluca De Novi |
 | Runs on | Any worker |

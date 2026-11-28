@@ -271,7 +271,7 @@ An [EsaSim](https://esacode.com/) project of the workspace Gianluca De Novi's wo
 - [CT volume for the 3D view](blocks/ws-ct-volume-for-the-3d-view) · version 5
 - [Soft body model (skin inside)](blocks/ws-soft-body-model-skin-inside) · version 9
 - [3D view (stable soft tissue)](blocks/ws-3d-view-stable-soft-tissue) · version 79
-- [Load CT scans (DICOM discs, NIfTI, NRRD, MHA)](blocks/ws-load-ct-scans-dicom-discs-nifti-nrrd) · version 5
+- [Load CT scans (DICOM discs, NIfTI, NRRD, MHA)](blocks/ws-load-ct-scans-dicom-discs-nifti-nrrd) · version 6
 - [Segment CT automatically (TotalSegmentator)](blocks/ws-segment-ct-automatically-totalsegmen) · version 9
 - [Score segmentation against experts](blocks/ws-score-segmentation-against-experts) · version 2
 - [Load a CT](blocks/ws-load-a-ct) · version 13

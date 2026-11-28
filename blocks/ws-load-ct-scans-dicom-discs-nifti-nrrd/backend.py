@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Load CT scans (DICOM discs, NIfTI, NRRD, MHA) (ws-load-ct-scans-dicom-discs-nifti-nrrd) · version 5 · worker block, Python: def run(ctx)
+# Load CT scans (DICOM discs, NIfTI, NRRD, MHA) (ws-load-ct-scans-dicom-discs-nifti-nrrd) · version 6 · worker block, Python: def run(ctx)
 # Turns any CT source (a CD/DVD export with DICOMDIR, DICOM/ and IHE_PDI/, loose DICOM, NIfTI, NRRD, MHA, zips) into one volume per case, <case>/ct.nii.gz: series grouped by their DICOM IDs, copies read
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-28
@@ -101,6 +101,12 @@ def run(ctx):
                                "to Files, or choose another Source.")
     items = unzip_all(ctx, items)
     found = analyse(ctx, items)
+    if UPLOAD.get("session"):
+        # the scans came from the View: the series ticked there are the choice, so every series sent is loaded (the
+        # Series setting is for a folder on a worker and for wired files), MR too when ticked, short series too
+        p = dict(p)
+        p["series"], p["min_images"], p["modalities"] = "Every CT series", 1, "CT, MR"
+        ctx.log("The series ticked in the View are all loaded.")
     chosen = choose(ctx, found, p)
     tell(ctx, "reading", series=public(found))
     cases = write_cases(ctx, chosen, found)
