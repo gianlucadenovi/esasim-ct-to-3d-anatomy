@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 104 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 106 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2908,16 +2908,19 @@ function render(ctx) {
   var HAIR_VS = 'attribute vec4 hC;\nattribute vec3 hT;\nattribute vec3 hN;\nvarying vec4 vC;\nvarying vec3 vT;\nvarying vec3 vV;\nvarying vec3 vN;\n'
     + 'void main() { vC = hC; vT = normalize(normalMatrix * hT); vN = normalize(normalMatrix * hN); vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = -mv.xyz; gl_Position = projectionMatrix * mv; }';
   var HAIR_FS = 'uniform float uGloss;\nvarying vec4 vC;\nvarying vec3 vT;\nvarying vec3 vV;\nvarying vec3 vN;\n'
-    + 'void main() {\n vec3 T = normalize(vT), V = normalize(vV), L = normalize(vec3(0.35, 0.55, 1.0)), H = normalize(L + V), N = normalize(vN);\n'
-    // the sheen comes off the hair's scales, tilted towards its root: shifted along the strand, so it sits where it bends
-    + ' vec3 T1 = normalize(T + 0.25 * N), T2 = normalize(T - 0.15 * N);\n'
+    + 'void main() {\n vec3 T = normalize(vT), V = normalize(vV), L = normalize(vec3(0.35, 0.55, 1.0)), N = normalize(vN);\n'
+    // the glints come from a key light above and to the side (a light at the camera would strike every strand alike);
+    // off the hair's scales, tilted towards the root (white) and the tip (in the hair's colour): each lands where the
+    // strand's direction is just right, so it sits on the bends and moves along the hair as the view turns
+    + ' vec3 Ls = normalize(vec3(-0.55, 0.75, 0.45)), H = normalize(Ls + V);\n'
+    + ' vec3 T1 = normalize(T - 0.08 * N), T2 = normalize(T + 0.12 * N);\n'
     + ' float tl = dot(T, L), th = dot(T1, H), th2 = dot(T2, H), sinL = sqrt(max(0.0, 1.0 - tl * tl)), sinH = sqrt(max(0.0, 1.0 - th * th)), sinH2 = sqrt(max(0.0, 1.0 - th2 * th2));\n'
     + ' vec3 base = pow(vC.rgb, vec3(2.2));\n'
-    + ' float s1 = pow(sinH, 400.0), s2 = pow(sinH2, 60.0);\n'          // a thin white sheen, and a broader one in the hair's colour
+    + ' float s1 = pow(sinH, 160.0), s2 = pow(sinH2, 28.0);\n'
     // in the skin's light: as dark as the skin under it where it turns from the light (its edges, its hollows), the
-    // sheen only where the light reaches
-    + ' float lit = clamp(dot(N, L), 0.0, 1.0), sh = 0.06 + 0.94 * lit * lit;\n'
-    + ' vec3 col = base * (0.35 + 0.65 * sinL) * sh + uGloss * lit * lit * (0.16 * s1 * vec3(1.0) + 0.6 * s2 * base);\n'
+    // glints only where the key light reaches
+    + ' float lit = clamp(dot(N, L), 0.0, 1.0), sh = 0.06 + 0.94 * lit * lit, litS = smoothstep(-0.15, 0.45, dot(N, Ls)) * (0.3 + 0.7 * lit);\n'
+    + ' vec3 col = base * (0.35 + 0.65 * sinL) * sh + uGloss * litS * (1.1 * s1 * vec3(1.0, 0.97, 0.92) + 0.9 * s2 * (base * 3.0 + 0.04));\n'
     + ' gl_FragColor = vec4(col, vC.a);\n'
     + ' #include <tonemapping_fragment>\n #include <colorspace_fragment>\n}';
   // the hair moves with the skin (pressed, sagging): each hair's root on its triangle, the rest of it carried along
@@ -3089,7 +3092,8 @@ function render(ctx) {
       var phi = (ra - 0.5) * 0.7, cp = Math.cos(phi), sp = Math.sin(phi);
       var bx = ny * tz - nz * ty, by = nz * tx - nx * tz, bz = nx * ty - ny * tx;
       var qx = tx * cp + bx * sp, qy = ty * cp + by * sp, qz = tz * cp + bz * sp;
-      var cr = Cp[k] / 255, cg = Cp[k + 1] / 255, cb = Cp[k + 2] / 255;
+      var vb = 0.75 + 0.5 * ((ra * 9.731) % 1);          // (strands not all alike: some lighter, some darker)
+      var cr = Math.min(1, vb * Cp[k] / 255), cg = Math.min(1, vb * Cp[k + 1] / 255), cb = Math.min(1, vb * Cp[k + 2] / 255);
       var sx = x + nx * 0.0002 * U, sy = y + ny * 0.0002 * U, sz = z + nz * 0.0002 * U, seg = len / K;
       FI[nh] = fi; FW[2 * nh] = r1; FW[2 * nh + 1] = r2; FR[3 * nh] = x; FR[3 * nh + 1] = y; FR[3 * nh + 2] = z; nh++;
       for (var s = 0; s < K; s++) {
