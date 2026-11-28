@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 84 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 85 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2884,6 +2884,356 @@ function render(ctx) {
       catch (e) { msg.textContent = 'Not valid JSON.'; }
     };
   }
+  // ------------------------------------------------------------------ body hair (the ✂ Hair dialog by the skin's ⚙)
+  // Three maps painted on the skin laid flat (its uv, from the Soft body model): Length (grey: white the longest, black
+  // none), Opacity (grey: 0 invisible, 1 visible) and Colour (RGB). Hairs grow from the skin, so many per cm², as long
+  // as Length says (times the longest), and bend towards the feet (the model's own down: they turn with it). Each case
+  // keeps its own maps (its own layout), with the view.
+  var HAIR = { on: true, dens: 40, len: 20, bend: 0.6, rand: 0.35, S: 1024, maps: null, lines: null, panel: null,
+    layer: 'len', tool: 'brush', brush: 40, soft: 0.6, flow: 0.7, val: 1, col: '#3b2a20', undo: { len: [], op: [], col: [] },
+    view: { z: 1, ox: 0, oy: 0 }, wire: null, wireKey: '', paint3d: false, store: {}, key: '', cache: null, timer: 0, saveT: 0 };
+  (function () {
+    var st = (ctx.state || {}).hair;
+    if (st && typeof st === 'object') {
+      ['on', 'dens', 'len', 'bend', 'rand', 'col'].forEach(function (k) { if (st[k] != null && typeof st[k] === typeof HAIR[k]) HAIR[k] = st[k]; });
+      if (st.store && typeof st.store === 'object') HAIR.store = st.store;
+    }
+  })();
+  var HAIR_LAYERS = [['len', 'Length'], ['op', 'Opacity'], ['col', 'Colour']];
+  function hairState() { return { on: HAIR.on, dens: HAIR.dens, len: HAIR.len, bend: HAIR.bend, rand: HAIR.rand, col: HAIR.col, store: HAIR.store }; }
+  function hairCaseKey() { return FILES.shown ? caseName(FILES.shown.userData.file || '').replace(/^.*[\\/]/, '') || 'case' : 'case'; }
+  function hairGeo() { var m = SKINLOOK.mesh; return m && m.geometry && m.geometry.attributes.uv ? m.geometry : null; }
+  function hairBlank(kind) {
+    var c = document.createElement('canvas'); c.width = c.height = HAIR.S;
+    var g = c.getContext('2d'); g.fillStyle = kind === 'len' ? '#000' : kind === 'op' ? '#fff' : HAIR.col; g.fillRect(0, 0, HAIR.S, HAIR.S);
+    return c;
+  }
+  // the maps of the case shown: kept ones (as pictures), else blank (no hair, fully visible, the default colour)
+  function hairMapsFor(key, done) {
+    HAIR.key = key; HAIR.maps = { len: hairBlank('len'), op: hairBlank('op'), col: hairBlank('col') }; HAIR.undo = { len: [], op: [], col: [] };
+    var kept = HAIR.store[key], left = 0;
+    if (kept) HAIR_LAYERS.forEach(function (L) {
+      if (!kept[L[0]]) return;
+      left++;
+      var im = new Image();
+      im.onload = im.onerror = function () { try { HAIR.maps[L[0]].getContext('2d').drawImage(im, 0, 0, HAIR.S, HAIR.S); } catch (e) { } if (--left === 0 && done) done(); };
+      im.src = kept[L[0]];
+    });
+    if (!left && done) done();
+  }
+  // called when a skin is made (softBind): its maps, its hair
+  function hairOnSkin() {
+    HAIR.cache = null; HAIR.wire = null; HAIR.wireKey = '';
+    if (HAIR.lines && HAIR.lines.parent) HAIR.lines.parent.remove(HAIR.lines);
+    HAIR.lines = null;
+    var hb = lookEl && lookEl.querySelector('[data-hairg]'); if (hb) hb.style.display = '';
+    hairMapsFor(hairCaseKey(), function () { hairBuild(); if (HAIR.panel && HAIR.panel.style.display !== 'none') { hairFit(); hairDraw(); hairPanelSync(); } });
+  }
+  function hairSave() {
+    clearTimeout(HAIR.saveT);
+    HAIR.saveT = setTimeout(function () {
+      if (!HAIR.maps) return;
+      var o = {};
+      try { HAIR_LAYERS.forEach(function (L) { o[L[0]] = HAIR.maps[L[0]].toDataURL('image/png'); }); } catch (e) { return; }
+      HAIR.store[HAIR.key] = o; keepView(true);
+    }, 1200);
+  }
+  function hairSoon(ms) { clearTimeout(HAIR.timer); HAIR.timer = setTimeout(hairBuild, ms == null ? 250 : ms); }
+  // a small, repeatable random sequence: the same hairs every time (painting does not shuffle them)
+  function hairRng(seed) { var a = seed >>> 0; return function () { a = (a + 0x6D2B79F5) >>> 0; var t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  function hairBuild() {
+    var mesh = SKINLOOK.mesh, g = hairGeo();
+    if (HAIR.lines && HAIR.lines.parent) HAIR.lines.parent.remove(HAIR.lines);
+    if (HAIR.lines) { HAIR.lines.geometry.dispose(); HAIR.lines.material.dispose(); HAIR.lines = null; }
+    if (!mesh || !g || !HAIR.on || !HAIR.maps) return;
+    var pos = (g.attributes.esRest || g.attributes.position).array, nrm = g.attributes.normal.array, uv = g.attributes.uv.array, idx = g.index ? g.index.array : null;
+    if (!idx) return;
+    // the skin's faces with a place on the layout, and their areas (once per skin)
+    if (!HAIR.cache || HAIR.cache.g !== g) {
+      var nf = idx.length / 3, fl = [], cum = [], tot = 0;
+      for (var f = 0; f < nf; f++) {
+        var a = idx[3 * f], b = idx[3 * f + 1], c = idx[3 * f + 2];
+        if (uv[2 * a] < 0 || uv[2 * b] < 0 || uv[2 * c] < 0) continue;
+        var ux = pos[3 * b] - pos[3 * a], uy = pos[3 * b + 1] - pos[3 * a + 1], uz = pos[3 * b + 2] - pos[3 * a + 2];
+        var vx = pos[3 * c] - pos[3 * a], vy = pos[3 * c + 1] - pos[3 * a + 1], vz = pos[3 * c + 2] - pos[3 * a + 2];
+        var cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx, ar = 0.5 * Math.sqrt(cx * cx + cy * cy + cz * cz);
+        if (!(ar > 0)) continue;
+        tot += ar; fl.push(f); cum.push(tot);
+      }
+      HAIR.cache = { g: g, fl: Uint32Array.from(fl), cum: Float64Array.from(cum), tot: tot };
+    }
+    var C = HAIR.cache, S = HAIR.S;
+    if (!C.fl.length) return;
+    var Lp = HAIR.maps.len.getContext('2d').getImageData(0, 0, S, S).data, Op = HAIR.maps.op.getContext('2d').getImageData(0, 0, S, S).data, Cp = HAIR.maps.col.getContext('2d').getImageData(0, 0, S, S).data;
+    var N = Math.min(300000, Math.round(HAIR.dens * C.tot * 1e4)), rnd = hairRng(1234567), K = 3;
+    var P = [], Q = [], L0 = HAIR.len / 1000, bend = Math.max(0, Math.min(1, HAIR.bend));
+    var e0 = (80 - 65 * bend) * Math.PI / 180, e1 = (40 - 37 * bend) * Math.PI / 180;   // how far the root and the tip rise off the skin
+    for (var i = 0; i < N; i++) {
+      var r0 = rnd(), r1 = rnd(), r2 = rnd(), rl = rnd(), ra = rnd();
+      // a face by its area, a point in it
+      var lo = 0, hi = C.cum.length - 1, want = r0 * C.tot;
+      while (lo < hi) { var mid = (lo + hi) >> 1; if (C.cum[mid] < want) lo = mid + 1; else hi = mid; }
+      var fi = C.fl[lo], ia = idx[3 * fi], ib = idx[3 * fi + 1], ic = idx[3 * fi + 2];
+      if (r1 + r2 > 1) { r1 = 1 - r1; r2 = 1 - r2; }
+      var w0 = 1 - r1 - r2;
+      var u = w0 * uv[2 * ia] + r1 * uv[2 * ib] + r2 * uv[2 * ic], v = w0 * uv[2 * ia + 1] + r1 * uv[2 * ib + 1] + r2 * uv[2 * ic + 1];
+      var px = Math.min(S - 1, Math.max(0, Math.floor(u * S))), py = Math.min(S - 1, Math.max(0, Math.floor((1 - v) * S))), k = 4 * (py * S + px);
+      var len = Lp[k] / 255, op = Op[k] / 255;
+      if (len < 0.01 || op < 0.01) continue;
+      len *= L0 * (1 - HAIR.rand * rl);
+      if (len < 0.0002) continue;
+      var x = w0 * pos[3 * ia] + r1 * pos[3 * ib] + r2 * pos[3 * ic], y = w0 * pos[3 * ia + 1] + r1 * pos[3 * ib + 1] + r2 * pos[3 * ic + 1], z = w0 * pos[3 * ia + 2] + r1 * pos[3 * ib + 2] + r2 * pos[3 * ic + 2];
+      var nx = w0 * nrm[3 * ia] + r1 * nrm[3 * ib] + r2 * nrm[3 * ic], ny = w0 * nrm[3 * ia + 1] + r1 * nrm[3 * ib + 1] + r2 * nrm[3 * ic + 1], nz = w0 * nrm[3 * ia + 2] + r1 * nrm[3 * ib + 2] + r2 * nrm[3 * ic + 2];
+      var nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+      // towards the feet along the skin (the model's -y, less what goes into the skin); where the skin faces up or
+      // down (no way down along it), any way along it
+      var dn = -ny, tx = -nx * dn, ty = -1 - ny * dn, tz = -nz * dn, tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
+      if (tl < 0.25) { tx = 0; ty = nz; tz = -ny; tl = Math.sqrt(ty * ty + tz * tz); if (tl < 0.3) { tx = ny; ty = -nx; tz = 0; tl = Math.sqrt(tx * tx + ty * ty) || 1; } }   // (n x X, else n x Z)
+      tx /= tl; ty /= tl; tz /= tl;
+      // a little turn either way around the skin's normal (the hairs are not all parallel)
+      var phi = (ra - 0.5) * 0.7, cp = Math.cos(phi), sp = Math.sin(phi);
+      var bx = ny * tz - nz * ty, by = nz * tx - nx * tz, bz = nx * ty - ny * tx;
+      var qx = tx * cp + bx * sp, qy = ty * cp + by * sp, qz = tz * cp + bz * sp;
+      var cr = Cp[k] / 255, cg = Cp[k + 1] / 255, cb = Cp[k + 2] / 255;
+      var sx = x + nx * 0.0002, sy = y + ny * 0.0002, sz = z + nz * 0.0002, seg = len / K;
+      for (var s = 0; s < K; s++) {
+        var fr = (s + 0.5) / K, e = e0 + (e1 - e0) * fr, ce = Math.cos(e), se = Math.sin(e);
+        var dx = nx * se + qx * ce, dy = ny * se + qy * ce, dz = nz * se + qz * ce;
+        var ex = sx + dx * seg, ey = sy + dy * seg, ez = sz + dz * seg;
+        P.push(sx, sy, sz, ex, ey, ez);
+        var a0 = op * (1 - 0.45 * s / K), a1 = op * (1 - 0.45 * (s + 1) / K);
+        Q.push(cr, cg, cb, a0, cr, cg, cb, a1);
+        sx = ex; sy = ey; sz = ez;
+      }
+    }
+    if (!P.length) return;
+    var hg = new THREE.BufferGeometry();
+    hg.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    hg.setAttribute('color', new THREE.Float32BufferAttribute(Q, 4));
+    hg.computeBoundingSphere();
+    var hm = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false });
+    HAIR.lines = new THREE.LineSegments(hg, hm); HAIR.lines.name = 'hair'; HAIR.lines.renderOrder = 6;
+    mesh.add(HAIR.lines);                                  // (with the skin: hidden with it, moved with it)
+    if (HAIR.panel) { var n = HAIR.panel.querySelector('.hr-n'); if (n) n.textContent = Math.round(P.length / (6 * K)).toLocaleString() + ' hairs'; }
+  }
+
+  // ---- the dialog: the settings, the skin laid flat with its wireframe, three maps to paint
+  function hairPanelToggle(open) {
+    if (open == null) open = !(HAIR.panel && HAIR.panel.style.display !== 'none');
+    if (!HAIR.panel) hairPanelMake();
+    HAIR.panel.style.display = open ? 'flex' : 'none';
+    if (!open) { HAIR.paint3d = false; renderer.domElement.style.cursor = ''; return; }
+    HAIR.panel.style.top = partsEl.style.top || '64px';
+    HAIR.panel.style.left = (partsEl.offsetLeft + partsEl.offsetWidth + 8 || 256) + 'px';
+    if (skinPanel) skinPanel.style.display = 'none';
+    hairPanelSync(); hairFit(); hairDraw();
+  }
+  function hairPanelMake() {
+    var p = HAIR.panel = document.createElement('div');
+    p.style.cssText = 'position:absolute;left:256px;top:64px;width:640px;max-width:calc(100% - 270px);height:560px;max-height:calc(100% - 80px);display:none;flex-direction:column;background:rgba(10,14,22,.9);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.08);border-radius:10px;pointer-events:auto;overflow:hidden;font-size:11.5px;resize:both';
+    var sl = function (k, label, min, max, step, tip) { return '<label class="hr-s" title="' + esc(tip || '') + '"><span>' + esc(label) + '</span><input type="range" data-hs="' + k + '" min="' + min + '" max="' + max + '" step="' + step + '"><b data-hv="' + k + '"></b></label>'; };
+    p.innerHTML = '<style>.hr-b{all:unset;cursor:pointer;padding:1px 7px;border:1px solid #2a303b;border-radius:6px;white-space:nowrap}.hr-b:hover{border-color:#7b8cff}.hr-b.on{background:#2f4ae0;border-color:#2f4ae0}'
+      + '.hr-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:3px 10px}.hr-s{display:flex;align-items:center;gap:5px}.hr-s span{opacity:.85}.hr-s input{width:84px;accent-color:#7b8cff}.hr-s b{font-weight:400;opacity:.8;min-width:30px;font-variant-numeric:tabular-nums}'
+      + '.hr-c{flex:1;min-height:0;position:relative;margin:4px 10px 0;border:1px solid #2a303b;border-radius:6px;overflow:hidden;background:#05070b}.hr-c canvas{position:absolute;left:0;top:0;width:100%;height:100%;touch-action:none}</style>'
+      + '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px 4px"><b style="flex:1">✂ Body hair</b><span class="hr-n" style="opacity:.7"></span>'
+      + '<label style="display:flex;gap:5px;align-items:center"><input type="checkbox" class="hr-on" style="margin:0;accent-color:#7b8cff">Show hair</label><button class="hr-b hr-x" title="Close">×</button></div>'
+      + '<div class="hr-row">' + sl('dens', 'Hairs per cm²', 1, 300, 1, 'How many hairs grow on each square centimetre of skin (where Length is above 0)') + sl('len', 'Longest (mm)', 1, 120, 1, 'The length of the hairs where Length is white')
+      + sl('bend', 'Lying down', 0, 1, 0.01, '0: standing off the skin; 1: lying flat on it, towards the feet') + sl('rand', 'Length variety', 0, 1, 0.01, 'Some hairs shorter than the map says, at random') + '</div>'
+      + '<div class="hr-row"><span style="opacity:.85">Map</span>' + HAIR_LAYERS.map(function (L) { return '<button class="hr-b" data-hl="' + L[0] + '">' + L[1] + '</button>'; }).join('')
+      + '<span style="width:8px"></span><button class="hr-b" data-ht="brush" title="Paint the value">Brush</button><button class="hr-b" data-ht="erase" title="Length and opacity to 0; colour back to the default">Eraser</button>'
+      + '<button class="hr-b hr-fill" title="The whole map to the value">Fill</button><button class="hr-b hr-clear" title="The map back to its start: no hair, fully visible, the default colour">Clear</button><button class="hr-b hr-undo" title="Undo (Ctrl+Z)">Undo</button></div>'
+      + '<div class="hr-row">' + sl('brush', 'Size', 2, 300, 1, 'The brush, in pixels of the map ([ and ] change it)') + sl('soft', 'Softness', 0, 1, 0.01, '0: a hard edge; 1: fading from the middle') + sl('flow', 'Strength', 0.02, 1, 0.01, 'How much each dab covers')
+      + '<label class="hr-s hr-val" title="The value painted: white = 1 (Length: the longest; Opacity: visible), black = 0"><span>Value</span><input type="range" class="hr-vin" min="0" max="1" step="0.01"><b class="hr-vv"></b></label>'
+      + '<label class="hr-s hr-colw" title="The colour painted"><span>Colour</span><input type="color" class="hr-cin" style="width:36px;height:18px;padding:0;border:1px solid #2a303b;background:none"></label>'
+      + '<label style="display:flex;gap:5px;align-items:center" title="Paint on the skin in the 3D view too (a drag on the skin paints; beside it, the view turns as usual)"><input type="checkbox" class="hr-3d" style="margin:0;accent-color:#7b8cff">Paint on the 3D model</label></div>'
+      + '<div class="hr-c"><canvas class="hr-cv"></canvas><div class="hr-msg" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:20px;opacity:.85"></div></div>'
+      + '<div class="hr-row" style="padding:4px 10px 8px;opacity:.7"><span style="flex:1">The skin laid flat: the head at the top, the front in the middle, the back seam at both sides, the legs at the bottom. Wheel: zoom · right-drag: move · [ ]: brush size</span><button class="hr-b hr-fit">Fit</button></div>';
+    ui.appendChild(p);
+    ['pointerdown', 'mousedown', 'touchstart', 'wheel', 'keydown', 'contextmenu'].forEach(function (ev) { p.addEventListener(ev, function (e) { e.stopPropagation(); }, { passive: ev !== 'wheel' && ev !== 'contextmenu' }); });
+    var q = function (s) { return p.querySelector(s); };
+    q('.hr-x').onclick = function () { hairPanelToggle(false); };
+    q('.hr-on').onchange = function () { HAIR.on = this.checked; hairBuild(); keepView(true); };
+    p.querySelectorAll('[data-hs]').forEach(function (inp) {
+      inp.addEventListener('input', function () {
+        var k = inp.getAttribute('data-hs'); HAIR[k] = +inp.value; p.querySelector('[data-hv="' + k + '"]').textContent = hairFmt(k);
+        if (k === 'dens' || k === 'len' || k === 'bend' || k === 'rand') hairSoon();
+      });
+      inp.addEventListener('change', function () { keepView(true); });
+    });
+    p.querySelectorAll('[data-hl]').forEach(function (b) { b.onclick = function () { HAIR.layer = b.getAttribute('data-hl'); hairPanelSync(); hairDraw(); }; });
+    p.querySelectorAll('[data-ht]').forEach(function (b) { b.onclick = function () { HAIR.tool = b.getAttribute('data-ht'); hairPanelSync(); }; });
+    q('.hr-vin').addEventListener('input', function () { HAIR.val = +this.value; q('.hr-vv').textContent = Math.round(HAIR.val * 100) + '%'; });
+    q('.hr-cin').addEventListener('input', function () { HAIR.paintCol = this.value; });
+    q('.hr-fill').onclick = function () { hairFill(false); };
+    q('.hr-clear').onclick = function () { hairFill(true); };
+    q('.hr-undo').onclick = hairUndo;
+    q('.hr-fit').onclick = function () { hairFit(); hairDraw(); };
+    q('.hr-3d').onchange = function () { HAIR.paint3d = this.checked; renderer.domElement.style.cursor = HAIR.paint3d ? 'crosshair' : ''; };
+    p.addEventListener('keydown', function (e) {
+      if (e.key === '[' || e.key === ']') { HAIR.brush = Math.max(2, Math.min(300, HAIR.brush * (e.key === ']' ? 1.2 : 1 / 1.2))); hairPanelSync(); hairDraw(); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); hairUndo(); }
+    });
+    p.tabIndex = -1;
+    // the flat skin: zoom with the wheel, move with a right drag, paint with a left drag
+    var cv = q('.hr-cv'), drag = null, last = null;
+    cv.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      var r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, V = HAIR.view, k = Math.exp(-e.deltaY * 0.0015);
+      var nz = Math.max(0.2, Math.min(40, V.z * k)); k = nz / V.z;
+      V.ox = mx - (mx - V.ox) * k; V.oy = my - (my - V.oy) * k; V.z = nz; hairDraw();
+    }, { passive: false });
+    cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    cv.addEventListener('pointerdown', function (e) {
+      p.focus({ preventScroll: true });
+      try { cv.setPointerCapture(e.pointerId); } catch (er) { }
+      if (e.button === 2 || e.button === 1) { drag = { x: e.clientX, y: e.clientY }; return; }
+      if (e.button !== 0 || !hairGeo()) return;
+      hairUndoPush(); last = hairMapAt(e); hairDab(last.x, last.y); hairDraw();
+    });
+    cv.addEventListener('pointermove', function (e) {
+      HAIR.mouse = hairCanvasXY(e);
+      if (drag) { HAIR.view.ox += e.clientX - drag.x; HAIR.view.oy += e.clientY - drag.y; drag = { x: e.clientX, y: e.clientY }; }
+      else if (last) { var m = hairMapAt(e); hairStroke(last, m); last = m; hairSoon(400); }
+      hairDraw();
+    });
+    var up = function () { if (last) { last = null; hairBuild(); hairSave(); } drag = null; };
+    cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+    cv.addEventListener('pointerleave', function () { HAIR.mouse = null; hairDraw(); });
+    if (window.ResizeObserver) new ResizeObserver(function () { hairDraw(); }).observe(q('.hr-c'));
+  }
+  function hairFmt(k) { var v = HAIR[k]; return k === 'bend' || k === 'rand' ? Math.round(v * 100) + '%' : String(Math.round(v)); }
+  function hairPanelSync() {
+    var p = HAIR.panel; if (!p) return;
+    p.querySelector('.hr-on').checked = HAIR.on;
+    p.querySelectorAll('[data-hs]').forEach(function (inp) { var k = inp.getAttribute('data-hs'); inp.value = HAIR[k]; p.querySelector('[data-hv="' + k + '"]').textContent = hairFmt(k); });
+    p.querySelectorAll('[data-hl]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-hl') === HAIR.layer); });
+    p.querySelectorAll('[data-ht]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-ht') === HAIR.tool); });
+    var colL = HAIR.layer === 'col';
+    p.querySelector('.hr-val').style.display = colL ? 'none' : 'flex';
+    p.querySelector('.hr-colw').style.display = colL ? 'flex' : 'none';
+    p.querySelector('.hr-vin').value = HAIR.val; p.querySelector('.hr-vv').textContent = Math.round(HAIR.val * 100) + '%';
+    p.querySelector('.hr-cin').value = HAIR.paintCol || HAIR.col;
+    p.querySelector('.hr-3d').checked = HAIR.paint3d;
+    var msg = p.querySelector('.hr-msg');
+    var g = hairGeo();
+    msg.style.display = g ? 'none' : 'flex';
+    msg.innerHTML = SKINLOOK.mesh ? 'This skin was made before it could be laid flat for painting.<br>Run the flow again: the new skin comes laid flat, and its hair maps can be painted here.' : 'No skin yet: the hair grows on the skin, which the run makes last.';
+  }
+  function hairCanvasXY(e) { var r = HAIR.panel.querySelector('.hr-cv').getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+  function hairMapAt(e) { var c = hairCanvasXY(e), V = HAIR.view; return { x: (c.x - V.ox) / V.z, y: (c.y - V.oy) / V.z }; }
+  // the layout's own box (the rectangle the skin is laid on), fitted to the canvas
+  function hairFit() {
+    var g = hairGeo(), cv = HAIR.panel && HAIR.panel.querySelector('.hr-cv'); if (!cv) return;
+    var W = cv.clientWidth || 600, H = cv.clientHeight || 400, u0 = 0, u1 = 1, v0 = 0, v1 = 1;
+    if (g) {
+      var uv = g.attributes.uv.array; u0 = v0 = 1; u1 = v1 = 0;
+      for (var i = 0; i < uv.length; i += 2) if (uv[i] >= 0) { if (uv[i] < u0) u0 = uv[i]; if (uv[i] > u1) u1 = uv[i]; if (uv[i + 1] < v0) v0 = uv[i + 1]; if (uv[i + 1] > v1) v1 = uv[i + 1]; }
+    }
+    var S = HAIR.S, x0 = u0 * S, x1 = u1 * S, y0 = (1 - v1) * S, y1 = (1 - v0) * S;
+    var z = 0.94 * Math.min(W / Math.max(1, x1 - x0), H / Math.max(1, y1 - y0));
+    HAIR.view = { z: z, ox: W / 2 - z * (x0 + x1) / 2, oy: H / 2 - z * (y0 + y1) / 2 };
+  }
+  // the wireframe of the flat skin, drawn once (2048 px), laid over the map
+  function hairWire() {
+    var g = hairGeo(); if (!g) return null;
+    if (HAIR.wire && HAIR.wireKey === g.uuid) return HAIR.wire;
+    var S2 = 2048, c = document.createElement('canvas'); c.width = c.height = S2;
+    var x = c.getContext('2d'), uv = g.attributes.uv.array, idx = g.index.array;
+    x.strokeStyle = 'rgba(140,170,255,0.55)'; x.lineWidth = 0.5; x.beginPath();
+    for (var f = 0; f < idx.length; f += 3) {
+      var a = idx[f], b = idx[f + 1], cc = idx[f + 2];
+      if (uv[2 * a] < 0 || uv[2 * b] < 0 || uv[2 * cc] < 0) continue;
+      x.moveTo(uv[2 * a] * S2, (1 - uv[2 * a + 1]) * S2); x.lineTo(uv[2 * b] * S2, (1 - uv[2 * b + 1]) * S2); x.lineTo(uv[2 * cc] * S2, (1 - uv[2 * cc + 1]) * S2); x.closePath();
+    }
+    x.stroke();
+    HAIR.wire = c; HAIR.wireKey = g.uuid;
+    return c;
+  }
+  function hairDraw() {
+    var p = HAIR.panel; if (!p || p.style.display === 'none') return;
+    var cv = p.querySelector('.hr-cv'), W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    var x = cv.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, W, H);
+    if (!HAIR.maps || !hairGeo()) return;
+    var V = HAIR.view, S = HAIR.S;
+    x.imageSmoothingEnabled = V.z < 2;
+    x.drawImage(HAIR.maps[HAIR.layer], V.ox, V.oy, S * V.z, S * V.z);
+    var w = hairWire(); if (w) { x.globalAlpha = 0.6; x.imageSmoothingEnabled = true; x.drawImage(w, V.ox, V.oy, S * V.z, S * V.z); x.globalAlpha = 1; }
+    if (HAIR.mouse) { x.strokeStyle = '#fff'; x.lineWidth = 1; x.beginPath(); x.arc(HAIR.mouse.x, HAIR.mouse.y, Math.max(1.5, HAIR.brush * V.z / 2), 0, 2 * Math.PI); x.stroke(); }
+  }
+  // painting: soft round dabs, so many along a stroke
+  function hairPaintStyle() {
+    var L = HAIR.layer, erase = HAIR.tool === 'erase';
+    if (L === 'col') { var c = erase ? HAIR.col : (HAIR.paintCol || HAIR.col); return c; }
+    var g = Math.round(255 * (erase ? 0 : HAIR.val)); return 'rgb(' + g + ',' + g + ',' + g + ')';
+  }
+  function hairRGB(css) { var d = document.createElement('canvas').getContext('2d'); d.fillStyle = css; var h = d.fillStyle; if (h[0] === '#') { var n = parseInt(h.slice(1), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; } var m = h.match(/\d+/g) || [0, 0, 0]; return [+m[0], +m[1], +m[2]]; }
+  function hairDab(mx, my) {
+    var c = HAIR.maps[HAIR.layer].getContext('2d'), R = HAIR.brush / 2, rgb = hairRGB(hairPaintStyle()), a = HAIR.flow;
+    var gr = c.createRadialGradient(mx, my, R * (1 - HAIR.soft) * 0.999, mx, my, R);
+    gr.addColorStop(0, 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',' + a + ')'); gr.addColorStop(1, 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0)');
+    c.fillStyle = gr; c.beginPath(); c.arc(mx, my, R, 0, 2 * Math.PI); c.fill();
+  }
+  function hairStroke(a, b) {
+    var d = Math.hypot(b.x - a.x, b.y - a.y), step = Math.max(1, HAIR.brush * 0.15), n = Math.ceil(d / step);
+    for (var i = 1; i <= n; i++) hairDab(a.x + (b.x - a.x) * i / n, a.y + (b.y - a.y) * i / n);
+  }
+  function hairUndoPush() {
+    var L = HAIR.layer, c = HAIR.maps[L], u = HAIR.undo[L];
+    u.push(c.getContext('2d').getImageData(0, 0, HAIR.S, HAIR.S)); if (u.length > 8) u.shift();
+  }
+  function hairUndo() {
+    var L = HAIR.layer, u = HAIR.undo[L]; if (!u.length) return;
+    HAIR.maps[L].getContext('2d').putImageData(u.pop(), 0, 0); hairDraw(); hairBuild(); hairSave();
+  }
+  function hairFill(clear) {
+    if (!HAIR.maps) return;
+    hairUndoPush();
+    var c = HAIR.maps[HAIR.layer].getContext('2d');
+    c.fillStyle = clear ? (HAIR.layer === 'len' ? '#000' : HAIR.layer === 'op' ? '#fff' : HAIR.col) : hairPaintStyle();
+    c.fillRect(0, 0, HAIR.S, HAIR.S); hairDraw(); hairBuild(); hairSave();
+  }
+  // painting on the skin in the 3D view: the layout's place under the pointer (the hit face, its uv)
+  var hrRay = new THREE.Raycaster(), hrM = new THREE.Vector2(), hrTri = new THREE.Triangle(), hrBar = new THREE.Vector3(), hrA = new THREE.Vector3(), hrB = new THREE.Vector3(), hrC = new THREE.Vector3();
+  function hairHit(ev) {
+    var mesh = SKINLOOK.mesh, g = hairGeo(); if (!mesh || !g || !mesh.visible) return null;
+    var rc = renderer.domElement.getBoundingClientRect();
+    hrM.set(((ev.clientX - rc.left) / rc.width) * 2 - 1, -((ev.clientY - rc.top) / rc.height) * 2 + 1);
+    hrRay.setFromCamera(hrM, camera);
+    var hits = hrRay.intersectObject(mesh, false);
+    for (var h = 0; h < hits.length; h++) {
+      if (PARTS && PARTS.axis !== 'off' && PARTS.plane.distanceToPoint(hits[h].point) < 0) continue;   // (cut away)
+      var f = hits[h].face; if (!f) continue;
+      var uv = g.attributes.uv.array, pa = g.attributes.position;
+      if (uv[2 * f.a] < 0 || uv[2 * f.b] < 0 || uv[2 * f.c] < 0) return null;
+      var lp = mesh.worldToLocal(hits[h].point.clone());
+      hrA.fromBufferAttribute(pa, f.a); hrB.fromBufferAttribute(pa, f.b); hrC.fromBufferAttribute(pa, f.c);
+      hrTri.set(hrA, hrB, hrC); hrTri.getBarycoord(lp, hrBar);
+      var u = hrBar.x * uv[2 * f.a] + hrBar.y * uv[2 * f.b] + hrBar.z * uv[2 * f.c], v = hrBar.x * uv[2 * f.a + 1] + hrBar.y * uv[2 * f.b + 1] + hrBar.z * uv[2 * f.c + 1];
+      return { x: u * HAIR.S, y: (1 - v) * HAIR.S };
+    }
+    return null;
+  }
+  (function () {
+    var last = null, lastT = 0;
+    el.addEventListener('pointerdown', function (ev) {
+      if (!HAIR.paint3d || ev.button !== 0 || ev.target !== renderer.domElement || !HAIR.panel || HAIR.panel.style.display === 'none') return;
+      var m = hairHit(ev); if (!m) return;                  // (beside the skin: the view turns as usual)
+      ev.stopPropagation(); ev.preventDefault();
+      controls.enabled = false; hairUndoPush(); hairDab(m.x, m.y); last = m; hairDraw();
+      try { renderer.domElement.setPointerCapture(ev.pointerId); } catch (e) { }
+    }, true);
+    el.addEventListener('pointermove', function (ev) {
+      if (!last) return;
+      ev.stopPropagation();
+      var now = performance.now(); if (now - lastT < 30) return; lastT = now;
+      var m = hairHit(ev); if (!m) return;
+      // (a jump across the seam: no line through the whole layout)
+      if (Math.hypot(m.x - last.x, m.y - last.y) < HAIR.S * 0.08) hairStroke(last, m); else hairDab(m.x, m.y);
+      last = m; hairDraw(); hairSoon(400);
+    }, true);
+    window.addEventListener('pointerup', function () { if (!last) return; last = null; controls.enabled = true; hairBuild(); hairSave(); });
+  })();
   var TISSUE_KINDS = [  // [kind, words in the structure's name, bump height (m), second colour (fat, slate, pale crests)]
     [1, ['liver'], 0.0003, null], [2, ['spleen'], 0.0003, null], [3, ['kidney', 'gallbladder', 'bladder'], 0.0002, null],
     [4, ['stomach', 'bowel', 'colon', 'duodenum', 'esophagus', 'rectum'], 0.0022, [0.98, 0.84, 0.76]],
