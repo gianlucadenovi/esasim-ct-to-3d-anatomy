@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 12 · worker block, Python: def run(ctx)
+# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 13 · worker block, Python: def run(ctx)
 # Turns segmented anatomy into a soft-tissue model the 3D view simulates in real time: organs that sag, sway and push each other under gravity, held by a fixed skeleton and contained by the skin (metaba
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-28
@@ -605,6 +605,10 @@ def skin_unwrap(P, F, log=print):
             lp = verts[lab[verts] == cc]
             if len(lp) >= 8:
                 loops.append(lp)
+        # (small openings, a few vertices round, are holes, not where the scan cuts the body: they stay as they are)
+        if loops:
+            big = max(len(lp) for lp in loops)
+            loops = [lp for lp in loops if len(lp) >= 0.15 * big]
     log("Unwrap: %d cap face(s) left out (the scan's cut), %d opening(s)." % (int(cap.sum()), len(loops)))
     seam, front = _uw_seam(P, F, log, loops)
     # cut the skin faces only (the caps would join the two sides of the seam at the openings); the caps keep the
@@ -655,33 +659,42 @@ def skin_unwrap(P, F, log=print):
 
 
 def strip_table(v, vsp, hu, log=print):
-    """The scanner's table and its pad: thin, long arcs at the same place in every slice (the patient changes from slice to
-    slice, the table does not). Found in the slices taken together (what is above hu in 70% of them or more), kept only
-    where thin (gone after an opening of about 5 mm) and long (over 6 cm): then air in every slice, so that where the pad
-    lies against the back it does not become skin (the thick table further down is apart from the body, dropped later)."""
+    """The scanner's table pad: a thin arc (a few mm) that follows the back, just under the skin, touching it here and there.
+    Slice by slice: what is thin (gone after an opening of about 5 mm) and long (over 3 cm) is not the body and becomes
+    air; what is thick (the body) is never touched, so where the pad lies against the back at most a mm-thin layer stays.
+    The thick table further down is apart from the body and is dropped later."""
     import numpy as np
     from scipy import ndimage
-    if v.shape[0] < 8:
-        return 0
     px = float(min(vsp[1], vsp[2]))
-    often = np.percentile(v, 30, axis=0) > hu
     r = max(1, int(round(2.5 / px)))
     yy, xx = np.ogrid[-r:r + 1, -r:r + 1]
-    thin = often & ~ndimage.binary_opening(often, structure=(xx * xx + yy * yy <= r * r))
-    lab, n = ndimage.label(thin, structure=np.ones((3, 3)))
-    if n == 0:
-        return 0
-    T = np.zeros_like(thin)
-    for i, s in enumerate(ndimage.find_objects(lab), 1):
-        L = max((s[0].stop - s[0].start) * vsp[1], (s[1].stop - s[1].start) * vsp[2])
-        if L >= 60.0 and float((lab[s] == i).sum()) * vsp[1] * vsp[2] / L < 4.0:    # long, and under 4 mm thick
-            T[s] |= lab[s] == i
-    if not T.any():
-        return 0
-    T = ndimage.binary_dilation(T, iterations=max(1, int(round(1.0 / px))))     # (its blurred edge too)
-    v[:, T] = -1000.0
-    log("Skin: the scanner's table pad taken out (a thin arc under the body, %.0f cm² of each slice)." % (T.sum() * vsp[1] * vsp[2] / 100.0))
-    return int(T.sum())
+    disk = xx * xx + yy * yy <= r * r
+    grow = max(1, int(round(1.0 / px)))
+    tot = 0
+    slices = 0
+    for k in range(v.shape[0]):
+        m = v[k] > hu
+        if not m.any():
+            continue
+        thick = ndimage.binary_opening(m, structure=disk)
+        thin = m & ~thick
+        if not thin.any():
+            continue
+        lab, n = ndimage.label(thin, structure=np.ones((3, 3)))
+        kill = np.zeros(n + 1, bool)
+        for i, s in enumerate(ndimage.find_objects(lab), 1):
+            L = max((s[0].stop - s[0].start) * vsp[1], (s[1].stop - s[1].start) * vsp[2])
+            if L >= 30.0 and float((lab[s] == i).sum()) * vsp[1] * vsp[2] / L < 3.5:     # long, and under 3.5 mm thick
+                kill[i] = True
+        if not kill.any():
+            continue
+        bad = ndimage.binary_dilation(kill[lab], iterations=grow) & ~thick     # (its blurred edge, never the body)
+        v[k][bad] = -1000.0
+        tot += int(bad.sum())
+        slices += 1
+    if tot:
+        log("Skin: thin arcs apart from the body taken out (the scanner's table pad), in %d of %d slices." % (slices, v.shape[0]))
+    return tot
 
 
 def skin_shell(ct, hu, spacing_mm, log):
