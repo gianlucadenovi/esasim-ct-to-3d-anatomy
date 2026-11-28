@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 71 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 72 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2717,7 +2717,7 @@ function render(ctx) {
   // ⚙ The skin's settings: every value of its look, live (its shader's uniforms and its material), presets for the six
   // skin types of the Fitzpatrick scale, and Copy values (JSON: to send, or to paste in the view's Skin settings, which
   // takes the same JSON as its defaults). What is set is kept with the view.
-  var SKIN_DEF = { base: '#d9a888', redCol: '#cc857a', redAmt: 0.55, fade: 12, mel: 0.35, blood: 0.3, blot: 0.14, cxLo: 0.05, cxHi: 0.9, relief: 1.0, und: 0.8, grain: 0.03, grainCx: 0.06, grainSz: 0.4,
+  var SKIN_DEF = { base: '#d9a888', redCol: '#cc857a', redAmt: 0.55, fade: 12, mel: 0.35, blood: 0.3, blot: 0.14, cxLo: 0.05, cxHi: 0.9, relief: 1.0, und: 0.8, grain: 0.03, grainCx: 0.06, grainSz: 0.4, grainSzCx: 1.0, dark: 0.2, sheen: 0.3,
     dotH: 0.7, dotSize: 0.22, dotDen: 0.75, dotSp: 2.5, rough: 0.38, glossFlat: 0.7, glossCx: 1.4, env: 1.0, opBase: 0, opCx: 0.3 };
   var SKIN_TYPES = [
     ['I', 'I · very fair', { base: '#f3d6c6', mel: 0.12, blood: 0.38, redAmt: 0.6, redCol: '#cc857a' }],
@@ -2738,13 +2738,14 @@ function render(ctx) {
     if (typeof st.solid === 'boolean') SKINLOOK.solid = st.solid;
     SKINLOOK.u.value = SKINLOOK.solid ? 1 : 0;
   })();
-  var SKINU = { esS_redCol: { value: new THREE.Vector3(0.8, 0.52, 0.48) }, esS_dotF: { value: 400 }, esS_grainF: { value: 2500 } };
-  ['redAmt', 'fade', 'mel', 'blood', 'blot', 'cxLo', 'cxHi', 'relief', 'und', 'grain', 'grainCx', 'dotH', 'dotSize', 'dotDen', 'glossFlat', 'glossCx', 'opBase', 'opCx'].forEach(function (k) { SKINU['esS_' + k] = { value: 0 }; });
+  var SKINU = { esS_redCol: { value: new THREE.Vector3(0.8, 0.52, 0.48) }, esS_dotF: { value: 400 }, esS_grainF: { value: 2500 }, esS_grainFc: { value: 1000 } };
+  ['redAmt', 'fade', 'dark', 'sheen', 'mel', 'blood', 'blot', 'cxLo', 'cxHi', 'relief', 'und', 'grain', 'grainCx', 'dotH', 'dotSize', 'dotDen', 'glossFlat', 'glossCx', 'opBase', 'opCx'].forEach(function (k) { SKINU['esS_' + k] = { value: 0 }; });
   var SKIN_GLSL_U = Object.keys(SKINU).map(function (k) { return 'uniform ' + (k === 'esS_redCol' ? 'vec3 ' : 'float ') + k + ';'; }).join('\n');
   function skinHex(h) { var n = parseInt(String(h).replace('#', ''), 16) || 0; return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; }
   function skinApply() {
     var v = SKINV;
-    for (var k in SKINU) { var key = k.slice(4); if (key !== 'redCol' && key !== 'dotF' && key !== 'grainF') SKINU[k].value = +v[key] || 0; }
+    for (var k in SKINU) { var key = k.slice(4); if (key !== 'redCol' && key !== 'dotF' && key !== 'grainF' && key !== 'grainFc') SKINU[k].value = +v[key] || 0; }
+    SKINU.esS_grainFc.value = 1000 / Math.max(0.05, +v.grainSzCx || 1.0);
     SKINU.esS_grainF.value = 1000 / Math.max(0.05, +v.grainSz || 0.4);              // features per metre
     SKINU.esS_cxHi.value = Math.max(+v.cxHi, +v.cxLo + 0.01);
     SKINU.esS_dotF.value = 1000 / Math.max(0.5, +v.dotSp || 2.5);
@@ -2755,12 +2756,12 @@ function render(ctx) {
   function skinState() { var o = { solid: SKINLOOK.solid }; for (var k in SKINV) o[k] = SKINV[k]; return o; }
   var SKIN_UI = [
     ['h', 'Look'], ['solid'], ['type'],
-    ['h', 'Colour'], ['base', 'Skin colour', 'color'], ['redCol', 'Tint of complex areas', 'color'], ['redAmt', 'Red tones in complex areas', 0, 1, 0.01],
+    ['h', 'Colour'], ['base', 'Skin colour', 'color'], ['redCol', 'Tint of complex areas', 'color'], ['redAmt', 'Red tones in complex areas', 0, 1, 0.01], ['dark', 'Darker in complex areas', 0, 0.8, 0.01],
     ['mel', 'Melanin mottling', 0, 1, 0.01], ['blood', 'Blood mottling (redness)', 0, 1, 0.01], ['blot', 'Blotchiness', 0, 0.5, 0.01],
     ['h', 'Complexity (folds, creases, navel, nipples, edges)'], ['cxLo', 'Flat below', 0, 1, 0.01], ['cxHi', 'Fully complex above', 0, 1, 0.01], ['fade', 'Skin complexity fade distance (mm)', 0, 50, 0.5],
-    ['h', 'Relief (normal map)'], ['relief', 'Relief strength', 0, 3, 0.05], ['und', 'Undulation (a few cm)', 0, 2, 0.05], ['grainSz', 'Fine grain: size (mm)', 0.1, 3, 0.05], ['grain', 'Fine grain, flat skin', 0, 0.3, 0.005], ['grainCx', 'Fine grain, complex skin', 0, 0.3, 0.005],
+    ['h', 'Relief (normal map)'], ['relief', 'Relief strength', 0, 3, 0.05], ['und', 'Undulation (a few cm)', 0, 2, 0.05], ['grainSz', 'Fine grain: size, flat skin (mm)', 0.1, 3, 0.05], ['grainSzCx', 'Fine grain: size, complex skin (mm)', 0.1, 3, 0.05], ['grain', 'Fine grain, flat skin', 0, 0.3, 0.005], ['grainCx', 'Fine grain, complex skin', 0, 0.3, 0.005],
     ['dotH', 'Bumps: height', 0, 2, 0.05], ['dotSize', 'Bumps: size', 0, 0.6, 0.01], ['dotDen', 'Bumps: how many', 0, 1.5, 0.01], ['dotSp', 'Bumps: spacing (mm)', 1, 8, 0.1],
-    ['h', 'Surface'], ['rough', 'Roughness', 0.05, 1, 0.01], ['glossFlat', 'Roughness ×, flat skin', 0.2, 2, 0.01], ['glossCx', 'Roughness ×, complex skin', 0.2, 2, 0.01], ['env', 'Reflections', 0, 3, 0.05],
+    ['h', 'Surface'], ['rough', 'Roughness', 0.05, 1, 0.01], ['glossFlat', 'Roughness ×, flat skin', 0.2, 2, 0.01], ['glossCx', 'Roughness ×, complex skin', 0.2, 2, 0.01], ['env', 'Reflections', 0, 3, 0.05], ['sheen', 'Grain glints (gloss varies with the grain)', 0, 1, 0.01],
     ['h', 'See-through (when not solid)'], ['opBase', 'Opacity', -0.5, 0.5, 0.01], ['opCx', 'Extra opacity, complex skin', 0, 1, 0.01]
   ];
   var skinPanel = null;
@@ -3005,10 +3006,12 @@ function render(ctx) {
     // relief (x), extra opacity (y: more where complex), gloss factor (z: glossy where flat, matte where complex)
     'vec4 esSkin(vec3 p, float px, float cx) {',
     '  float mid = esFbmP(p + 2.0, px, 35.0);',                                  // a soft undulation, a few cm
-    '  float fine = esFbmP(p, px, esS_grainF);',                                      // a fine, simple grain
+    // the fine grain: very fine on flat skin, coarser towards complex areas (two grains, blended: no stretching)
+    '  float fine = mix(esFbmP(p, px, esS_grainF), esFbmP(p + 3.1, px, esS_grainFc), cx);',                                      // a fine, simple grain
     '  float dots = esFade(px, 3.0 * esS_dotF) * smoothstep(0.0, 0.25, cx) * esDots(p * esS_dotF, cx);',
     '  float h = 0.5 + esS_und * (mid - 0.5) + (esS_grain + esS_grainCx * cx) * (fine - 0.5) + esS_dotH * dots;',
-    '  float rough = mix(esS_glossFlat, esS_glossCx, cx) + 0.15 * (esFbm(p * 15.0) - 0.5) + 0.2 * dots;',
+    // glints: the grain's crests glossier, its hollows more matte
+    '  float rough = mix(esS_glossFlat, esS_glossCx, cx) + 0.15 * (esFbm(p * 15.0) - 0.5) + 0.2 * dots - esS_sheen * 1.2 * (fine - 0.5);',
     '  return vec4(h, esS_opCx * cx + 0.09 * dots, rough, 0.0); }',
     // the colour: gentle melanin and blood mottling (plain noise), and darker red tones where the skin is complex
     'vec3 esSkinColor(vec3 base, vec3 p, float px, float cx) {',
@@ -3018,6 +3021,7 @@ function render(ctx) {
     '  c = mix(c, c * vec3(0.82, 0.7, 0.6), esS_mel * smoothstep(0.45, 0.8, mel));',
     '  c = mix(c, c * vec3(1.06, 0.84, 0.8), esS_blood * smoothstep(0.5, 0.8, hb));',
     '  c = mix(c, c * esS_redCol, clamp(esS_redAmt * cx * (0.8 + 0.4 * hb), 0.0, 1.0));',
+    '  c *= 1.0 - esS_dark * cx;',
     '  return c; }'
   ].join('\n');
   function tissueShader(mat, mesh) {
@@ -3684,7 +3688,7 @@ function render(ctx) {
             + 'float esAo = clamp( esA + dot( esSpec, vec3( 0.2126, 0.7152, 0.0722 ) ), 0.0, 1.0 );\n'
             + 'gl_FragColor = vec4( ( esDif * esA + esSpec ) / max( esAo, 0.001 ), esAo ); }');
       };
-      skinMat.customProgramCacheKey = function () { return 'esasim-skin-7'; };
+      skinMat.customProgramCacheKey = function () { return 'esasim-skin-8'; };
       var skin = new THREE.Mesh(g, skinMat);
       skin.name = 'skin'; skin.renderOrder = 5;
       SKINLOOK.mat = skinMat; SKINLOOK.mesh = skin; skinApply(); skinSolid(SKINLOOK.solid);
