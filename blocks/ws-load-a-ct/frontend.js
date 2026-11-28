@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// Load a CT (ws-load-a-ct) · version 8 · view, JavaScript: function render(ctx)
+// Load a CT (ws-load-a-ct) · version 9 · view, JavaScript: function render(ctx)
 // The View's loading dialog for CT scans: drop or choose a folder from your computer (a whole CD/DVD export is fine), see its series, tick the ones to segment and press Load; or give a folder on a worke
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -116,6 +116,7 @@ function render(ctx) {
     try {
       scan = await scanFiles(list, (i, n) => { busy = `Reading the headers: ${i} of ${n} files`; paintBusy(); });
       MEM.scan = scan;
+      if (st.ticks === 'all') tickSeries('every');                // the remembered choice: every CT series ticked
       if (st.pending && st.uids && st.uids.length) {          // the same folder again after the run started: same series
         const keep = scan.series.filter(s => st.uids.includes(s.key));
         if (keep.length) scan.series.forEach(s => { s.on = st.uids.includes(s.key); });
@@ -375,7 +376,12 @@ function render(ctx) {
   }
   function seriesTable() {
     const s = scan;
-    const head = `<div class="hint">${s.files} files: <b>${s.series.length} series</b> in ${s.studies} stud${s.studies === 1 ? 'y' : 'ies'}${s.dups ? `, ${s.dups} copies read once` : ''}${s.other ? `, ${s.other} other files left out (pictures, pages, DICOMDIR…)` : ''}. The best CT series of each study is ticked.</div>`;
+    const head = `<div class="hint">${s.files} files: <b>${s.series.length} series</b> in ${s.studies} stud${s.studies === 1 ? 'y' : 'ies'}${s.dups ? `, ${s.dups} copies read once` : ''}${s.other ? `, ${s.other} other files left out (pictures, pages, DICOMDIR…)` : ''}.</div>`
+      + `<div class="row" style="align-items:center;gap:6px;flex-wrap:wrap"><span>${s.series.filter(x => x.on).length} of ${s.series.filter(x => x.can).length} ticked · Tick:</span>`
+      + `<button class="btn" data-a="tick-all" title="Every series that can be loaded: each becomes one case">All</button>`
+      + `<button class="btn" data-a="tick-best" title="The best CT series of each study (axial, thin slices, the most of the body)">Best of each study</button>`
+      + `<button class="btn" data-a="tick-none">None</button>`
+      + `<label style="display:flex;gap:5px;align-items:center;margin-left:8px" title="Remembered: the next folders come with every CT series ticked"><input type="checkbox" data-a="tick-default"${st.ticks === 'all' ? ' checked' : ''}>Tick every CT series by default</label></div>`;
     const rows = s.series.map((x, i) => `<tr class="${x.can ? '' : 'off'}">
         <td><input type="checkbox" data-i="${i}"${x.on ? ' checked' : ''}${x.can ? '' : ' disabled'}></td>
         <td>${esc(x.label)}${x.best ? ' <span class="tag best">best</span>' : ''}</td><td>${esc(x.modality)}</td>
@@ -414,7 +420,18 @@ function render(ctx) {
   }
   function paintBusy() { const h = body.querySelector('.dz + .hint'); if (h) h.textContent = busy; else paint(); }
   function paintProgress() { if (st.tab === 'local') { if (!busy) paint(); return; } const pg = body.querySelector('.pg'); if (pg) pg.innerHTML = progressHtml(); const c = pg && pg.querySelector('[data-a=cancel]'); if (c) c.addEventListener('click', () => act('cancel')); }
+  // which series are ticked: every one that can be loaded, every CT series (20 images or more, and volumes, zips), the
+  // best CT series of each study, or none
+  function tickSeries(how) {
+    if (!scan) return;
+    scan.series.forEach(s => {
+      const other = s.kind === 'volume' || s.kind === 'zip';
+      s.on = s.can && (how === 'all' ? true : how === 'every' ? (other || (s.kind === 'CT' && s.images >= 20)) : how === 'best' ? (other || !!s.best) : false);
+    });
+  }
   function act(a) {
+    if (a === 'tick-all' || a === 'tick-best' || a === 'tick-none') { tickSeries(a.slice(5)); paint(); return; }
+    if (a === 'tick-default') { st.ticks = st.ticks === 'all' ? 'best' : 'all'; save(); tickSeries(st.ticks === 'all' ? 'every' : 'best'); paint(); return; }
     if (a === 'dir') pickDir.click();
     else if (a === 'files') pickFiles.click();
     else if (a === 'load') sendNow();
