@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 128 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 129 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2915,17 +2915,17 @@ function render(ctx) {
   // none), Opacity (grey: 0 invisible, 1 visible) and Colour (RGB). Hairs grow from the skin, so many per cm², as long
   // as Length says (times the longest), and bend towards the feet (the model's own down: they turn with it). Each case
   // keeps its own maps (its own layout), with the view.
-  var HAIR = { on: true, dens: 40, len: 20, bend: 0.6, rand: 0.35, gloss: 0.6, curl: 0, S: 1024, fol: null, maps: null, lines: null, panel: null,
-    layer: 'len', tool: 'brush', brush: 40, soft: 0.6, flow: 0.7, val: 1, col: '#3b2a20', skinCol: '#a5654c', undo: { len: [], op: [], col: [], curl: [], skin: [] },
+  var HAIR = { on: true, dens: 40, len: 20, bend: 0.6, rand: 0.35, gloss: 0.6, curl: 0, thick: 100, U: 1, S: 1024, fol: null, maps: null, lines: null, panel: null,
+    layer: 'len', tool: 'brush', brush: 40, soft: 0.6, flow: 0.7, val: 1, col: '#3b2a20', skinCol: '#a5654c', undo: { len: [], op: [], col: [], curl: [], thick: [], skin: [] },
     view: { z: 1, ox: 0, oy: 0 }, wire: null, wireKey: '', paint3d: false, store: {}, key: '', cache: null, timer: 0, saveT: 0 };
   (function () {
     var st = (ctx.state || {}).hair;
     if (st && typeof st === 'object') {
-      ['on', 'dens', 'len', 'bend', 'rand', 'gloss', 'curl', 'col'].forEach(function (k) { if (st[k] != null && typeof st[k] === typeof HAIR[k]) HAIR[k] = st[k]; });
+      ['on', 'dens', 'len', 'bend', 'rand', 'gloss', 'curl', 'col', 'thick'].forEach(function (k) { if (st[k] != null && typeof st[k] === typeof HAIR[k]) HAIR[k] = st[k]; });
       if (st.store && typeof st.store === 'object') HAIR.store = st.store;
     }
   })();
-  var HAIR_LAYERS = [['len', 'Length'], ['op', 'Opacity'], ['col', 'Colour'], ['curl', 'Curliness'], ['skin', 'Skin colour']];
+  var HAIR_LAYERS = [['len', 'Length'], ['op', 'Opacity'], ['col', 'Colour'], ['curl', 'Curliness'], ['thick', 'Thickness'], ['skin', 'Skin colour']];
   // the skin's own colour, painted: see-through = the skin as it is; painted = that colour, its pores, mottling and
   // freckles kept over it (the skin's shader reads the map through its layout, live while painting)
   var SKPAINT = { tex: null, u: { value: null }, on: { value: 0 } };
@@ -2944,11 +2944,15 @@ function render(ctx) {
   }
   // after a stroke: the skin's colour map shows at once; the hair maps regrow the hair (soon while painting, at the end)
   function hairMapsChanged(final) { if (HAIR.layer === 'skin') skinPaintUpd(); else if (final) hairBuild(); else hairSoon(400); }
-  function hairState() { return { on: HAIR.on, dens: HAIR.dens, len: HAIR.len, bend: HAIR.bend, rand: HAIR.rand, gloss: HAIR.gloss, curl: HAIR.curl, col: HAIR.col, store: HAIR.store }; }
+  function hairState() { return { on: HAIR.on, dens: HAIR.dens, len: HAIR.len, bend: HAIR.bend, rand: HAIR.rand, gloss: HAIR.gloss, curl: HAIR.curl, col: HAIR.col, thick: HAIR.thick, store: HAIR.store }; }
   // the hair's look: lit as strands (Kajiya-Kay): bright across the light, and a sheen where the strand lies at the
   // mirror angle between the light (at the camera, a little above) and the eye; as the hair bends, that place moves along it
-  var HAIR_VS = 'attribute vec4 hC;\nattribute vec3 hT;\nattribute vec3 hN;\nvarying vec4 vC;\nvarying vec3 vT;\nvarying vec3 vV;\nvarying vec3 vN;\n'
-    + 'void main() { vC = hC; vT = normalize(normalMatrix * hT); vN = normalize(normalMatrix * hN); vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = -mv.xyz; gl_Position = projectionMatrix * mv; }';
+  // its thickness: the strand's real width on the screen (Thickness map x Thickest, thinner to the tip) against a
+  // pixel there: a strand drawn a pixel wide covers that much of it (fine hair faint from afar, plain up close)
+  var HAIR_VS = 'attribute vec4 hC;\nattribute vec3 hT;\nattribute vec3 hN;\nattribute float hW;\nuniform float uThick;\nuniform float uVpH;\nvarying vec4 vC;\nvarying vec3 vT;\nvarying vec3 vV;\nvarying vec3 vN;\n'
+    + 'void main() { vC = hC; vT = normalize(normalMatrix * hT); vN = normalize(normalMatrix * hN); vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = -mv.xyz; gl_Position = projectionMatrix * mv;\n'
+    + ' float dpt = projectionMatrix[3][3] > 0.5 ? 1.0 : max(1e-6, -mv.z), wpx = hW * uThick * projectionMatrix[1][1] * 0.5 * uVpH / dpt;\n'
+    + ' vC.a = hC.a * max(0.1, sqrt(clamp(wpx, 0.0, 1.0))); }';
   var HAIR_FS = 'uniform float uGloss;\nvarying vec4 vC;\nvarying vec3 vT;\nvarying vec3 vV;\nvarying vec3 vN;\n'
     + 'void main() {\n vec3 T = normalize(vT), V = normalize(vV), L = normalize(vec3(0.35, 0.55, 1.0)), N = normalize(vN);\n'
     // the glints come from a key light above and to the side (a light at the camera would strike every strand alike);
@@ -3024,13 +3028,13 @@ function render(ctx) {
     // (Length: 10%, short everywhere; Opacity: 1; Curliness: 0, straight; Colour: the default)
     var g = c.getContext('2d', { willReadFrequently: true });
     if (kind === 'skin') return c;                         // (Skin colour: see-through, the skin as it is)
-    g.fillStyle = kind === 'len' ? '#1a1a1a' : kind === 'curl' ? '#000' : kind === 'op' ? '#fff' : HAIR.col;
+    g.fillStyle = kind === 'len' ? '#1a1a1a' : kind === 'curl' ? '#000' : kind === 'op' ? '#fff' : kind === 'thick' ? '#b3b3b3' : HAIR.col;   // (Thickness: 70% of the thickest)
     g.fillRect(0, 0, HAIR.S, HAIR.S);
     return c;
   }
   // the maps of the case shown: kept ones (as pictures), else plain (10% of the longest everywhere, fully visible, the default colour, as curly as the slider)
   function hairMapsFor(key, done) {
-    HAIR.key = key; HAIR.maps = { len: hairBlank('len'), op: hairBlank('op'), col: hairBlank('col'), curl: hairBlank('curl'), skin: hairBlank('skin') }; HAIR.undo = { len: [], op: [], col: [], curl: [], skin: [] };
+    HAIR.key = key; HAIR.maps = { len: hairBlank('len'), op: hairBlank('op'), col: hairBlank('col'), curl: hairBlank('curl'), thick: hairBlank('thick'), skin: hairBlank('skin') }; HAIR.undo = { len: [], op: [], col: [], curl: [], thick: [], skin: [] };
     // (saved before maps were known by their skin: under the case's name, or 'case'; one left alone is this one's)
     var kept = HAIR.store[key], from = key;
     // (older saves, made before the maps were kept by skin, were all painted on the layout made here: only a skin
@@ -3103,6 +3107,8 @@ function render(ctx) {
   }
   function hairSoon(ms) { clearTimeout(HAIR.timer); HAIR.timer = setTimeout(hairBuild, ms == null ? 250 : ms); }
   // a small, repeatable random sequence: the same hairs every time (painting does not shuffle them)
+  // a long hair's extra points (past 6 cm, one more each 12 mm, at most 24): it bends and hangs smoothly
+  function hairExtra(mm) { return Math.min(24, Math.max(0, Math.round((mm - 60) / 12))); }
   function hairRng(seed) { var a = seed >>> 0; return function () { a = (a + 0x6D2B79F5) >>> 0; var t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
   function hairBuild() {
     var mesh = SKINLOOK.mesh, g = mesh && mesh.geometry;
@@ -3154,13 +3160,15 @@ function render(ctx) {
     var C = HAIR.cache, S = HAIR.S;
     if (!C.fl.length) return;
     var Kp = HAIR.maps.curl.getContext('2d').getImageData(0, 0, S, S).data, Lp = HAIR.maps.len.getContext('2d').getImageData(0, 0, S, S).data, Op = HAIR.maps.op.getContext('2d').getImageData(0, 0, S, S).data, Cp = HAIR.maps.col.getContext('2d').getImageData(0, 0, S, S).data;
+    var Tp = HAIR.maps.thick ? HAIR.maps.thick.getContext('2d').getImageData(0, 0, S, S).data : null;
+    HAIR.U = U;
     var curl = 0; for (var ki = 0; ki < Kp.length; ki += 4 * 7) if (Kp[ki] > curl) curl = Kp[ki];   // (the curliest place painted: how many points each hair needs)
     curl /= 255;
-    var Kmax = 3 + Math.round(curl * 9), pts = new Float64Array(3 * (Kmax + 1));   // (each hair: 3 segments straight, up to 12 curly)
+    var Kmax = 3 + Math.round(curl * 9) + hairExtra(HAIR.len), pts = new Float64Array(3 * (Kmax + 1));   // (each hair: 3 segments straight, up to 12 curly, more when long)
     var N = Math.min(500000, Math.round(HAIR.dens * C.tot / (U * U) * 1e4)), rnd = hairRng(1234567);
     var segMax = Math.min(N * Kmax, 2.5e6);                 // (the memory: only curly hair needs more of it)
     var mid0 = 4 * ((S >> 1) * S + (S >> 1));                // (no uv: the middle of each map)
-    var NV = 2 * segMax, P = new Float32Array(3 * NV), Q = new Uint8Array(4 * NV), TT = new Float32Array(3 * NV), NN = new Int8Array(3 * NV);
+    var NV = 2 * segMax, P = new Float32Array(3 * NV), Q = new Uint8Array(4 * NV), TT = new Float32Array(3 * NV), NN = new Int8Array(3 * NV), WW = new Uint8Array(NV);
     var FI = new Uint32Array(N), FW = new Float32Array(2 * N), FR = new Float32Array(3 * N), VS = new Uint32Array(N + 1), dirs = [], nh = 0, pv = 0, L0 = HAIR.len / 1000 * U, bend = Math.max(0, Math.min(1, HAIR.bend));
     var e0 = (80 - 65 * bend) * Math.PI / 180, e1 = (40 - 37 * bend) * Math.PI / 180;   // how far the root and the tip rise off the skin
     for (var i = 0; i < N; i++) {
@@ -3188,28 +3196,35 @@ function render(ctx) {
       var dn = -ny, tx = -nx * dn, ty = -1 - ny * dn, tz = -nz * dn, tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
       if (tl < 0.25) { tx = 0; ty = nz; tz = -ny; tl = Math.sqrt(ty * ty + tz * tz); if (tl < 0.3) { tx = ny; ty = -nx; tz = 0; tl = Math.sqrt(tx * tx + ty * ty) || 1; } }   // (n x X, else n x Z)
       tx /= tl; ty /= tl; tz /= tl;
-      // a little turn either way around the skin's normal (the hairs are not all parallel)
-      var phi = (ra - 0.5) * 0.7, cp = Math.cos(phi), sp = Math.sin(phi);
+      // which way it lies along the skin: up to 10 cm, any way at all (each hair its own); longer, more and more towards
+      // the feet (all of them from 20 cm), a little turn either way
+      var lmm = len / U * 1000, wd = Math.max(0, Math.min(1, (lmm - 100) / 100));
       var bx = ny * tz - nz * ty, by = nz * tx - nx * tz, bz = nx * ty - ny * tx;
-      var qx = tx * cp + bx * sp, qy = ty * cp + by * sp, qz = tz * cp + bz * sp;
+      var th0 = 6.2832 * ((ra * 17.3) % 1) * (1 - wd) + (ra - 0.5) * 0.7 * wd;
       var vb = 0.75 + 0.5 * ((ra * 9.731) % 1);          // (strands not all alike: some lighter, some darker)
       var cr = Math.min(1, vb * Cp[k] / 255), cg = Math.min(1, vb * Cp[k + 1] / 255), cb = Math.min(1, vb * Cp[k + 2] / 255);
-      var curlH = Kp[k] / 255, K = 3 + Math.round(curlH * 9);   // (this hair's curl: the Curliness map where it grows; its points)
+      var curlH = Kp[k] / 255, K = 3 + Math.round(curlH * 9) + hairExtra(lmm);   // (this hair's curl: the Curliness map where it grows; its points)
+      var thk = Tp ? Tp[k] / 255 : 0.7;                    // (its thickness: the Thickness map, x the thickest)
       if (pv / 2 + K > segMax) break;
       var sx = x + nx * 0.0002 * U, sy = y + ny * 0.0002 * U, sz = z + nz * 0.0002 * U, seg = len / K;
       FI[nh] = fi; FW[2 * nh] = r1; FW[2 * nh + 1] = r2; FR[3 * nh] = x; FR[3 * nh + 1] = y; FR[3 * nh + 2] = z; VS[nh] = pv; nh++;
-      for (var s = 0; s < K; s++) {
-        var fr = (s + 0.5) / K, e = e0 + (e1 - e0) * fr, ce = Math.cos(e), se = Math.sin(e);
-        dirs[3 * s] = nx * se + qx * ce; dirs[3 * s + 1] = ny * se + qy * ce; dirs[3 * s + 2] = nz * se + qz * ce;
-      }
-      // the strand's points: along its line (as it lies, towards the feet) and, curly, round that line in a spiral (a
-      // few turns, more on long hair; the curl grows from the root, and always stays off the skin)
+      // the strand's points: along its line and, curly, round that line in a spiral (a few turns, more on long hair; the
+      // curl grows from the root, and always stays off the skin). A curly hair's heading winds as it goes (its curls
+      // turn every way, not all one way); past 10 cm of its length a hair hangs (the model's down)
       var crl = curlH * Math.min(0.12 * len, 0.004 * U) * (0.7 + 0.6 * ((ra * 3.71) % 1));
       var turns = curlH * (1.2 + 1.8 * ((ra * 5.13) % 1)) * Math.max(0.6, Math.min(4, len / (0.012 * U))), ph0 = 6.2832 * ((ra * 7.77) % 1);
-      var wx = ny * qz - nz * qy, wy = nz * qx - nx * qz, wz = nx * qy - ny * qx;   // (across the strand, along the skin)
+      var ph1 = 6.2832 * ((ra * 23.9) % 1), fq = 0.8 + 1.6 * ((ra * 31.7) % 1), wig = curlH * 1.4 * (1 - 0.7 * wd);
+      var hang0 = 0.1 * U, hang1 = 0.16 * U, arc = 0;
       var cx0 = sx, cy0 = sy, cz0 = sz; pts[0] = sx; pts[1] = sy; pts[2] = sz;
-      for (s = 1; s <= K; s++) {
-        cx0 += dirs[3 * (s - 1)] * seg; cy0 += dirs[3 * (s - 1) + 1] * seg; cz0 += dirs[3 * (s - 1) + 2] * seg;
+      for (var s = 1; s <= K; s++) {
+        var fr = (s - 0.5) / K, e = e0 + (e1 - e0) * fr, ce = Math.cos(e), se = Math.sin(e);
+        var hd = th0 + wig * Math.sin(ph1 + fq * 6.2832 * fr), chd = Math.cos(hd), shd = Math.sin(hd);
+        var qx = tx * chd + bx * shd, qy = ty * chd + by * shd, qz = tz * chd + bz * shd;
+        var ddx = nx * se + qx * ce, ddy = ny * se + qy * ce, ddz = nz * se + qz * ce;
+        var gw = Math.max(0, Math.min(1, (arc - hang0) / (hang1 - hang0)));
+        if (gw > 0) { ddx *= 1 - gw; ddy = ddy * (1 - gw) - gw; ddz *= 1 - gw; var ddl = Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz) || 1; ddx /= ddl; ddy /= ddl; ddz /= ddl; }
+        cx0 += ddx * seg; cy0 += ddy * seg; cz0 += ddz * seg; arc += seg;
+        var wx = ny * qz - nz * qy, wy = nz * qx - nx * qz, wz = nx * qy - ny * qx;   // (across the strand, along the skin)
         var tt = s / K, rr = crl * Math.min(1, tt / 0.2), an = ph0 + 6.2832 * turns * tt, ca = Math.cos(an), sa = Math.sin(an);
         pts[3 * s] = cx0 + rr * (ca * wx + (1 + sa) * 0.5 * nx); pts[3 * s + 1] = cy0 + rr * (ca * wy + (1 + sa) * 0.5 * ny); pts[3 * s + 2] = cz0 + rr * (ca * wz + (1 + sa) * 0.5 * nz);
       }
@@ -3224,6 +3239,7 @@ function render(ctx) {
         NN[o3] = NN[o3 + 3] = Math.round(127 * nx); NN[o3 + 1] = NN[o3 + 4] = Math.round(127 * ny); NN[o3 + 2] = NN[o3 + 5] = Math.round(127 * nz);   // (the skin's normal at the root: its light)
         var a0 = 0.85 * op * (1 - 0.45 * s / K), a1 = 0.85 * op * (1 - 0.45 * (s + 1) / K);
         Q[o4] = Q[o4 + 4] = Math.round(255 * cr); Q[o4 + 1] = Q[o4 + 5] = Math.round(255 * cg); Q[o4 + 2] = Q[o4 + 6] = Math.round(255 * cb); Q[o4 + 3] = Math.round(255 * a0); Q[o4 + 7] = Math.round(255 * a1);
+        WW[pv] = Math.round(255 * thk * (1 - 0.5 * s / K)); WW[pv + 1] = Math.round(255 * thk * (1 - 0.5 * (s + 1) / K));   // (thinner to the tip)
         pv += 2;
       }
     }
@@ -3234,9 +3250,12 @@ function render(ctx) {
     hg.setAttribute('hC', new THREE.BufferAttribute(Q.subarray(0, 4 * pv), 4, true));
     hg.setAttribute('hT', new THREE.BufferAttribute(TT.subarray(0, 3 * pv), 3));
     hg.setAttribute('hN', new THREE.BufferAttribute(NN.subarray(0, 3 * pv), 3, true));
+    hg.setAttribute('hW', new THREE.BufferAttribute(WW.subarray(0, pv), 1, true));
     hg.computeBoundingSphere();
-    var hm = new THREE.ShaderMaterial({ vertexShader: HAIR_VS, fragmentShader: HAIR_FS, uniforms: { uGloss: { value: HAIR.gloss } }, transparent: true, depthWrite: false });
+    var hm = new THREE.ShaderMaterial({ vertexShader: HAIR_VS, fragmentShader: HAIR_FS, uniforms: { uGloss: { value: HAIR.gloss }, uThick: { value: HAIR.thick * 1e-6 * U }, uVpH: { value: 1000 } }, transparent: true, depthWrite: false });
     HAIR.lines = new THREE.LineSegments(hg, hm); HAIR.lines.name = 'hair'; HAIR.lines.renderOrder = 6; HAIR.lines.frustumCulled = false;
+    var hv2 = new THREE.Vector2();
+    HAIR.lines.onBeforeRender = function (r) { r.getDrawingBufferSize(hv2); hm.uniforms.uVpH.value = hv2.y; };   // (a pixel's size: the screen's height)
     HAIR.fol = { g: g, fi: FI.slice(0, nh), w: FW.slice(0, 2 * nh), root: FR.slice(0, 3 * nh), rest: PA.slice(), vs: VS.slice(0, nh + 1), ver: g.attributes.position.version };
     hairFollow();                                         // (where the skin is now)
     mesh.add(HAIR.lines);                                  // (with the skin: hidden with it, moved with it)
@@ -3267,7 +3286,8 @@ function render(ctx) {
       + '.hr-swr{margin-left:auto;display:flex;align-items:center;gap:6px;padding:0 2px 5px;cursor:pointer}.hr-sw{width:30px;height:20px;border-radius:4px;border:1px solid #9aa4b8;box-shadow:inset 0 0 0 1px #000}.hr-swt{font-weight:600;font-variant-numeric:tabular-nums}</style>'
       + '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px 4px"><b style="flex:1">✂ Body hair</b><span class="hr-n" style="opacity:.7"></span>'
       + '<label style="display:flex;gap:5px;align-items:center"><input type="checkbox" class="hr-on" style="margin:0;accent-color:#7b8cff">Show hair</label><button class="hr-b hr-x" title="Close">×</button></div>'
-      + '<div class="hr-row">' + sl('dens', 'Hairs per cm²', 1, 300, 1, 'How many hairs grow on each square centimetre of skin (where Length is above 0)') + sl('len', 'Longest (mm)', 1, 120, 1, 'The length of the hairs where Length is white')
+      + '<div class="hr-row">' + sl('dens', 'Hairs per cm²', 1, 300, 1, 'How many hairs grow on each square centimetre of skin (where Length is above 0)') + sl('len', 'Longest (mm)', 1, 300, 1, 'The length of the hairs where Length is white. Up to 10 cm they lie any way; longer, they turn towards the feet and hang')
+      + sl('thick', 'Thickest (µm)', 10, 200, 1, 'The thickness of the hairs where Thickness is white (fine body hair about 20-40, coarse 80-120 micrometres)')
       + sl('bend', 'Lying down', 0, 1, 0.01, '0: standing off the skin; 1: lying flat on it, towards the feet') + sl('rand', 'Length variety', 0, 1, 0.01, 'Some hairs shorter than the map says, at random') + sl('gloss', 'Shine', 0, 1, 0.01, 'How much the hairs shine where they catch the light (a sheen that moves along them as they bend)') + '</div>'
       + '<div class="hr-row"><span style="opacity:.85">Tool</span>'
       + '<span style="width:8px"></span><button class="hr-b" data-ht="brush" title="Paint the value">Brush</button><button class="hr-b" data-ht="erase" title="Length and opacity to 0; colour back to the default">Eraser</button>'
@@ -3277,7 +3297,7 @@ function render(ctx) {
       + '<label class="hr-s hr-colw" title="The colour painted"><span>Colour</span><input type="color" class="hr-cin" style="width:36px;height:18px;padding:0;border:1px solid #2a303b;background:none"></label>'
       + '<label style="display:flex;gap:5px;align-items:center" title="Paint on the skin in the 3D view too (a drag on the skin paints; beside it, the view turns as usual)"><input type="checkbox" class="hr-3d" style="margin:0;accent-color:#7b8cff">Paint on the 3D model</label></div>'
       + '<div class="hr-tabs">' + HAIR_LAYERS.map(function (L) {
-        var hint = { len: 'grey × longest', op: '0 hidden · 1 seen', col: 'dark, blond…', curl: '0 straight · 1 curly', skin: 'the skin’s own' }[L[0]];
+        var hint = { len: 'grey × longest', op: '0 hidden · 1 seen', col: 'dark, blond…', curl: '0 straight · 1 curly', thick: 'grey × thickest', skin: 'the skin’s own' }[L[0]];
         return '<button class="hr-tab" data-hl="' + L[0] + '" title="Paint the ' + L[1] + ' map"><canvas class="hr-th" data-th="' + L[0] + '" width="44" height="26"></canvas><span style="line-height:1.15;text-align:left"><b>' + L[1] + '</b><br><small style="opacity:.7">' + hint + '</small></span></button>';
       }).join('')
       + '<div class="hr-swr" title="What the brush paints (click: change it)"><span style="opacity:.8">Painting</span><span class="hr-sw"></span><b class="hr-swt"></b></div></div>'
@@ -3293,6 +3313,7 @@ function render(ctx) {
         var k = inp.getAttribute('data-hs'); HAIR[k] = +inp.value; p.querySelector('[data-hv="' + k + '"]').textContent = hairFmt(k);
         if (k === 'dens' || k === 'len' || k === 'bend' || k === 'rand' || k === 'curl') hairSoon();
         if (k === 'gloss' && HAIR.lines) HAIR.lines.material.uniforms.uGloss.value = HAIR.gloss;
+        if (k === 'thick' && HAIR.lines) HAIR.lines.material.uniforms.uThick.value = HAIR.thick * 1e-6 * HAIR.U;
       });
       inp.addEventListener('change', function () { keepView(true); });
     });
@@ -3306,7 +3327,7 @@ function render(ctx) {
     q('.hr-undo').onclick = hairUndo;
     q('.hr-fit').onclick = function () { hairFit(); hairDraw(); };
     // the maps as files (to keep them safe, or to use them elsewhere), and back
-    var HNAMES = { len: 'hair-length.png', op: 'hair-opacity.png', col: 'hair-colour.png', curl: 'hair-curliness.png', skin: 'skin-colour.png' };
+    var HNAMES = { len: 'hair-length.png', op: 'hair-opacity.png', col: 'hair-colour.png', curl: 'hair-curliness.png', thick: 'hair-thickness.png', skin: 'skin-colour.png' };
     q('.hr-exp').onclick = function () {
       if (!HAIR.maps) return;
       var list = [], left = HAIR_LAYERS.length;
@@ -3324,7 +3345,7 @@ function render(ctx) {
       var fs = Array.prototype.slice.call(fin.files || []); if (!fs.length) return;
       var left = fs.length;
       fs.forEach(function (f) {
-        var n = f.name.toLowerCase(), L = /skin/.test(n) ? 'skin' : /curl/.test(n) ? 'curl' : /opac|alpha|transp/.test(n) ? 'op' : /col/.test(n) ? 'col' : /len/.test(n) ? 'len' : null;
+        var n = f.name.toLowerCase(), L = /skin/.test(n) ? 'skin' : /thick|width|diam/.test(n) ? 'thick' : /curl/.test(n) ? 'curl' : /opac|alpha|transp/.test(n) ? 'op' : /col/.test(n) ? 'col' : /len/.test(n) ? 'len' : null;
         var done = function () { if (--left) return; hairDraw(); hairBuild(); skinPaintUpd(); hairSave(); };
         if (!L) { done(); return; }
         var im = new Image(), url = URL.createObjectURL(f);
@@ -3375,6 +3396,7 @@ function render(ctx) {
     if (HAIR.layer === 'col' || HAIR.layer === 'skin') { var c = hairRGB(css); t.textContent = erase && HAIR.layer === 'skin' ? 'eraser: the skin as it is' : '#' + c.map(function (n) { return ('0' + n.toString(16)).slice(-2); }).join('') + (erase ? ' (default)' : ''); }
     else if (HAIR.layer === 'len') t.textContent = Math.round(v * 100) + '% · ' + (Math.round(v * HAIR.len * 10) / 10) + ' mm' + (erase ? ' (eraser)' : '');
     else if (HAIR.layer === 'curl') t.textContent = Math.round(v * 100) + '% ' + (v <= 0 ? 'straight' : 'curly') + (erase ? ' (eraser)' : '');
+    else if (HAIR.layer === 'thick') t.textContent = Math.round(v * 100) + '% · ' + Math.round(v * HAIR.thick) + ' µm' + (erase ? ' (eraser)' : '');
     else t.textContent = Math.round(v * 100) + '% ' + (v <= 0 ? 'hidden' : v >= 1 ? 'seen' : 'see-through') + (erase ? ' (eraser)' : '');
   }
   function hairFmt(k) { var v = HAIR[k]; return k === 'bend' || k === 'rand' || k === 'gloss' || k === 'curl' ? Math.round(v * 100) + '%' : String(Math.round(v)); }
@@ -3465,7 +3487,7 @@ function render(ctx) {
     // the skin's shading and its triangles over the map, light, so the map's own values show
     var w = hairWire(); if (w) { x.globalAlpha = 0.32; x.imageSmoothingEnabled = true; x.drawImage(w, V.ox, V.oy, S * V.z, S * V.z); x.globalAlpha = 1; }
     // which map is being painted, and what its values mean
-    var lab = { len: 'Painting LENGTH: white = the longest (' + Math.round(HAIR.len) + ' mm), black = no hair', op: 'Painting OPACITY: white = seen, black = hidden', col: 'Painting COLOUR: the hair’s colour (pick it beside Colour)', curl: 'Painting CURLINESS: white = curly (a spiral along the hair), black = straight (heading down)', skin: 'Painting SKIN COLOUR: the skin’s colour where painted (its texture kept); Eraser: back to the skin as it is' }[HAIR.layer];
+    var lab = { len: 'Painting LENGTH: white = the longest (' + Math.round(HAIR.len) + ' mm), black = no hair', op: 'Painting OPACITY: white = seen, black = hidden', col: 'Painting COLOUR: the hair’s colour (pick it beside Colour)', curl: 'Painting CURLINESS: white = curly (a spiral along the hair), black = straight (heading down)', skin: 'Painting SKIN COLOUR: the skin’s colour where painted (its texture kept); Eraser: back to the skin as it is', thick: 'Painting THICKNESS: white = the thickest (' + Math.round(HAIR.thick) + ' µm), black = the finest' }[HAIR.layer];
     x.font = '600 12px system-ui, sans-serif'; var tw = x.measureText(lab).width;
     x.fillStyle = 'rgba(10,14,22,.85)'; x.fillRect(6, 6, tw + 14, 20); x.fillStyle = '#fff'; x.fillText(lab, 13, 20);
     // the three maps' pictures on their cards
@@ -3508,7 +3530,7 @@ function render(ctx) {
     var c = HAIR.maps[HAIR.layer].getContext('2d');
     if (clear && HAIR.layer === 'skin') c.clearRect(0, 0, HAIR.S, HAIR.S);
     else {
-      c.fillStyle = clear ? (HAIR.layer === 'len' ? '#1a1a1a' : HAIR.layer === 'curl' ? '#000' : HAIR.layer === 'op' ? '#fff' : HAIR.col) : hairPaintStyle();
+      c.fillStyle = clear ? (HAIR.layer === 'len' ? '#1a1a1a' : HAIR.layer === 'curl' ? '#000' : HAIR.layer === 'op' ? '#fff' : HAIR.layer === 'thick' ? '#b3b3b3' : HAIR.col) : hairPaintStyle();
       c.fillRect(0, 0, HAIR.S, HAIR.S);
     }
     hairDraw(); hairMapsChanged(true); hairSave();
@@ -5376,7 +5398,7 @@ function render(ctx) {
           camera: { position: camera.position.toArray(), target: controls.target.toArray() },
           note: 'The GLB holds every part shown, the skin (with its flat layout as TEXCOORD_0, for the hair maps) and the hair strands (lines with their colours). The hair maps are hair-*.png, laid on that layout.' };
         list.push({ name: cname + '-look.json', blob: new Blob([JSON.stringify(settings, null, 1)], { type: 'application/json' }) });
-        var HN = { len: 'hair-length.png', op: 'hair-opacity.png', col: 'hair-colour.png', curl: 'hair-curliness.png', skin: 'skin-colour.png' };
+        var HN = { len: 'hair-length.png', op: 'hair-opacity.png', col: 'hair-colour.png', curl: 'hair-curliness.png', thick: 'hair-thickness.png', skin: 'skin-colour.png' };
         var maps = HAIR.maps ? HAIR_LAYERS.filter(function (L) { return HAIR.maps[L[0]]; }) : [], left = maps.length;
         var send = function () {
           try { if (ctx.saveFiles) ctx.saveFiles(list, 'Model · ' + cname); else list.forEach(function (f) { ctx.save(f.name, f.blob); }); }
