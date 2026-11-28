@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 102 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 104 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -3141,14 +3141,18 @@ function render(ctx) {
     var p = HAIR.panel = document.createElement('div');
     p.style.cssText = 'position:absolute;left:256px;top:64px;width:640px;max-width:calc(100% - 270px);height:560px;max-height:calc(100% - 80px);display:none;flex-direction:column;background:rgba(10,14,22,.9);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.08);border-radius:10px;pointer-events:auto;overflow:hidden;font-size:11.5px;resize:both';
     var sl = function (k, label, min, max, step, tip) { return '<label class="hr-s" title="' + esc(tip || '') + '"><span>' + esc(label) + '</span><input type="range" data-hs="' + k + '" min="' + min + '" max="' + max + '" step="' + step + '"><b data-hv="' + k + '"></b></label>'; };
-    p.innerHTML = '<style>.hr-b{all:unset;cursor:pointer;padding:1px 7px;border:1px solid #2a303b;border-radius:6px;white-space:nowrap}.hr-b:hover{border-color:#7b8cff}.hr-b.on{background:#2f4ae0;border-color:#2f4ae0}'
+    p.innerHTML = '<style>.hr-b{all:unset;cursor:pointer;padding:1px 7px;border:1px solid #2a303b;border-radius:6px;white-space:nowrap}.hr-b:hover{border-color:#7b8cff}.hr-b.on{background:#2f4ae0;border-color:#2f4ae0}.hr-tab{display:flex;align-items:center;gap:6px;padding:3px 8px 3px 3px;border-width:2px}.hr-tab canvas{width:56px;height:34px;border-radius:3px;background:#000}'
       + '.hr-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:3px 10px}.hr-s{display:flex;align-items:center;gap:5px}.hr-s span{opacity:.85}.hr-s input{width:84px;accent-color:#7b8cff}.hr-s b{font-weight:400;opacity:.8;min-width:30px;font-variant-numeric:tabular-nums}'
       + '.hr-c{flex:1;min-height:0;position:relative;margin:4px 10px 0;border:1px solid #2a303b;border-radius:6px;overflow:hidden;background:#05070b}.hr-c canvas{position:absolute;left:0;top:0;width:100%;height:100%;touch-action:none}</style>'
       + '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px 4px"><b style="flex:1">✂ Body hair</b><span class="hr-n" style="opacity:.7"></span>'
       + '<label style="display:flex;gap:5px;align-items:center"><input type="checkbox" class="hr-on" style="margin:0;accent-color:#7b8cff">Show hair</label><button class="hr-b hr-x" title="Close">×</button></div>'
       + '<div class="hr-row">' + sl('dens', 'Hairs per cm²', 1, 300, 1, 'How many hairs grow on each square centimetre of skin (where Length is above 0)') + sl('len', 'Longest (mm)', 1, 120, 1, 'The length of the hairs where Length is white')
       + sl('bend', 'Lying down', 0, 1, 0.01, '0: standing off the skin; 1: lying flat on it, towards the feet') + sl('rand', 'Length variety', 0, 1, 0.01, 'Some hairs shorter than the map says, at random') + sl('gloss', 'Shine', 0, 1, 0.01, 'How much the hairs shine where they catch the light (a sheen that moves along them as they bend)') + '</div>'
-      + '<div class="hr-row"><span style="opacity:.85">Map</span>' + HAIR_LAYERS.map(function (L) { return '<button class="hr-b" data-hl="' + L[0] + '">' + L[1] + '</button>'; }).join('')
+      + '<div class="hr-row" style="gap:6px"><span style="opacity:.85">Painting</span>' + HAIR_LAYERS.map(function (L) {
+        var hint = { len: 'grey × longest', op: '0 hidden · 1 seen', col: 'dark, blond…' }[L[0]];
+        return '<button class="hr-b hr-tab" data-hl="' + L[0] + '" title="Paint the ' + L[1] + ' map"><canvas class="hr-th" data-th="' + L[0] + '" width="56" height="34"></canvas><span style="line-height:1.15"><b>' + L[1] + '</b><br><small style="opacity:.7">' + hint + '</small></span></button>';
+      }).join('') + '</div>'
+      + '<div class="hr-row"><span style="opacity:.85">Tool</span>'
       + '<span style="width:8px"></span><button class="hr-b" data-ht="brush" title="Paint the value">Brush</button><button class="hr-b" data-ht="erase" title="Length and opacity to 0; colour back to the default">Eraser</button>'
       + '<button class="hr-b hr-fill" title="The whole map to the value">Fill</button><button class="hr-b hr-clear" title="The map back to its start: no hair, fully visible, the default colour">Clear</button><button class="hr-b hr-undo" title="Undo (Ctrl+Z)">Undo</button></div>'
       + '<div class="hr-row">' + sl('brush', 'Size', 2, 300, 1, 'The brush, in pixels of the map ([ and ] change it)') + sl('soft', 'Softness', 0, 1, 0.01, '0: a hard edge; 1: fading from the middle') + sl('flow', 'Strength', 0.02, 1, 0.01, 'How much each dab covers')
@@ -3244,6 +3248,7 @@ function render(ctx) {
     var S = HAIR.S, x0 = u0 * S, x1 = u1 * S, y0 = (1 - v1) * S, y1 = (1 - v0) * S;
     var z = 0.94 * Math.min(W / Math.max(1, x1 - x0), H / Math.max(1, y1 - y0));
     HAIR.view = { z: z, ox: W / 2 - z * (x0 + x1) / 2, oy: H / 2 - z * (y0 + y1) / 2 };
+    HAIR.box = { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) };
   }
   // the wireframe of the flat skin, drawn once (2048 px), laid over the map
   function hairWire() {
@@ -3291,7 +3296,15 @@ function render(ctx) {
     var V = HAIR.view, S = HAIR.S;
     x.imageSmoothingEnabled = V.z < 2;
     x.drawImage(HAIR.maps[HAIR.layer], V.ox, V.oy, S * V.z, S * V.z);
-    var w = hairWire(); if (w) { x.globalAlpha = 0.6; x.imageSmoothingEnabled = true; x.drawImage(w, V.ox, V.oy, S * V.z, S * V.z); x.globalAlpha = 1; }
+    // the skin's shading and its triangles over the map, light, so the map's own values show
+    var w = hairWire(); if (w) { x.globalAlpha = 0.32; x.imageSmoothingEnabled = true; x.drawImage(w, V.ox, V.oy, S * V.z, S * V.z); x.globalAlpha = 1; }
+    // which map is being painted, and what its values mean
+    var lab = { len: 'Painting LENGTH: white = the longest (' + Math.round(HAIR.len) + ' mm), black = no hair', op: 'Painting OPACITY: white = seen, black = hidden', col: 'Painting COLOUR: the hair’s colour (pick it beside Colour)' }[HAIR.layer];
+    x.font = '600 12px system-ui, sans-serif'; var tw = x.measureText(lab).width;
+    x.fillStyle = 'rgba(10,14,22,.85)'; x.fillRect(6, 6, tw + 14, 20); x.fillStyle = '#fff'; x.fillText(lab, 13, 20);
+    // the three maps' pictures on their cards
+    var B = HAIR.box || { x: 0, y: 0, w: S, h: S };
+    p.querySelectorAll('.hr-th').forEach(function (tc) { var t = tc.getContext('2d'); t.fillStyle = '#000'; t.fillRect(0, 0, tc.width, tc.height); t.drawImage(HAIR.maps[tc.getAttribute('data-th')], B.x, B.y, B.w, B.h, 0, 0, tc.width, tc.height); });
     if (HAIR.mouse) { x.strokeStyle = '#fff'; x.lineWidth = 1; x.beginPath(); x.arc(HAIR.mouse.x, HAIR.mouse.y, Math.max(1.5, HAIR.brush * V.z / 2), 0, 2 * Math.PI); x.stroke(); }
   }
   // painting: soft round dabs, so many along a stroke
