@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 94 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 95 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2923,13 +2923,11 @@ function render(ctx) {
   // the hair moves with the skin (pressed, sagging): each hair's root on its triangle, the rest of it carried along
   function hairFollow() {
     var L = HAIR.lines, F = HAIR.fol, mesh = SKINLOOK.mesh;
-    HAIR.dbg = { calls: ((HAIR.dbg || {}).calls || 0) + 1, same: !!(F && mesh && F.g === mesh.geometry), vis: !!(mesh && mesh.visible), md: 0, par: L && L.parent ? (L.parent === mesh) : 'none', mpos: mesh ? mesh.position.toArray().map(function (t) { return t.toFixed(3); }).join(',') + ' s' + mesh.scale.x.toFixed(2) : '' };
     if (!L || !F || !mesh || !mesh.visible || F.g !== mesh.geometry) return;
     var cur = mesh.geometry.attributes.position.array, idx = mesh.geometry.index.array, out = L.geometry.attributes.position.array, R = F.rest, nv = F.nv, nh = F.fi.length;
     for (var h = 0; h < nh; h++) {
       var f = F.fi[h], a = 3 * idx[3 * f], b = 3 * idx[3 * f + 1], c = 3 * idx[3 * f + 2], w1 = F.w[2 * h], w2 = F.w[2 * h + 1], w0 = 1 - w1 - w2;
       var dx = w0 * cur[a] + w1 * cur[b] + w2 * cur[c] - F.root[3 * h], dy = w0 * cur[a + 1] + w1 * cur[b + 1] + w2 * cur[c + 1] - F.root[3 * h + 1], dz = w0 * cur[a + 2] + w1 * cur[b + 2] + w2 * cur[c + 2] - F.root[3 * h + 2];
-      var dd = Math.abs(dx) + Math.abs(dy) + Math.abs(dz); if (dd > HAIR.dbg.md) HAIR.dbg.md = dd;
       for (var j = 0, k = 3 * h * nv; j < nv; j++, k += 3) { out[k] = R[k] + dx; out[k + 1] = R[k + 1] + dy; out[k + 2] = R[k + 2] + dz; }
     }
     L.geometry.attributes.position.needsUpdate = true;
@@ -2994,13 +2992,24 @@ function render(ctx) {
     // the skin's faces with a place on the layout, and their areas (once per skin)
     if (!HAIR.cache || HAIR.cache.g !== g) {
       var nf = idx.length / 3, fl = [], cum = [], tot = 0;
+      // the skin's usual triangle (its median area): a triangle many times bigger is not skin but a lid over an opening
+      // where the scan cuts the body (a few big ones across it), and gets no hair
+      var sa = [];
+      for (var fs = 0; fs < nf; fs += Math.max(1, Math.floor(nf / 4000))) {
+        var A0 = 3 * idx[3 * fs], B0 = 3 * idx[3 * fs + 1], C0 = 3 * idx[3 * fs + 2];
+        var e1x = pos[B0] - pos[A0], e1y = pos[B0 + 1] - pos[A0 + 1], e1z = pos[B0 + 2] - pos[A0 + 2], e2x = pos[C0] - pos[A0], e2y = pos[C0 + 1] - pos[A0 + 1], e2z = pos[C0 + 2] - pos[A0 + 2];
+        var qx0 = e1y * e2z - e1z * e2y, qy0 = e1z * e2x - e1x * e2z, qz0 = e1x * e2y - e1y * e2x;
+        sa.push(0.5 * Math.sqrt(qx0 * qx0 + qy0 * qy0 + qz0 * qz0));
+      }
+      sa.sort(function (p, q) { return p - q; });
+      var arMax = 25 * (sa[sa.length >> 1] || 1);
       for (var f = 0; f < nf; f++) {
         var a = idx[3 * f], b = idx[3 * f + 1], c = idx[3 * f + 2];
         if (uv && (uv[2 * a] < 0 || uv[2 * b] < 0 || uv[2 * c] < 0)) continue;
         var ux = pos[3 * b] - pos[3 * a], uy = pos[3 * b + 1] - pos[3 * a + 1], uz = pos[3 * b + 2] - pos[3 * a + 2];
         var vx = pos[3 * c] - pos[3 * a], vy = pos[3 * c + 1] - pos[3 * a + 1], vz = pos[3 * c + 2] - pos[3 * a + 2];
         var cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx, ar = 0.5 * Math.sqrt(cx * cx + cy * cy + cz * cz);
-        if (!(ar > 0)) continue;
+        if (!(ar > 0) || ar > arMax) continue;
         if (Math.abs(cy) > 1.6 * ar) {                    // (a face across the body's length: on a cap if at its end)
           var ya = pos[3 * a + 1], yb = pos[3 * b + 1], yc = pos[3 * c + 1];
           if (Math.max(ya, yb, yc) < y0 + capD || Math.min(ya, yb, yc) > y1 - capD) continue;
@@ -3073,7 +3082,7 @@ function render(ctx) {
     hg.setAttribute('hT', new THREE.Float32BufferAttribute(TT, 3));
     hg.setAttribute('hN', new THREE.Float32BufferAttribute(NN, 3));
     hg.computeBoundingSphere();
-    var hm = new THREE.ShaderMaterial({ vertexShader: HAIR_VS, fragmentShader: HAIR_FS, uniforms: { uGloss: { value: HAIR.gloss } }, transparent: true, depthWrite: false, depthTest: false });
+    var hm = new THREE.ShaderMaterial({ vertexShader: HAIR_VS, fragmentShader: HAIR_FS, uniforms: { uGloss: { value: HAIR.gloss } }, transparent: true, depthWrite: false });
     HAIR.lines = new THREE.LineSegments(hg, hm); HAIR.lines.name = 'hair'; HAIR.lines.renderOrder = 6; HAIR.lines.frustumCulled = false;
     HAIR.fol = { g: g, fi: Uint32Array.from(FI), w: Float32Array.from(FW), root: Float32Array.from(FR), rest: PA.slice(), nv: 2 * K, ver: g.attributes.position.version };
     hairFollow();                                         // (where the skin is now)
@@ -3181,7 +3190,6 @@ function render(ctx) {
     p.querySelector('.hr-3d').checked = HAIR.paint3d;
     var msg = p.querySelector('.hr-msg');
     var g = hairGeo();
-    if (HAIR.dbg) p.querySelector('.hr-n').textContent = JSON.stringify(HAIR.dbg) + ' n' + (HAIR.fol ? HAIR.fol.fi.length : 0) + ' rest-vs-pos ' + (function () { var m = SKINLOOK.mesh, ga = m && m.geometry.attributes, s = 0; if (!ga || !ga.esRest) return '-'; for (var i = 0; i < ga.position.array.length; i += 300) s = Math.max(s, Math.abs(ga.position.array[i] - ga.esRest.array[i])); return s.toFixed(4); })();
     msg.style.display = g ? 'none' : 'flex';
     msg.innerHTML = SKINLOOK.mesh ? 'This skin was made before it could be laid flat for painting.<br>Run the flow again: the new skin comes laid flat, and its hair maps can be painted here.' : 'No skin yet: the hair grows on the skin, which the run makes last.';
   }
