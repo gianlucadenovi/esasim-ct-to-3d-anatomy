@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 81 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 83 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -789,6 +789,7 @@ function render(ctx) {
     hudTitle.textContent = P.model_title === false ? '' : one ? 'Model ' + (FILES.all.indexOf(list[0]) + 1) + ' of ' + FILES.all.length : list.map(function (f) { return f.name; }).join(', ');
     if (!list.length) return;
     var root = new THREE.Group(), seq = ++FILES.seq, floorOn = P.floor !== false;
+    FILES.shown = null;                                   // (the extras wait for the new model)
     modelState(list.length === 1 ? list[0].name : '', false);
     FILES.root = root; entities.files = root; scene.add(root);
     FILES.mixers = [];                                     // the files' animations (glTF clips), played in tick()
@@ -828,19 +829,33 @@ function render(ctx) {
       stageFiles(root);                                  // Stage: the model on the EsaSim stage, as the render sees it
       enhanceApply();                                    // Enhance: shadows and bloom, if on
       loadingDone();
-      // a soft-body model of the same case (s1400_softbody.json for s1400_anatomy.glb): the tissue moves under gravity
-      var shown = objs.filter(function (o) { return o; })[0], soft = shown && (FILES.soft || []).filter(function (sf) { var a = shortName(sf.name).replace(/[._-]?softbody(\.json)?$/i, ''), b = shortName(shown.userData.file || ''); return a === b || a.replace(/^.*[\\/]/, '') === b.replace(/^.*[\\/]/, ''); })[0];
-      // the run is still going and the skin or the CT of this case has not come yet: say so (they are added by themselves)
-      if (shown && ctx.run && ctx.run.active) {
-        var cn = caseName(shown.userData.file || '').replace(/^.*[\\/]/, ''), still = [];
-        if (!soft && (ctx.sources || []).some(function (s) { return /soft|skin/i.test(s.block + ' ' + s.name); })) still.push('the skin');
-        if (!(FILES.ct || []).some(function (c) { return String(c.name).replace(/^.*[\\/]/, '').replace(/_ct\.ctvol$/i, '') === cn; }) && (ctx.sources || []).some(function (s) { return (s.formats || []).indexOf('ctvol') >= 0 || /ct volume|for the cut/i.test(s.block + ' ' + s.name); })) still.push('the CT for the cut');
-        if (still.length) setTimeout(function () { if (seq === FILES.seq) ctx.status('The run is still making ' + still.join(' and ') + ': added here by itself when ready.'); }, 300);
-      }
-      if (!soft && shown && (FILES.soft || []).length === 1 && objs.length === 1) soft = FILES.soft[0];
-      if (soft) fetchRetry(function () { return ctx.files.json(soft); }, 'the skin', seq).then(function (m) { if (seq === FILES.seq) { softStart(m, shown); ctx.status(''); } }).catch(function (e) { if (seq === FILES.seq) ctx.status('Could not read ' + soft.name + ': ' + e.message); });
-      if (shown) ctLoad(shown, seq);                     // the CT of the same case, for the cut
+      // the skin (soft-body model) and the CT of the same case: now, and when they come later (extrasLoad from load)
+      FILES.shown = objs.filter(function (o) { return o; })[0] || null; FILES.nObjs = objs.length; FILES.softOn = ''; FILES.ctOn = '';
+      extrasLoad(seq);
     });
+  }
+  // What goes with the model shown: its soft-body model (s1400_softbody.json for s1400_anatomy.glb: the skin, and the
+  // tissue moving under gravity) and its CT for the cut. Each is added once, as soon as it is there: a file the run
+  // makes after the model is added to the model on screen when it comes, without loading the model again.
+  function extrasLoad(seq) {
+    var shown = FILES.shown; if (!shown || seq !== FILES.seq) return;
+    var b = shortName(shown.userData.file || ''), cn = caseName(shown.userData.file || '').replace(/^.*[\\/]/, '');
+    var soft = (FILES.soft || []).filter(function (sf) { var a = shortName(sf.name).replace(/[._-]?softbody(\.json)?$/i, ''); return a === b || a.replace(/^.*[\\/]/, '') === b.replace(/^.*[\\/]/, ''); })[0];
+    if (!soft && (FILES.soft || []).length === 1 && FILES.nObjs === 1) soft = FILES.soft[0];
+    if (soft && FILES.softOn !== soft.id) {
+      FILES.softOn = soft.id;
+      fetchRetry(function () { return ctx.files.json(soft); }, 'the skin', seq).then(function (m) { if (seq === FILES.seq) { softStart(m, shown); ctx.status(''); } })
+        .catch(function (e) { if (seq === FILES.seq) { FILES.softOn = ''; ctx.status('Could not read ' + soft.name + ': ' + e.message); } });
+    }
+    var ctf = (FILES.ct || []).filter(function (c) { return String(c.name).replace(/^.*[\\/]/, '').replace(/_ct\.ctvol$/i, '') === cn; })[0] || ((FILES.ct || []).length === 1 ? FILES.ct[0] : null);
+    if (ctf && FILES.ctOn !== ctf.id) { FILES.ctOn = ctf.id; ctLoad(shown, seq); }
+    // the run is still going and the skin or the CT has not come yet: say so (they are added by themselves)
+    if (ctx.run && ctx.run.active) {
+      var still = [];
+      if (!soft && (ctx.sources || []).some(function (s) { return /soft|skin/i.test(s.block + ' ' + s.name); })) still.push('the skin');
+      if (!ctf && (ctx.sources || []).some(function (s) { return (s.formats || []).indexOf('ctvol') >= 0 || /ct volume|for the cut/i.test(s.block + ' ' + s.name); })) still.push('the CT for the cut');
+      if (still.length) setTimeout(function () { if (seq === FILES.seq) ctx.status('The run is still making ' + still.join(' and ') + ': added here by itself when ready.'); }, 300);
+    }
   }
   // Models with a scene: a model whose file name an entity gives ("model": "quadcopter.glb"), or the first model when
   // the setting "Model for" names an entity, takes that entity's place; other models stand beside the scene.
@@ -1525,12 +1540,13 @@ function render(ctx) {
     modeBtn.style.display = hasLive && hasScene ? '' : 'none';
     modeBtn.textContent = want === 'live' ? 'Replay' : 'Live';
     modeBtn.title = want === 'live' ? 'Show the recorded runs' : 'Show the live landing';
-    var key = want + '|' + (sceneFile ? sceneFile.id : '') + '|' + meshes.map(function (f) { return f.id; }).join(',') + '|' + softFiles.map(function (f) { return f.id; }).join(',');
+    // (the skin and the CT are not in the key: when they come later they are added to the model shown, see extrasLoad)
+    var key = want + '|' + (sceneFile ? sceneFile.id : '') + '|' + meshes.map(function (f) { return f.id; }).join(',');
     if (want === 'live') {
       if (mode !== 'live') { startLive(meshes); showLiveBar(true); }
       mode = 'live'; shownKey = key; ctx.status(''); return;
     }
-    if (key === shownKey) return; // nothing new to draw (telemetry for other views changes often)
+    if (key === shownKey) { if (want === 'files') extrasLoad(FILES.seq); return; } // nothing new to draw (telemetry for other views changes often); a late skin or CT is added
     stopLive(); showLiveBar(false); mode = want; shownKey = key;
     if (want === 'replay') return ctx.files.json(sceneFile).then(function (sc) {
       if (sc && sc.runs && !sc.entities) sc = Object.assign({ entities: [{ id: 'pad', shape: 'cylinder', radius: 1, height: 0.08, decal: 'H' }, { id: 'drone', shape: 'quadrotor', size: 0.55 }] }, sc);
