@@ -6,7 +6,7 @@ An [EsaSim](https://esacode.com/) blueprint block: it runs on a worker, in Pytho
 
 | | |
 |---|---|
-| Block | `ws-soft-body-model-skin-inside` · version 14 |
+| Block | `ws-soft-body-model-skin-inside` · version 15 |
 | Workspace | Gianluca De Novi's workspace |
 | Author | Gianluca De Novi |
 | Runs on | Any worker |

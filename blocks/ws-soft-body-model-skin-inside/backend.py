@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 14 · worker block, Python: def run(ctx)
+# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 15 · worker block, Python: def run(ctx)
 # Turns segmented anatomy into a soft-tissue model the 3D view simulates in real time: organs that sag, sway and push each other under gravity, held by a fixed skeleton and contained by the skin (metaba
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-28
@@ -697,7 +697,50 @@ def strip_table(v, vsp, hu, log=print):
     return tot
 
 
-__FN__
+def strip_pad(v, vsp, hu, log=print):
+    """The table pad's surface against the back, slice by slice, before the skin is looked for: going in from the air, a
+    thin bright layer (the pad, 1-2 px), a thin darker one (the gap, 1-3 px), then bright again (the skin). Where that is
+    so, the outer layer is the pad: it becomes air, so the gap opens to the air and is not filled in as body (the flat
+    plate on the back). Bits of it left hanging where it leaves the skin (thin and long) go too. Only the outer 2 px of
+    the body are ever touched."""
+    import numpy as np
+    from scipy import ndimage
+    a = np.clip(v + 1000.0, 0.0, 1400.0)                     # (air 0)
+    lvl = hu + 1000.0
+    sp = (float(vsp[1]), float(vsp[2])); px = min(sp)
+    kw = max(3, int(round(5.0 / px)) | 1)
+    o1 = max(1.0, 1.5 / px) * px                             # the pad: the outer ~1.5 mm
+    total = 0; nsl = 0
+    for z in range(v.shape[0]):
+        m = a[z] > lvl
+        if m.sum() < 200:
+            continue
+        solid = ndimage.binary_fill_holes(m)
+        d = ndimage.distance_transform_edt(solid, sampling=sp)
+        pad = np.zeros_like(m)
+        for g1, s1 in ((2.7, 4.4), (3.4, 5.5), (4.1, 6.7)):    # (the gap 1 to 3 px wide)
+            sh = [(d > 0) & (d <= o1 + 0.01), (d > o1 + 0.01) & (d <= g1), (d > g1) & (d <= s1)]
+            cnt = [ndimage.uniform_filter(s.astype(np.float32), kw) for s in sh]
+            mean = [ndimage.uniform_filter(a[z] * s, kw) / np.maximum(1e-6, c) for s, c in zip(sh, cnt)]
+            lo = np.minimum(mean[0], mean[2])
+            pad |= sh[0] & (cnt[0] > 1e-4) & (cnt[1] > 1e-4) & (cnt[2] > 1e-4) & (mean[0] > lvl) & (mean[2] > lvl) & (mean[1] < 0.6 * lo)
+        if not pad.any():
+            continue
+        pad = ndimage.binary_dilation(pad, iterations=1) & (d > 0) & (d <= o1 + 0.01)
+        body = m & ~pad
+        # what is left of it hanging from the body: thin (gone after a 1 px opening) and long (over 8 mm)
+        op = ndimage.binary_opening(body, structure=np.ones((3, 3)))
+        lt, nt = ndimage.label(body & ~op, structure=np.ones((3, 3)))
+        drop = pad.copy()
+        for i, s in enumerate(ndimage.find_objects(lt), 1):
+            if max(s[0].stop - s[0].start, s[1].stop - s[1].start) * px >= 8.0:
+                drop[s] |= lt[s] == i
+        drop &= (d > 0) & (d <= 2.5 * px + 0.01)               # (never deeper than the outer 2-3 px)
+        v[z][drop] = -1000.0
+        total += int(drop.sum()); nsl += 1
+    if total:
+        log("Skin: the table pad's surface against the back taken off, in %d of %d slices." % (nsl, v.shape[0]))
+    return total
 
 
 def skin_shell(ct, hu, spacing_mm, log):
