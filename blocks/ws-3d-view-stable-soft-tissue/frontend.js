@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 65 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 66 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -3504,12 +3504,15 @@ function render(ctx) {
       // fine crossing furrows: a normal map), its gloss (oilier and drier places) and a little extra opacity in the pores
       // and furrows; the white sheen where the light at the camera glances off it, however see-through it is
       g.setAttribute('esRest', new THREE.BufferAttribute(Float32Array.from(m.skin.mesh.positions), 3));
+      // how complex the skin is around each vertex (hollow: navel, creases; folded: nipples, folds, the cut edges), each
+      // against the skin's own usual: darker red, small bumps, more opaque and matte there; flat skin glossy and plain
+      g.setAttribute('esCurv', new THREE.BufferAttribute(surfaceShape(g), 2));
       var skinMat = new THREE.MeshStandardMaterial({ color: 0xd9a888, roughness: 0.38, metalness: 0, envMapIntensity: 1.0, transparent: true, opacity: 1, depthWrite: false, side: THREE.DoubleSide });
       skinMat.onBeforeCompile = function (sh) {
         sh.uniforms.esNoiseTex = ES_NOISE; sh.uniforms.esOn = TEX.uOn || (TEX.uOn = { value: TEX.on ? 1 : 0 }); sh.uniforms.esSolid = SKINLOOK.u;
-        sh.vertexShader = 'attribute vec3 esRest;\nvarying vec3 vEsP;\nvarying vec2 vEsC;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvEsP = esRest; vEsC = vec2(0.0);');
+        sh.vertexShader = 'attribute vec3 esRest;\nattribute vec2 esCurv;\nvarying vec3 vEsP;\nvarying vec2 vEsC;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvEsP = esRest; vEsC = esCurv;');
         sh.fragmentShader = 'uniform float esSolid;\n' + TISSUE_GLSL + '\n' + SKIN_GLSL + '\n' + sh.fragmentShader
-          .replace('#include <color_fragment>', '#include <color_fragment>\nvec4 esK = vec4(0.5, 0.0, 1.0, 0.0); float esPx = length(fwidth(vEsP));\nif (esOn > 0.5) { esK = esSkin(vEsP, esPx); diffuseColor.rgb = esSkinColor(diffuseColor.rgb, vEsP, esPx); }')
+          .replace('#include <color_fragment>', '#include <color_fragment>\nvec4 esK = vec4(0.5, 0.0, 1.0, 0.0); float esPx = length(fwidth(vEsP)); float esCx = smoothstep(0.05, 0.9, clamp(0.75 * vEsC.y + 0.5 * vEsC.x, 0.0, 1.0));\nif (esOn > 0.5) { esK = esSkin(vEsP, esPx, esCx); diffuseColor.rgb = esSkinColor(diffuseColor.rgb, vEsP, esPx, esCx); }')
           .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor * esK.z, 0.25, 1.0);')
           .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nif (esOn > 0.5) { normal = esBump(-vViewPosition, normal, esK.x * 0.0005, faceDirection); roughnessFactor = max(roughnessFactor, min(0.6, length(fwidth(normal)) * 0.9)); }')
           .replace('#include <opaque_fragment>', '#include <opaque_fragment>\n{ vec3 esV = normalize( vViewPosition ), esN = normalize( normal );\n'
@@ -3518,7 +3521,7 @@ function render(ctx) {
             // -1 (facing you) fully clear, 0 (side-on) half, +1 (the far side, facing away) fully opaque
             + 'float esF = dot( esN, esV ) * faceDirection;\n'
             // and the opacity map (pores, furrows) adds a little to it
-            + 'float esA = clamp( 0.5 - 0.5 * esF + esK.y * 0.35, 0.0, 1.0 );\n'
+            + 'float esA = clamp( 0.5 - 0.5 * esF + esK.y * 0.6, 0.0, 1.0 );\n'
             // solid skin: opaque (its opacity, 1 unless faded under the metaballs)
             + 'if ( esSolid > 0.5 ) esA = opacity;\n'
             // the reflection (the key light and the room, over the normal and gloss maps) shows however clear the skin is,
@@ -3528,7 +3531,7 @@ function render(ctx) {
             + 'float esAo = clamp( esA + dot( esSpec, vec3( 0.2126, 0.7152, 0.0722 ) ), 0.0, 1.0 );\n'
             + 'gl_FragColor = vec4( ( esDif * esA + esSpec ) / max( esAo, 0.001 ), esAo ); }');
       };
-      skinMat.customProgramCacheKey = function () { return 'esasim-skin-3'; };
+      skinMat.customProgramCacheKey = function () { return 'esasim-skin-4'; };
       var skin = new THREE.Mesh(g, skinMat);
       skin.name = 'skin'; skin.renderOrder = 5;
       SKINLOOK.mat = skinMat; SKINLOOK.mesh = skin; skinSolid(SKINLOOK.solid);
