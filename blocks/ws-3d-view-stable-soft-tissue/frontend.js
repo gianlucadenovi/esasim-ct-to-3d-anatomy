@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 121 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 125 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2992,8 +2992,20 @@ function render(ctx) {
     // (older saves, made before the maps were kept by skin, were all painted on the layout made here: only a skin
     // without its own layout can take them)
     var gL = SKINLOOK.mesh && SKINLOOK.mesh.geometry, ownLay = !!(gL && gL.attributes.uv);
-    if (!kept && !ownLay) { var ok = hairOldKey(); if (HAIR.store[ok]) { kept = HAIR.store[ok]; from = ok; } else if (HAIR.store['case']) { kept = HAIR.store['case']; from = 'case'; } else { var ks = Object.keys(HAIR.store).filter(function (k) { return !/^skin:/.test(k); }); if (ks.length === 1) { kept = HAIR.store[ks[0]]; from = ks[0]; } } }
-    if (kept && from !== key) { HAIR.store[key] = kept; delete HAIR.store[from]; }
+    if (kept && ownLay && kept.lay !== 'uv') { HAIR.store['other:' + key] = kept; delete HAIR.store[key]; kept = null; }   // (painted on the layout made here, for another skin: kept aside, not used)
+    if (kept && !ownLay && kept.lay === 'uv') kept = null;
+    if (!kept && !ownLay) {
+      var ok = hairOldKey();
+      if (HAIR.store[ok] && !HAIR.store[ok].lay) { kept = HAIR.store[ok]; from = ok; }
+      else if (HAIR.store['case']) { kept = HAIR.store['case']; from = 'case'; }
+      else {
+        // (or the latest maps painted on such a layout, wherever they were kept: a newer run of the same case took them)
+        var cand = Object.keys(HAIR.store).filter(function (k) { var e = HAIR.store[k]; return e && (!e.lay || e.lay === 'cyl'); });
+        cand.sort(function (a, b) { return (HAIR.store[b].t || 0) - (HAIR.store[a].t || 0); });
+        if (cand.length) { kept = HAIR.store[cand[0]]; from = cand[0]; }
+      }
+    }
+    if (kept && from !== key) HAIR.store[key] = kept;     // (copied, not moved)
     hairStatus(kept ? 'Maps restored' + (kept.t ? ' (saved ' + new Date(kept.t).toLocaleString() + ')' : '') : 'New maps (nothing saved for this skin yet)');
     var left = 0;
     if (kept) HAIR_LAYERS.forEach(function (L) {
@@ -3035,6 +3047,7 @@ function render(ctx) {
         HAIR_LAYERS.forEach(function (L) { tg.clearRect(0, 0, 512, 512); tg.drawImage(HAIR.maps[L[0]], 0, 0, 512, 512); o[L[0]] = t.toDataURL('image/webp', 0.9); });
       } catch (e) { return; }
       o.t = Date.now();
+      var gS = SKINLOOK.mesh && SKINLOOK.mesh.geometry; o.lay = gS && gS.attributes.uv ? 'uv' : 'cyl';   // (which layout the maps are painted on)
       var only = {}; only[HAIR.key] = o;                    // (the maps of the case shown; another case's are kept too if small)
       for (var kk in HAIR.store) if (kk !== HAIR.key && JSON.stringify(HAIR.store[kk]).length < 400000) only[kk] = HAIR.store[kk];
       HAIR.store = only;
