@@ -1,8 +1,8 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 62 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 63 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
-// Saved: 2026-11-27
+// Saved: 2026-11-28
 //
 // Inputs   ctx.input("id") gives { files, stream }; ctx.rows("id"), ctx.json("id"), ctx.text("id")
 //   scene       Anything (json, gz, glb, gltf, obj, stl, ply) Scene or 3D files · several · A scene (esasim.scene/1 JSON), 3D models and point clouds, a robot model (.robot.json.gz) and/or live telemetry; a soft-body model (esasim.softbody/1, from Soft body model) with the anatomy of the sam
@@ -2697,6 +2697,19 @@ function render(ctx) {
   // the fine grain of the spleen, bowel folds, muscle fibres, the heart's fibres and fat, the lung's air sacs, vessel
   // walls, porous bone, lobulated glands. Colour, small bumps and gloss vary; the wet coat on top stays smooth.
   var TEX = { on: P.textures !== false, mats: [] };
+  // the skin: see-through (clear where it faces you) or solid, in skin colour (setting skin_look, and a switch in the Parts list)
+  var SKINLOOK = { solid: /solid/i.test(String(P.skin_look || '')), u: { value: 0 }, mat: null, mesh: null };
+  SKINLOOK.u.value = SKINLOOK.solid ? 1 : 0;
+  function skinSolid(on) {
+    SKINLOOK.solid = !!on; SKINLOOK.u.value = on ? 1 : 0;
+    var m = SKINLOOK.mat; if (!m) return;
+    var f = m.userData.esFade;
+    if (f) { f.t = !on; f.d = !!on; }                              // faded under the metaballs: put back this way later
+    else { m.transparent = !on; m.depthWrite = !!on; }
+    if (SKINLOOK.mesh) SKINLOOK.mesh.renderOrder = on ? 3 : 5;        // solid: drawn with the anatomy; see-through: after it
+    m.needsUpdate = true;
+    if (typeof BALLS !== 'undefined' && BALLS.on) { ballsFade(false); ballsFade(true); }
+  }
   var TISSUE_KINDS = [  // [kind, words in the structure's name, bump height (m), second colour (fat, slate, pale crests)]
     [1, ['liver'], 0.0003, null], [2, ['spleen'], 0.0003, null], [3, ['kidney', 'gallbladder', 'bladder'], 0.0002, null],
     [4, ['stomach', 'bowel', 'colon', 'duodenum', 'esophagus', 'rectum'], 0.0022, [0.98, 0.84, 0.76]],
@@ -3073,10 +3086,12 @@ function render(ctx) {
     lookEl.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap;padding:0 10px 6px;font-size:11.5px';
     lookEl.innerHTML = '<label style="display:flex;gap:5px;align-items:center"><input class="lk-tex" type="checkbox"' + (TEX.on ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Tissue textures</label>'
       + '<label class="lk-balls-l" style="display:none;gap:5px;align-items:center" title="The spheres of the soft-body model, moving with the tissue"><input class="lk-balls" type="checkbox"' + (BALLS.on ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Metaballs</label>'
+      + '<label class="lk-skin-l" style="display:' + (SKINLOOK.mat ? 'flex' : 'none') + ';gap:5px;align-items:center" title="On: the skin solid, in skin colour. Off: see-through, clear where it faces you"><input class="lk-skin" type="checkbox"' + (SKINLOOK.solid ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Solid skin</label>'
       + '<label style="display:flex;gap:5px;align-items:center" title="Soft shadows from the light at the camera across the model, and a soft glow on the brightest highlights (heavier for the graphics card)"><input class="lk-enh" type="checkbox"' + (ENH.on ? ' checked' : '') + ' style="margin:0;accent-color:#7b8cff">Enhance (shadows, bloom)</label>';
     var body = partsEl.querySelector('.pt-body'); body.insertBefore(lookEl, body.firstChild);
     lookEl.querySelector('.lk-tex').addEventListener('change', function () { texturesOn(this.checked); });
     lookEl.querySelector('.lk-balls').addEventListener('change', function () { ballsShow(this.checked); });
+    lookEl.querySelector('.lk-skin').addEventListener('change', function () { skinSolid(this.checked); keepView(true); });
     lookEl.querySelector('.lk-enh').addEventListener('change', function () { ENH.on = this.checked; cq('.c-enh').checked = ENH.on; enhanceApply(); keepView(true); });
   }
   function partKey(p) { return (PARTS.files > 1 ? p.file.replace(/\.(glb|gltf)$/i, '').replace(/_anatomy$/, '') + ' · ' : '') + (p.group || 'parts'); }
@@ -3275,7 +3290,7 @@ function render(ctx) {
     var hits = ptRay.intersectObjects(ms, false);
     for (var h = 0; h < hits.length; h++) {
       if (PARTS.axis !== 'off' && PARTS.plane.distanceToPoint(hits[h].point) < 0) continue;   // cut away
-      for (var i = 0; i < PARTS.list.length; i++) if (PARTS.list[i].mesh === hits[h].object && PARTS.list[i].name !== 'skin') return i;   // the skin is see-through: what is under it
+      for (var i = 0; i < PARTS.list.length; i++) if (PARTS.list[i].mesh === hits[h].object && (PARTS.list[i].name !== 'skin' || SKINLOOK.solid)) return i;   // the see-through skin: what is under it
     }
     return -1;
   }
@@ -3353,7 +3368,7 @@ function render(ctx) {
   function ballsFade(on) {                                       // the anatomy see-through while the spheres show (the skin stays as it is)
     if (on && SOFT) {
       SOFT.obj.traverse(function (o) {
-        if (!o.isMesh || o.name === 'skin' || !o.material || Array.isArray(o.material) || o.material.userData.esFade) return;
+        if (!o.isMesh || (o.name === 'skin' && !SKINLOOK.solid) || !o.material || Array.isArray(o.material) || o.material.userData.esFade) return;
         var m = o.material; m.userData.esFade = { t: m.transparent, o: m.opacity, d: m.depthWrite };
         m.transparent = true; m.opacity = 0.22; m.depthWrite = false; m.needsUpdate = true; BALLS.faded.push(m);
       });
@@ -3485,9 +3500,9 @@ function render(ctx) {
       g.setAttribute('esRest', new THREE.BufferAttribute(Float32Array.from(m.skin.mesh.positions), 3));
       var skinMat = new THREE.MeshStandardMaterial({ color: 0xd9a888, roughness: 0.38, metalness: 0, envMapIntensity: 1.0, transparent: true, opacity: 1, depthWrite: false, side: THREE.DoubleSide });
       skinMat.onBeforeCompile = function (sh) {
-        sh.uniforms.esNoiseTex = ES_NOISE; sh.uniforms.esOn = TEX.uOn || (TEX.uOn = { value: TEX.on ? 1 : 0 });
+        sh.uniforms.esNoiseTex = ES_NOISE; sh.uniforms.esOn = TEX.uOn || (TEX.uOn = { value: TEX.on ? 1 : 0 }); sh.uniforms.esSolid = SKINLOOK.u;
         sh.vertexShader = 'attribute vec3 esRest;\nvarying vec3 vEsP;\nvarying vec2 vEsC;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvEsP = esRest; vEsC = vec2(0.0);');
-        sh.fragmentShader = TISSUE_GLSL + '\n' + SKIN_GLSL + '\n' + sh.fragmentShader
+        sh.fragmentShader = 'uniform float esSolid;\n' + TISSUE_GLSL + '\n' + SKIN_GLSL + '\n' + sh.fragmentShader
           .replace('#include <color_fragment>', '#include <color_fragment>\nvec4 esK = vec4(0.5, 0.0, 1.0, 0.0); float esPx = length(fwidth(vEsP));\nif (esOn > 0.5) { esK = esSkin(vEsP, esPx); diffuseColor.rgb = esSkinColor(diffuseColor.rgb, vEsP, esPx); }')
           .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor * esK.z, 0.25, 1.0);')
           .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nif (esOn > 0.5) { normal = esBump(-vViewPosition, normal, esK.x * 0.0005, faceDirection); roughnessFactor = max(roughnessFactor, min(0.6, length(fwidth(normal)) * 0.9)); }')
@@ -3498,6 +3513,8 @@ function render(ctx) {
             + 'float esF = dot( esN, esV ) * faceDirection;\n'
             // and the opacity map (pores, furrows) adds a little to it
             + 'float esA = clamp( 0.5 - 0.5 * esF + esK.y * 0.35, 0.0, 1.0 );\n'
+            // solid skin: opaque (its opacity, 1 unless faded under the metaballs)
+            + 'if ( esSolid > 0.5 ) esA = opacity;\n'
             // the reflection (the key light and the room, over the normal and gloss maps) shows however clear the skin is,
             // as on glass: what is seen = its colour times its opacity, plus the reflection
             + 'vec3 esDif = totalDiffuse + totalEmissiveRadiance, esSpec = totalSpecular;\n'
@@ -3505,9 +3522,11 @@ function render(ctx) {
             + 'float esAo = clamp( esA + dot( esSpec, vec3( 0.2126, 0.7152, 0.0722 ) ), 0.0, 1.0 );\n'
             + 'gl_FragColor = vec4( ( esDif * esA + esSpec ) / max( esAo, 0.001 ), esAo ); }');
       };
-      skinMat.customProgramCacheKey = function () { return 'esasim-skin-2'; };
+      skinMat.customProgramCacheKey = function () { return 'esasim-skin-3'; };
       var skin = new THREE.Mesh(g, skinMat);
       skin.name = 'skin'; skin.renderOrder = 5;
+      SKINLOOK.mat = skinMat; SKINLOOK.mesh = skin; skinSolid(SKINLOOK.solid);
+      if (lookEl) lookEl.querySelector('.lk-skin-l').style.display = 'flex';
       var grp = new THREE.Group(); grp.name = 'skin'; grp.add(skin); obj.add(grp);
       PARTS.list.push({ name: 'skin', group: 'skin', file: obj.userData.file || '', mesh: skin, color: '#e8b89a' }); partsDraw();
       meshes.push(skin); byName.skin = m.skin.body;
