@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 76 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 77 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -724,6 +724,12 @@ function render(ctx) {
     LINK.sent = now;
     var o = camera.position.clone().sub(m.c).divideScalar(m.r), t = controls.target.clone().sub(m.c).divideScalar(m.r);
     ctx.peer('model-camera', { o: [o.x, o.y, o.z], t: [t.x, t.y, t.z], fov: camera.fov });
+  });
+  // a case chosen in another view (Load a CT's Show in 3D), heard even when the views are not linked
+  if (!LINK.on && ctx.on) ctx.on('peer', function (topic, d) {
+    if (topic !== 'model-pick' || !d || !d.case || P.models !== 'one at a time') return;
+    var hit = FILES.all.filter(function (f) { return caseName(f.name) === d.case; })[0];
+    if (hit && FILES.sel !== hit.name) { FILES.sel = hit.name; mdlSel.value = hit.name; keepView(true); loadFiles(FILES.all); }
   });
   if (LINK.on && ctx.on) ctx.on('peer', function (topic, d) {
     if (!d || linkTouched()) return;
