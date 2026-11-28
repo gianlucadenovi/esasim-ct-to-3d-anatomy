@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 87 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 88 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2891,18 +2891,41 @@ function render(ctx) {
   // none), Opacity (grey: 0 invisible, 1 visible) and Colour (RGB). Hairs grow from the skin, so many per cm², as long
   // as Length says (times the longest), and bend towards the feet (the model's own down: they turn with it). Each case
   // keeps its own maps (its own layout), with the view.
-  var HAIR = { on: true, dens: 40, len: 20, bend: 0.6, rand: 0.35, S: 1024, maps: null, lines: null, panel: null,
+  var HAIR = { on: true, dens: 40, len: 20, bend: 0.6, rand: 0.35, gloss: 0.6, S: 1024, fol: null, maps: null, lines: null, panel: null,
     layer: 'len', tool: 'brush', brush: 40, soft: 0.6, flow: 0.7, val: 1, col: '#3b2a20', undo: { len: [], op: [], col: [] },
     view: { z: 1, ox: 0, oy: 0 }, wire: null, wireKey: '', paint3d: false, store: {}, key: '', cache: null, timer: 0, saveT: 0 };
   (function () {
     var st = (ctx.state || {}).hair;
     if (st && typeof st === 'object') {
-      ['on', 'dens', 'len', 'bend', 'rand', 'col'].forEach(function (k) { if (st[k] != null && typeof st[k] === typeof HAIR[k]) HAIR[k] = st[k]; });
+      ['on', 'dens', 'len', 'bend', 'rand', 'gloss', 'col'].forEach(function (k) { if (st[k] != null && typeof st[k] === typeof HAIR[k]) HAIR[k] = st[k]; });
       if (st.store && typeof st.store === 'object') HAIR.store = st.store;
     }
   })();
   var HAIR_LAYERS = [['len', 'Length'], ['op', 'Opacity'], ['col', 'Colour']];
-  function hairState() { return { on: HAIR.on, dens: HAIR.dens, len: HAIR.len, bend: HAIR.bend, rand: HAIR.rand, col: HAIR.col, store: HAIR.store }; }
+  function hairState() { return { on: HAIR.on, dens: HAIR.dens, len: HAIR.len, bend: HAIR.bend, rand: HAIR.rand, gloss: HAIR.gloss, col: HAIR.col, store: HAIR.store }; }
+  // the hair's look: lit as strands (Kajiya-Kay): bright across the light, and a sheen where the strand lies at the
+  // mirror angle between the light (at the camera, a little above) and the eye; as the hair bends, that place moves along it
+  var HAIR_VS = 'attribute vec4 hC;\nattribute vec3 hT;\nvarying vec4 vC;\nvarying vec3 vT;\nvarying vec3 vV;\n'
+    + 'void main() { vC = hC; vT = normalize(normalMatrix * hT); vec4 mv = modelViewMatrix * vec4(position, 1.0); vV = -mv.xyz; gl_Position = projectionMatrix * mv; }';
+  var HAIR_FS = 'uniform float uGloss;\nvarying vec4 vC;\nvarying vec3 vT;\nvarying vec3 vV;\n'
+    + 'void main() {\n vec3 T = normalize(vT), V = normalize(vV), L = normalize(vec3(0.35, 0.55, 1.0)), H = normalize(L + V);\n'
+    + ' float tl = dot(T, L), th = dot(T, H), sinL = sqrt(max(0.0, 1.0 - tl * tl)), sinH = sqrt(max(0.0, 1.0 - th * th));\n'
+    + ' vec3 base = pow(vC.rgb, vec3(2.2));\n'
+    + ' float s1 = pow(sinH, 90.0), s2 = pow(sinH, 14.0);\n'          // a sharp white sheen, and a broader one in the hair's colour
+    + ' vec3 col = base * (0.25 + 0.75 * sinL) + uGloss * (0.9 * s1 * vec3(1.0) + 0.5 * s2 * base * 2.5);\n'
+    + ' gl_FragColor = vec4(col, vC.a * (0.8 + 0.2 * uGloss * s1));\n'
+    + ' #include <tonemapping_fragment>\n #include <colorspace_fragment>\n}';
+  // the hair moves with the skin (pressed, sagging): each hair's root on its triangle, the rest of it carried along
+  function hairFollow() {
+    var L = HAIR.lines, F = HAIR.fol, mesh = SKINLOOK.mesh; if (!L || !F || !mesh || !mesh.visible || F.g !== mesh.geometry) return;
+    var cur = mesh.geometry.attributes.position.array, idx = mesh.geometry.index.array, out = L.geometry.attributes.position.array, R = F.rest, nv = F.nv, nh = F.fi.length;
+    for (var h = 0; h < nh; h++) {
+      var f = F.fi[h], a = 3 * idx[3 * f], b = 3 * idx[3 * f + 1], c = 3 * idx[3 * f + 2], w1 = F.w[2 * h], w2 = F.w[2 * h + 1], w0 = 1 - w1 - w2;
+      var dx = w0 * cur[a] + w1 * cur[b] + w2 * cur[c] - F.root[3 * h], dy = w0 * cur[a + 1] + w1 * cur[b + 1] + w2 * cur[c + 1] - F.root[3 * h + 1], dz = w0 * cur[a + 2] + w1 * cur[b + 2] + w2 * cur[c + 2] - F.root[3 * h + 2];
+      for (var j = 0, k = 3 * h * nv; j < nv; j++, k += 3) { out[k] = R[k] + dx; out[k + 1] = R[k + 1] + dy; out[k + 2] = R[k + 2] + dz; }
+    }
+    L.geometry.attributes.position.needsUpdate = true;
+  }
   function hairCaseKey() { return FILES.shown ? caseName(FILES.shown.userData.file || '').replace(/^.*[\\/]/, '') || 'case' : 'case'; }
   function hairGeo() { var m = SKINLOOK.mesh; return m && m.geometry && m.geometry.attributes.uv ? m.geometry : null; }
   function hairBlank(kind) {
@@ -2955,6 +2978,11 @@ function render(ctx) {
     // the skin's unit: metres (a body is about 1 m across), else millimetres
     if (!g.boundingSphere) g.computeBoundingSphere();
     var U = g.boundingSphere && g.boundingSphere.radius > 20 ? 1000 : 1;
+    // only on the skin itself: not on the flat caps where the scan cuts the body (its top and bottom, along the body's
+    // length, y); the layout leaves them out already (uv -1), a skin without one by their place
+    var y0 = Infinity, y1 = -Infinity;
+    for (var yi = 1; yi < pos.length; yi += 3) { if (pos[yi] < y0) y0 = pos[yi]; if (pos[yi] > y1) y1 = pos[yi]; }
+    var capD = 0.006 * U;
     // the skin's faces with a place on the layout, and their areas (once per skin)
     if (!HAIR.cache || HAIR.cache.g !== g) {
       var nf = idx.length / 3, fl = [], cum = [], tot = 0;
@@ -2965,6 +2993,10 @@ function render(ctx) {
         var vx = pos[3 * c] - pos[3 * a], vy = pos[3 * c + 1] - pos[3 * a + 1], vz = pos[3 * c + 2] - pos[3 * a + 2];
         var cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx, ar = 0.5 * Math.sqrt(cx * cx + cy * cy + cz * cz);
         if (!(ar > 0)) continue;
+        if (Math.abs(cy) > 1.6 * ar) {                    // (a face across the body's length: on a cap if at its end)
+          var ya = pos[3 * a + 1], yb = pos[3 * b + 1], yc = pos[3 * c + 1];
+          if (Math.max(ya, yb, yc) < y0 + capD || Math.min(ya, yb, yc) > y1 - capD) continue;
+        }
         tot += ar; fl.push(f); cum.push(tot);
       }
       HAIR.cache = { g: g, fl: Uint32Array.from(fl), cum: Float64Array.from(cum), tot: tot };
@@ -2972,9 +3004,9 @@ function render(ctx) {
     var C = HAIR.cache, S = HAIR.S;
     if (!C.fl.length) return;
     var Lp = HAIR.maps.len.getContext('2d').getImageData(0, 0, S, S).data, Op = HAIR.maps.op.getContext('2d').getImageData(0, 0, S, S).data, Cp = HAIR.maps.col.getContext('2d').getImageData(0, 0, S, S).data;
-    var N = Math.min(300000, Math.round(HAIR.dens * C.tot / (U * U) * 1e4)), rnd = hairRng(1234567), K = 3;
+    var N = Math.min(200000, Math.round(HAIR.dens * C.tot / (U * U) * 1e4)), rnd = hairRng(1234567), K = 3;
     var mid0 = 4 * ((S >> 1) * S + (S >> 1));                // (no uv: the middle of each map)
-    var P = [], Q = [], L0 = HAIR.len / 1000 * U, bend = Math.max(0, Math.min(1, HAIR.bend));
+    var P = [], Q = [], TT = [], FI = [], FW = [], FR = [], dirs = [], L0 = HAIR.len / 1000 * U, bend = Math.max(0, Math.min(1, HAIR.bend));
     var e0 = (80 - 65 * bend) * Math.PI / 180, e1 = (40 - 37 * bend) * Math.PI / 180;   // how far the root and the tip rise off the skin
     for (var i = 0; i < N; i++) {
       var r0 = rnd(), r1 = rnd(), r2 = rnd(), rl = rnd(), ra = rnd();
@@ -3008,23 +3040,33 @@ function render(ctx) {
       var qx = tx * cp + bx * sp, qy = ty * cp + by * sp, qz = tz * cp + bz * sp;
       var cr = Cp[k] / 255, cg = Cp[k + 1] / 255, cb = Cp[k + 2] / 255;
       var sx = x + nx * 0.0002 * U, sy = y + ny * 0.0002 * U, sz = z + nz * 0.0002 * U, seg = len / K;
+      FI.push(fi); FW.push(r1, r2); FR.push(x, y, z);
       for (var s = 0; s < K; s++) {
         var fr = (s + 0.5) / K, e = e0 + (e1 - e0) * fr, ce = Math.cos(e), se = Math.sin(e);
-        var dx = nx * se + qx * ce, dy = ny * se + qy * ce, dz = nz * se + qz * ce;
+        dirs[3 * s] = nx * se + qx * ce; dirs[3 * s + 1] = ny * se + qy * ce; dirs[3 * s + 2] = nz * se + qz * ce;
+      }
+      for (s = 0; s < K; s++) {
+        var dx = dirs[3 * s], dy = dirs[3 * s + 1], dz = dirs[3 * s + 2];
         var ex = sx + dx * seg, ey = sy + dy * seg, ez = sz + dz * seg;
         P.push(sx, sy, sz, ex, ey, ez);
-        var a0 = op * (1 - 0.45 * s / K), a1 = op * (1 - 0.45 * (s + 1) / K);
+        // the strand's direction, smooth across its bends (the sheen slides along it)
+        var p0 = s > 0 ? 3 * (s - 1) : 3 * s, p1 = s < K - 1 ? 3 * (s + 1) : 3 * s;
+        TT.push(dx + dirs[p0], dy + dirs[p0 + 1], dz + dirs[p0 + 2], dx + dirs[p1], dy + dirs[p1 + 1], dz + dirs[p1 + 2]);
+        var a0 = 0.85 * op * (1 - 0.45 * s / K), a1 = 0.85 * op * (1 - 0.45 * (s + 1) / K);
         Q.push(cr, cg, cb, a0, cr, cg, cb, a1);
         sx = ex; sy = ey; sz = ez;
       }
     }
     if (!P.length) return;
-    var hg = new THREE.BufferGeometry();
-    hg.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
-    hg.setAttribute('color', new THREE.Float32BufferAttribute(Q, 4));
+    var hg = new THREE.BufferGeometry(), PA = new Float32Array(P);
+    hg.setAttribute('position', new THREE.BufferAttribute(PA, 3));
+    hg.setAttribute('hC', new THREE.Float32BufferAttribute(Q, 4));
+    hg.setAttribute('hT', new THREE.Float32BufferAttribute(TT, 3));
     hg.computeBoundingSphere();
-    var hm = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false });
-    HAIR.lines = new THREE.LineSegments(hg, hm); HAIR.lines.name = 'hair'; HAIR.lines.renderOrder = 6;
+    var hm = new THREE.ShaderMaterial({ vertexShader: HAIR_VS, fragmentShader: HAIR_FS, uniforms: { uGloss: { value: HAIR.gloss } }, transparent: true, depthWrite: false });
+    HAIR.lines = new THREE.LineSegments(hg, hm); HAIR.lines.name = 'hair'; HAIR.lines.renderOrder = 6; HAIR.lines.frustumCulled = false;
+    HAIR.fol = { g: g, fi: Uint32Array.from(FI), w: Float32Array.from(FW), root: Float32Array.from(FR), rest: PA.slice(), nv: 2 * K };
+    hairFollow();                                         // (where the skin is now)
     mesh.add(HAIR.lines);                                  // (with the skin: hidden with it, moved with it)
     if (HAIR.panel) { var n = HAIR.panel.querySelector('.hr-n'); if (n) n.textContent = Math.round(P.length / (6 * K)).toLocaleString() + ' hairs'; }
   }
@@ -3050,7 +3092,7 @@ function render(ctx) {
       + '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px 4px"><b style="flex:1">✂ Body hair</b><span class="hr-n" style="opacity:.7"></span>'
       + '<label style="display:flex;gap:5px;align-items:center"><input type="checkbox" class="hr-on" style="margin:0;accent-color:#7b8cff">Show hair</label><button class="hr-b hr-x" title="Close">×</button></div>'
       + '<div class="hr-row">' + sl('dens', 'Hairs per cm²', 1, 300, 1, 'How many hairs grow on each square centimetre of skin (where Length is above 0)') + sl('len', 'Longest (mm)', 1, 120, 1, 'The length of the hairs where Length is white')
-      + sl('bend', 'Lying down', 0, 1, 0.01, '0: standing off the skin; 1: lying flat on it, towards the feet') + sl('rand', 'Length variety', 0, 1, 0.01, 'Some hairs shorter than the map says, at random') + '</div>'
+      + sl('bend', 'Lying down', 0, 1, 0.01, '0: standing off the skin; 1: lying flat on it, towards the feet') + sl('rand', 'Length variety', 0, 1, 0.01, 'Some hairs shorter than the map says, at random') + sl('gloss', 'Shine', 0, 1, 0.01, 'How much the hairs shine where they catch the light (a sheen that moves along them as they bend)') + '</div>'
       + '<div class="hr-row"><span style="opacity:.85">Map</span>' + HAIR_LAYERS.map(function (L) { return '<button class="hr-b" data-hl="' + L[0] + '">' + L[1] + '</button>'; }).join('')
       + '<span style="width:8px"></span><button class="hr-b" data-ht="brush" title="Paint the value">Brush</button><button class="hr-b" data-ht="erase" title="Length and opacity to 0; colour back to the default">Eraser</button>'
       + '<button class="hr-b hr-fill" title="The whole map to the value">Fill</button><button class="hr-b hr-clear" title="The map back to its start: no hair, fully visible, the default colour">Clear</button><button class="hr-b hr-undo" title="Undo (Ctrl+Z)">Undo</button></div>'
@@ -3069,6 +3111,7 @@ function render(ctx) {
       inp.addEventListener('input', function () {
         var k = inp.getAttribute('data-hs'); HAIR[k] = +inp.value; p.querySelector('[data-hv="' + k + '"]').textContent = hairFmt(k);
         if (k === 'dens' || k === 'len' || k === 'bend' || k === 'rand') hairSoon();
+        if (k === 'gloss' && HAIR.lines) HAIR.lines.material.uniforms.uGloss.value = HAIR.gloss;
       });
       inp.addEventListener('change', function () { keepView(true); });
     });
@@ -3113,7 +3156,7 @@ function render(ctx) {
     cv.addEventListener('pointerleave', function () { HAIR.mouse = null; hairDraw(); });
     if (window.ResizeObserver) new ResizeObserver(function () { hairDraw(); }).observe(q('.hr-c'));
   }
-  function hairFmt(k) { var v = HAIR[k]; return k === 'bend' || k === 'rand' ? Math.round(v * 100) + '%' : String(Math.round(v)); }
+  function hairFmt(k) { var v = HAIR[k]; return k === 'bend' || k === 'rand' || k === 'gloss' ? Math.round(v * 100) + '%' : String(Math.round(v)); }
   function hairPanelSync() {
     var p = HAIR.panel; if (!p) return;
     p.querySelector('.hr-on').checked = HAIR.on;
@@ -4606,6 +4649,7 @@ function render(ctx) {
         arr[3 * vtx] = px; arr[3 * vtx + 1] = py; arr[3 * vtx + 2] = pz;
       }
       bd.mesh.geometry.attributes.position.needsUpdate = true;
+      if (bd.mesh === S.skinMesh && S.frame % 2 === 0) hairFollow();   // (the hair goes with the skin)
       if (S.frame % 3 === 0) bd.mesh.geometry.computeVertexNormals();
       bd.mesh.geometry.boundingSphere = null; bd.mesh.geometry.boundingBox = null;
     });
