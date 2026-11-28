@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 125 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 126 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2772,6 +2772,30 @@ function render(ctx) {
     if (typeof BALLS !== 'undefined' && BALLS.on) { ballsFade(false); ballsFade(true); }
     var lc = lookEl && lookEl.querySelector('.lk-skin'); if (lc) lc.checked = SKINLOOK.solid;
     if (skinPanel) skinPanelSync();
+  }
+  // the skin solid: what lies under it (the anatomy, the spheres) is not drawn, unless the model is cut open, the skin is
+  // hidden or faded (metaballs). Taken off the camera's layer rather than hidden, so the Parts list keeps its own ticks,
+  // and all of it is back as soon as the skin is see-through again
+  var SKOCC = { on: false, n: 0 };
+  function skinOcclude() {
+    var sk = SKINLOOK.mesh, roots = [];
+    if (typeof FILES !== 'undefined' && FILES.root) roots.push(FILES.root);
+    if (typeof SOFT !== 'undefined' && SOFT && SOFT.obj && roots.indexOf(SOFT.obj) < 0) roots.push(SOFT.obj);
+    var vis = !!(sk && sk.parent);
+    for (var o = sk; vis && o; o = o.parent) if (!o.visible) vis = false;
+    var on = vis && SKINLOOK.solid && PARTS.axis === 'off' && !(typeof BALLS !== 'undefined' && BALLS.on);
+    if (!on && !SKOCC.on) return;
+    if (on && SKOCC.on && (++SKOCC.n % 30)) return;       // (on: looked over again now and then, for parts loaded since)
+    SKOCC.on = on;
+    roots.forEach(function (r) {
+      r.traverse(function (ob) {
+        if (!(ob.isMesh || ob.isLine || ob.isPoints || ob.isSprite)) return;
+        for (var p = ob; p; p = p.parent) if (p === sk || (p.isGroup && p.name === 'skin')) return;   // the skin and its hair
+        if (ob === HAIR.lines) return;
+        if (on) { if (ob.userData.esOcc == null) { ob.userData.esOcc = ob.layers.mask; ob.layers.set(31); } }
+        else if (ob.userData.esOcc != null) { ob.layers.mask = ob.userData.esOcc; delete ob.userData.esOcc; }
+      });
+    });
   }
   // ⚙ The skin's settings: every value of its look, live (its shader's uniforms and its material), presets for the six
   // skin types of the Fitzpatrick scale, and Copy values (JSON: to send, or to paste in the view's Skin settings, which
@@ -13626,6 +13650,7 @@ function render(ctx) {
       var hpa = SKINLOOK.mesh.geometry.attributes.position;
       if (hpa.version !== HAIR.fol.ver) { HAIR.fol.ver = hpa.version; hairFollow(); }
     }
+    skinOcclude();                                        // (solid skin: nothing under it drawn)
     if (mode === 'humanoid' && (HM_FIXED || HM.cam) === 'depth') hmDepthRender(); else if (composer) composer.render(); else renderer.render(scene, camera);
     css2d.render(scene, camera);
     if (CAP.rec || CAP.offline || CAP.pic) { capCompose(); if (CAP.live) CAP.live(CAP.comp); }
