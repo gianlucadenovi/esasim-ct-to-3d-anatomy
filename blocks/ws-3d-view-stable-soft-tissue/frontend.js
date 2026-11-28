@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 112 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 113 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2969,7 +2969,9 @@ function render(ctx) {
   }
   function hairBlank(kind) {
     var c = document.createElement('canvas'); c.width = c.height = HAIR.S;
-    var g = c.getContext('2d'); g.fillStyle = kind === 'len' ? '#1a1a1a' : kind === 'op' || kind === 'curl' ? '#fff' : HAIR.col;   // (Length: 10%, short everywhere) g.fillRect(0, 0, HAIR.S, HAIR.S);
+    // (Length: 10%, short everywhere; Opacity and Curliness: 1; Colour: the default)
+    var g = c.getContext('2d', { willReadFrequently: true }); g.fillStyle = kind === 'len' ? '#1a1a1a' : kind === 'op' || kind === 'curl' ? '#fff' : HAIR.col;
+    g.fillRect(0, 0, HAIR.S, HAIR.S);
     return c;
   }
   // the maps of the case shown: kept ones (as pictures), else plain (10% of the longest everywhere, fully visible, the default colour, as curly as the slider)
@@ -2980,7 +2982,15 @@ function render(ctx) {
       if (!kept[L[0]]) return;
       left++;
       var im = new Image();
-      im.onload = im.onerror = function () { try { HAIR.maps[L[0]].getContext('2d').drawImage(im, 0, 0, HAIR.S, HAIR.S); } catch (e) { } if (--left === 0 && done) done(); };
+      im.onload = im.onerror = function () {
+        try {
+          // a map kept empty (all see-through: saved while the maps were not filled) is not used: the plain one stays
+          var t = document.createElement('canvas'); t.width = t.height = 64; var tg = t.getContext('2d'); tg.drawImage(im, 0, 0, 64, 64);
+          var td = tg.getImageData(0, 0, 64, 64).data, any = false; for (var a = 3; a < td.length; a += 4) if (td[a] > 0) { any = true; break; }
+          if (any) HAIR.maps[L[0]].getContext('2d').drawImage(im, 0, 0, HAIR.S, HAIR.S);
+        } catch (e) { }
+        if (--left === 0 && done) done();
+      };
       im.src = kept[L[0]];
     });
     if (!left && done) done();
