@@ -1,5 +1,5 @@
 # ── EsaSim block ──────────────────────────────────────────────────────
-# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 9 · worker block, Python: def run(ctx)
+# Soft body model (skin inside) (ws-soft-body-model-skin-inside) · version 10 · worker block, Python: def run(ctx)
 # Turns segmented anatomy into a soft-tissue model the 3D view simulates in real time: organs that sag, sway and push each other under gravity, held by a fixed skeleton and contained by the skin (metaba
 # Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 # Saved: 2026-11-28
@@ -78,7 +78,7 @@ WALL_GAP_MM = 45.0                                                  # neighbouri
 MIN_ML = 1.0                                                        # soft structures smaller than this are left out
 SKIN_MM = 3.0                                                       # skin thickness (epidermis and dermis), for its mass
 SKIN_DENSITY = 1100.0
-SKIN_FACES = 200000                                                 # triangles of the skin drawn (detail of the body's outline)
+SKIN_FACES = 250000                                                 # triangles of the skin drawn (detail of the body's outline)
 
 
 def run(ctx):
@@ -301,7 +301,7 @@ def skin_shell(ct, hu, spacing_mm, log):
     # from it lowered (table, blankets); only within 4 mm of the outline do the CT values decide.
     a = sitk.GetArrayFromImage(ct)
     sp = np.array(ct.GetSpacing(), float)[::-1]
-    step = np.maximum(1, np.round(1.5 / sp)).astype(int)             # about 1.5 mm in plane, every slice
+    step = np.maximum(1, np.round(0.8 / sp)).astype(int)             # the scan's own pixels (down to 0.8 mm), every slice: thin slits stay open
     m0 = a[:, ::4, ::4] > hu                                         # the body's box, from a quick look
     lab, n = ndimage.label(m0)
     if n == 0:
@@ -346,7 +346,7 @@ def skin_shell(ct, hu, spacing_mm, log):
     # thick slices: the CT interpolated between them (cubic) to about the in-plane size, so where a fold opens or closes
     # from one slice to the next the surface bends smoothly instead of tearing into a ledge
     scale = step.astype(float)
-    zf = int(round(vsp[0] / min(vsp[1], vsp[2])))
+    zf = min(2, int(round(vsp[0] / min(vsp[1], vsp[2]))))            # (at most twice: the memory)
     if zf >= 2 and v.shape[0] > 3:
         nz2 = (v.shape[0] - 1) * zf + 1
         v = ndimage.zoom(v, (nz2 / v.shape[0], 1, 1), order=3, mode="nearest", grid_mode=False)
