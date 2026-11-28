@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 69 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 70 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2717,7 +2717,7 @@ function render(ctx) {
   // ⚙ The skin's settings: every value of its look, live (its shader's uniforms and its material), presets for the six
   // skin types of the Fitzpatrick scale, and Copy values (JSON: to send, or to paste in the view's Skin settings, which
   // takes the same JSON as its defaults). What is set is kept with the view.
-  var SKIN_DEF = { base: '#d9a888', redCol: '#cc857a', redAmt: 0.55, mel: 0.35, blood: 0.3, blot: 0.14, cxLo: 0.05, cxHi: 0.9, relief: 1.0, und: 0.8, grain: 0.12, grainCx: 0.25,
+  var SKIN_DEF = { base: '#d9a888', redCol: '#cc857a', redAmt: 0.55, fade: 12, mel: 0.35, blood: 0.3, blot: 0.14, cxLo: 0.05, cxHi: 0.9, relief: 1.0, und: 0.8, grain: 0.12, grainCx: 0.25,
     dotH: 0.7, dotSize: 0.22, dotDen: 0.75, dotSp: 2.5, rough: 0.38, glossFlat: 0.7, glossCx: 1.4, env: 1.0, opBase: 0, opCx: 0.3 };
   var SKIN_TYPES = [
     ['I', 'I · very fair', { base: '#f3d6c6', mel: 0.12, blood: 0.38, redAmt: 0.6, redCol: '#cc857a' }],
@@ -2739,7 +2739,7 @@ function render(ctx) {
     SKINLOOK.u.value = SKINLOOK.solid ? 1 : 0;
   })();
   var SKINU = { esS_redCol: { value: new THREE.Vector3(0.8, 0.52, 0.48) }, esS_dotF: { value: 400 } };
-  ['redAmt', 'mel', 'blood', 'blot', 'cxLo', 'cxHi', 'relief', 'und', 'grain', 'grainCx', 'dotH', 'dotSize', 'dotDen', 'glossFlat', 'glossCx', 'opBase', 'opCx'].forEach(function (k) { SKINU['esS_' + k] = { value: 0 }; });
+  ['redAmt', 'fade', 'mel', 'blood', 'blot', 'cxLo', 'cxHi', 'relief', 'und', 'grain', 'grainCx', 'dotH', 'dotSize', 'dotDen', 'glossFlat', 'glossCx', 'opBase', 'opCx'].forEach(function (k) { SKINU['esS_' + k] = { value: 0 }; });
   var SKIN_GLSL_U = Object.keys(SKINU).map(function (k) { return 'uniform ' + (k === 'esS_redCol' ? 'vec3 ' : 'float ') + k + ';'; }).join('\n');
   function skinHex(h) { var n = parseInt(String(h).replace('#', ''), 16) || 0; return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; }
   function skinApply() {
@@ -2754,7 +2754,7 @@ function render(ctx) {
   function skinState() { var o = { solid: SKINLOOK.solid }; for (var k in SKINV) o[k] = SKINV[k]; return o; }
   var SKIN_UI = [
     ['h', 'Look'], ['solid'], ['type'],
-    ['h', 'Colour'], ['base', 'Skin colour', 'color'], ['redCol', 'Tint of complex areas', 'color'], ['redAmt', 'Red tones in complex areas', 0, 1, 0.01],
+    ['h', 'Colour'], ['base', 'Skin colour', 'color'], ['redCol', 'Tint of complex areas', 'color'], ['redAmt', 'Red tones in complex areas', 0, 1, 0.01], ['fade', 'Red tones: fade distance (mm)', 0, 50, 0.5],
     ['mel', 'Melanin mottling', 0, 1, 0.01], ['blood', 'Blood mottling (redness)', 0, 1, 0.01], ['blot', 'Blotchiness', 0, 0.5, 0.01],
     ['h', 'Complexity (folds, creases, navel, nipples, edges)'], ['cxLo', 'Flat below', 0, 1, 0.01], ['cxHi', 'Fully complex above', 0, 1, 0.01],
     ['h', 'Relief (normal map)'], ['relief', 'Relief strength', 0, 3, 0.05], ['und', 'Undulation (a few cm)', 0, 2, 0.05], ['grain', 'Fine grain, flat skin', 0, 1, 0.01], ['grainCx', 'Fine grain, complex skin', 0, 1, 0.01],
@@ -3011,6 +3011,7 @@ function render(ctx) {
     '  return vec4(h, esS_opCx * cx + 0.09 * dots, rough, 0.0); }',
     // the colour: gentle melanin and blood mottling (plain noise), and darker red tones where the skin is complex
     'vec3 esSkinColor(vec3 base, vec3 p, float px, float cx) {',
+    // cx here: the complexity spread around the complex areas (the red tones fade out over the fade distance)
     '  float mel = esFbm(p * 8.0 + 3.0), hb = esFbm(p * 14.0 + 9.0), blot = esFbm(p * 40.0 + 6.0);',
     '  vec3 c = base * (0.92 + esS_blot * (blot - 0.5) + 0.08 * (esFbmP(p, px, 120.0) - 0.5));',
     '  c = mix(c, c * vec3(0.82, 0.7, 0.6), esS_mel * smoothstep(0.45, 0.8, mel));',
@@ -3085,6 +3086,37 @@ function render(ctx) {
   }
   // The shape of a surface around each vertex, within 5 mm: how hollow it is (the surface around it rises above it, along
   // its normal: positive in grooves, notches and between processes) and how folded (its normals turn many ways)
+  // The skin's complexity (from surfaceShape) and how it spreads along the surface around complex places: for each vertex,
+  // the highest complexity nearby, fading as exp(-distance / L) along the mesh's edges, for L = 8, 20 and 50 mm
+  // (x: the raw value; y, z, w: spread). The red tones fade out from complex places over the distance chosen.
+  function skinSpread(g, curv) {
+    var pos = g.attributes.position.array, ix = g.index ? g.index.array : null, n = pos.length / 3, out = new Float32Array(4 * n);
+    var c0 = new Float32Array(n);
+    for (var v = 0; v < n; v++) { c0[v] = Math.min(1, 0.75 * curv[2 * v + 1] + 0.5 * curv[2 * v]); out[4 * v] = out[4 * v + 1] = out[4 * v + 2] = out[4 * v + 3] = c0[v]; }
+    if (!ix) return out;
+    var m = ix.length, ea = new Uint32Array(m), eb = new Uint32Array(m), el = new Float32Array(m), sum = 0;
+    for (var t = 0; t < m; t += 3) for (var k = 0; k < 3; k++) {
+      var a = ix[t + k], b = ix[t + (k + 1) % 3], dx = pos[3 * a] - pos[3 * b], dy = pos[3 * a + 1] - pos[3 * b + 1], dz = pos[3 * a + 2] - pos[3 * b + 2];
+      ea[t + k] = a; eb[t + k] = b; el[t + k] = Math.sqrt(dx * dx + dy * dy + dz * dz); sum += el[t + k];
+    }
+    var mean = sum / m || 0.003;
+    [0.008, 0.020, 0.050].forEach(function (L, li) {
+      var bv = Float32Array.from(c0), f = new Float32Array(m);
+      for (var e = 0; e < m; e++) f[e] = Math.exp(-el[e] / L);
+      var most = Math.ceil(5 * L / mean) + 10;
+      for (var it = 0; it < most; it++) {
+        var changed = 0;
+        for (var e2 = 0; e2 < m; e2++) {
+          var a2 = ea[e2], b2 = eb[e2], x = bv[a2] * f[e2], y = bv[b2] * f[e2];
+          if (x > bv[b2] + 1e-3) { bv[b2] = x; changed++; }
+          if (y > bv[a2] + 1e-3) { bv[a2] = y; changed++; }
+        }
+        if (!changed) break;
+      }
+      for (var v2 = 0; v2 < n; v2++) out[4 * v2 + 1 + li] = bv[v2];
+    });
+    return out;
+  }
   function surfaceShape(g) {
     var pos = g.attributes.position, nrm = g.attributes.normal, n = pos.count, out = new Float32Array(2 * n);
     if (!nrm) { g.computeVertexNormals(); nrm = g.attributes.normal; }
@@ -3619,14 +3651,20 @@ function render(ctx) {
       g.setAttribute('esRest', new THREE.BufferAttribute(Float32Array.from(m.skin.mesh.positions), 3));
       // how complex the skin is around each vertex (hollow: navel, creases; folded: nipples, folds, the cut edges), each
       // against the skin's own usual: darker red, small bumps, more opaque and matte there; flat skin glossy and plain
-      g.setAttribute('esCurv', new THREE.BufferAttribute(surfaceShape(g), 2));
+      var skCurv = surfaceShape(g);
+      g.setAttribute('esCurv', new THREE.BufferAttribute(skCurv, 2));
+      g.setAttribute('esCxF', new THREE.BufferAttribute(skinSpread(g, skCurv), 4));
       var skinMat = new THREE.MeshStandardMaterial({ color: 0xd9a888, roughness: 0.38, metalness: 0, envMapIntensity: 1.0, transparent: true, opacity: 1, depthWrite: false, side: THREE.DoubleSide });
       skinMat.onBeforeCompile = function (sh) {
         sh.uniforms.esNoiseTex = ES_NOISE; sh.uniforms.esOn = TEX.uOn || (TEX.uOn = { value: TEX.on ? 1 : 0 }); sh.uniforms.esSolid = SKINLOOK.u;
         for (var su in SKINU) sh.uniforms[su] = SKINU[su];
-        sh.vertexShader = 'attribute vec3 esRest;\nattribute vec2 esCurv;\nvarying vec3 vEsP;\nvarying vec2 vEsC;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvEsP = esRest; vEsC = esCurv;');
-        sh.fragmentShader = 'uniform float esSolid;\n' + SKIN_GLSL_U + '\n' + TISSUE_GLSL + '\n' + SKIN_GLSL + '\n' + sh.fragmentShader
-          .replace('#include <color_fragment>', '#include <color_fragment>\nvec4 esK = vec4(0.5, 0.0, 1.0, 0.0); float esPx = length(fwidth(vEsP)); float esCx = smoothstep(esS_cxLo, esS_cxHi, clamp(0.75 * vEsC.y + 0.5 * vEsC.x, 0.0, 1.0));\nif (esOn > 0.5) { esK = esSkin(vEsP, esPx, esCx); diffuseColor.rgb = esSkinColor(diffuseColor.rgb, vEsP, esPx, esCx); }')
+        sh.vertexShader = 'attribute vec3 esRest;\nattribute vec2 esCurv;\nattribute vec4 esCxF;\nvarying vec3 vEsP;\nvarying vec2 vEsC;\nvarying vec4 vEsF;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvEsP = esRest; vEsC = esCurv; vEsF = esCxF;');
+        sh.fragmentShader = 'uniform float esSolid;\nvarying vec4 vEsF;\n' + SKIN_GLSL_U + '\n' + TISSUE_GLSL + '\n' + SKIN_GLSL + '\n' + sh.fragmentShader
+          .replace('#include <color_fragment>', '#include <color_fragment>\nvec4 esK = vec4(0.5, 0.0, 1.0, 0.0); float esPx = length(fwidth(vEsP)); float esCx = smoothstep(esS_cxLo, esS_cxHi, clamp(0.75 * vEsC.y + 0.5 * vEsC.x, 0.0, 1.0));\n'
+            // the complexity spread over the fade distance: between the raw value and its spread at 8, 20 and 50 mm
+            + 'float esFd = clamp(esS_fade, 0.0, 50.0); float esSp = esFd <= 8.0 ? mix(vEsF.x, vEsF.y, esFd / 8.0) : (esFd <= 20.0 ? mix(vEsF.y, vEsF.z, (esFd - 8.0) / 12.0) : mix(vEsF.z, vEsF.w, (esFd - 20.0) / 30.0));\n'
+            + 'float esCxR = smoothstep(esS_cxLo, esS_cxHi, esSp);\n'
+            + 'if (esOn > 0.5) { esK = esSkin(vEsP, esPx, esCx); diffuseColor.rgb = esSkinColor(diffuseColor.rgb, vEsP, esPx, esCxR); }')
           .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor * esK.z, 0.25, 1.0);')
           .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nif (esOn > 0.5) { normal = esBump(-vViewPosition, normal, esK.x * 0.0005 * esS_relief, faceDirection); roughnessFactor = max(roughnessFactor, min(0.6, length(fwidth(normal)) * 0.9)); }')
           .replace('#include <opaque_fragment>', '#include <opaque_fragment>\n{ vec3 esV = normalize( vViewPosition ), esN = normalize( normal );\n'
@@ -3645,7 +3683,7 @@ function render(ctx) {
             + 'float esAo = clamp( esA + dot( esSpec, vec3( 0.2126, 0.7152, 0.0722 ) ), 0.0, 1.0 );\n'
             + 'gl_FragColor = vec4( ( esDif * esA + esSpec ) / max( esAo, 0.001 ), esAo ); }');
       };
-      skinMat.customProgramCacheKey = function () { return 'esasim-skin-5'; };
+      skinMat.customProgramCacheKey = function () { return 'esasim-skin-6'; };
       var skin = new THREE.Mesh(g, skinMat);
       skin.name = 'skin'; skin.renderOrder = 5;
       SKINLOOK.mat = skinMat; SKINLOOK.mesh = skin; skinApply(); skinSolid(SKINLOOK.solid);
