@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// Load a CT (ws-load-a-ct) · version 13 · view, JavaScript: function render(ctx)
+// Load a CT (ws-load-a-ct) · version 14 · view, JavaScript: function render(ctx)
 // The View's loading dialog for CT scans: drop or choose a folder from your computer (a whole CD/DVD export is fine), see its series, tick the ones to segment and press Load; or give a folder on a worke
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -32,7 +32,9 @@ function render(ctx) {
   const DEV = ['auto', 'NVIDIA GPU', 'CPU'];
   const CHOICE = ['The best CT series of each study', 'Every CT series', 'Only these series'];
 
-  let st = Object.assign({ tab: 'local', task: 'total', res: RES[0], dev: 'auto', folder: '', choice: CHOICE[0], only: '' }, ctx.state || {});
+  let st = Object.assign({ tab: 'local', task: 'total', res: RES[0], dev: 'auto', folder: '', choice: CHOICE[1], only: '', ticks: 'all' }, ctx.state || {});
+  // every series by default (not the best one of each study): also for a panel that kept the old choice
+  if (!st.v2) { st.v2 = true; st.ticks = 'all'; if (st.choice === CHOICE[0]) st.choice = CHOICE[1]; }
   let scan = MEM.scan || null;            // what the picked folder holds
   let busy = '', note = '', sending = null, live = null, lastMode = '', lastHold = 0;
 
