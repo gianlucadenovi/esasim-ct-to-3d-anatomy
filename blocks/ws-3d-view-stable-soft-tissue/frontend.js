@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 90 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 91 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -3070,10 +3070,10 @@ function render(ctx) {
     hg.computeBoundingSphere();
     var hm = new THREE.ShaderMaterial({ vertexShader: HAIR_VS, fragmentShader: HAIR_FS, uniforms: { uGloss: { value: HAIR.gloss } }, transparent: true, depthWrite: false });
     HAIR.lines = new THREE.LineSegments(hg, hm); HAIR.lines.name = 'hair'; HAIR.lines.renderOrder = 6; HAIR.lines.frustumCulled = false;
-    HAIR.fol = { g: g, fi: Uint32Array.from(FI), w: Float32Array.from(FW), root: Float32Array.from(FR), rest: PA.slice(), nv: 2 * K };
+    HAIR.fol = { g: g, fi: Uint32Array.from(FI), w: Float32Array.from(FW), root: Float32Array.from(FR), rest: PA.slice(), nv: 2 * K, ver: g.attributes.position.version };
     hairFollow();                                         // (where the skin is now)
     mesh.add(HAIR.lines);                                  // (with the skin: hidden with it, moved with it)
-    if (HAIR.panel) { var n = HAIR.panel.querySelector('.hr-n'); if (n) { var bb = new THREE.Box3().setFromBufferAttribute(g.attributes.position), hb2 = new THREE.Box3().setFromBufferAttribute(hg.attributes.position), f3 = function (v) { return v.toArray().map(function (t) { return t.toFixed(2); }).join(','); }; n.textContent = Math.round(P.length / (6 * K)).toLocaleString() + ' hairs | U' + U + ' N' + N + ' faces' + C.fl.length + '/' + (idx.length / 3) + ' skin ' + f3(bb.min) + '..' + f3(bb.max) + ' hair ' + f3(hb2.min) + '..' + f3(hb2.max) + ' skinVis ' + mesh.visible + ' mat ' + (mesh.material.transparent ? 'T' : 'O') + (mesh.material.depthWrite ? 'W' : '-'); } }
+    if (HAIR.panel) { var n = HAIR.panel.querySelector('.hr-n'); if (n) n.textContent = Math.round(P.length / (6 * K)).toLocaleString() + ' hairs'; }
   }
 
   // ---- the dialog: the settings, the skin laid flat with its wireframe, three maps to paint
@@ -4654,7 +4654,6 @@ function render(ctx) {
         arr[3 * vtx] = px; arr[3 * vtx + 1] = py; arr[3 * vtx + 2] = pz;
       }
       bd.mesh.geometry.attributes.position.needsUpdate = true;
-      if (bd.mesh === S.skinMesh && S.frame % 2 === 0) hairFollow();   // (the hair goes with the skin)
       if (S.frame % 3 === 0) bd.mesh.geometry.computeVertexNormals();
       bd.mesh.geometry.boundingSphere = null; bd.mesh.geometry.boundingBox = null;
     });
@@ -13320,6 +13319,10 @@ function render(ctx) {
   function draw() {
     if (mode === 'car' && CR_TEL) return;   // the telemetry window draws only its charts
     if (mode === 'humanoid' && HM_TEL) return;   // the telemetry window draws only its charts
+    if (HAIR.lines && HAIR.fol && SKINLOOK.mesh) {        // the hair goes wherever the skin is drawn now
+      var hpa = SKINLOOK.mesh.geometry.attributes.position;
+      if (hpa.version !== HAIR.fol.ver) { HAIR.fol.ver = hpa.version; hairFollow(); }
+    }
     if (mode === 'humanoid' && (HM_FIXED || HM.cam) === 'depth') hmDepthRender(); else if (composer) composer.render(); else renderer.render(scene, camera);
     css2d.render(scene, camera);
     if (CAP.rec || CAP.offline || CAP.pic) { capCompose(); if (CAP.live) CAP.live(CAP.comp); }
