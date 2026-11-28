@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 86 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 87 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2907,10 +2907,10 @@ function render(ctx) {
   function hairGeo() { var m = SKINLOOK.mesh; return m && m.geometry && m.geometry.attributes.uv ? m.geometry : null; }
   function hairBlank(kind) {
     var c = document.createElement('canvas'); c.width = c.height = HAIR.S;
-    var g = c.getContext('2d'); g.fillStyle = kind === 'len' ? '#000' : kind === 'op' ? '#fff' : HAIR.col; g.fillRect(0, 0, HAIR.S, HAIR.S);
+    var g = c.getContext('2d'); g.fillStyle = kind === 'len' ? '#808080' : kind === 'op' ? '#fff' : HAIR.col; g.fillRect(0, 0, HAIR.S, HAIR.S);
     return c;
   }
-  // the maps of the case shown: kept ones (as pictures), else blank (no hair, fully visible, the default colour)
+  // the maps of the case shown: kept ones (as pictures), else plain (half the longest everywhere, fully visible, the default colour)
   function hairMapsFor(key, done) {
     HAIR.key = key; HAIR.maps = { len: hairBlank('len'), op: hairBlank('op'), col: hairBlank('col') }; HAIR.undo = { len: [], op: [], col: [] };
     var kept = HAIR.store[key], left = 0;
@@ -2944,18 +2944,23 @@ function render(ctx) {
   // a small, repeatable random sequence: the same hairs every time (painting does not shuffle them)
   function hairRng(seed) { var a = seed >>> 0; return function () { a = (a + 0x6D2B79F5) >>> 0; var t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
   function hairBuild() {
-    var mesh = SKINLOOK.mesh, g = hairGeo();
+    var mesh = SKINLOOK.mesh, g = mesh && mesh.geometry;
     if (HAIR.lines && HAIR.lines.parent) HAIR.lines.parent.remove(HAIR.lines);
     if (HAIR.lines) { HAIR.lines.geometry.dispose(); HAIR.lines.material.dispose(); HAIR.lines = null; }
     if (!mesh || !g || !HAIR.on || !HAIR.maps) return;
-    var pos = (g.attributes.esRest || g.attributes.position).array, nrm = g.attributes.normal.array, uv = g.attributes.uv.array, idx = g.index ? g.index.array : null;
+    if (!g.attributes.normal) g.computeVertexNormals();
+    // (a skin made before it could be laid flat has no uv: its hair is even, as the maps' middle says)
+    var pos = (g.attributes.esRest || g.attributes.position).array, nrm = g.attributes.normal.array, uv = g.attributes.uv ? g.attributes.uv.array : null, idx = g.index ? g.index.array : null;
     if (!idx) return;
+    // the skin's unit: metres (a body is about 1 m across), else millimetres
+    if (!g.boundingSphere) g.computeBoundingSphere();
+    var U = g.boundingSphere && g.boundingSphere.radius > 20 ? 1000 : 1;
     // the skin's faces with a place on the layout, and their areas (once per skin)
     if (!HAIR.cache || HAIR.cache.g !== g) {
       var nf = idx.length / 3, fl = [], cum = [], tot = 0;
       for (var f = 0; f < nf; f++) {
         var a = idx[3 * f], b = idx[3 * f + 1], c = idx[3 * f + 2];
-        if (uv[2 * a] < 0 || uv[2 * b] < 0 || uv[2 * c] < 0) continue;
+        if (uv && (uv[2 * a] < 0 || uv[2 * b] < 0 || uv[2 * c] < 0)) continue;
         var ux = pos[3 * b] - pos[3 * a], uy = pos[3 * b + 1] - pos[3 * a + 1], uz = pos[3 * b + 2] - pos[3 * a + 2];
         var vx = pos[3 * c] - pos[3 * a], vy = pos[3 * c + 1] - pos[3 * a + 1], vz = pos[3 * c + 2] - pos[3 * a + 2];
         var cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx, ar = 0.5 * Math.sqrt(cx * cx + cy * cy + cz * cz);
@@ -2967,8 +2972,9 @@ function render(ctx) {
     var C = HAIR.cache, S = HAIR.S;
     if (!C.fl.length) return;
     var Lp = HAIR.maps.len.getContext('2d').getImageData(0, 0, S, S).data, Op = HAIR.maps.op.getContext('2d').getImageData(0, 0, S, S).data, Cp = HAIR.maps.col.getContext('2d').getImageData(0, 0, S, S).data;
-    var N = Math.min(300000, Math.round(HAIR.dens * C.tot * 1e4)), rnd = hairRng(1234567), K = 3;
-    var P = [], Q = [], L0 = HAIR.len / 1000, bend = Math.max(0, Math.min(1, HAIR.bend));
+    var N = Math.min(300000, Math.round(HAIR.dens * C.tot / (U * U) * 1e4)), rnd = hairRng(1234567), K = 3;
+    var mid0 = 4 * ((S >> 1) * S + (S >> 1));                // (no uv: the middle of each map)
+    var P = [], Q = [], L0 = HAIR.len / 1000 * U, bend = Math.max(0, Math.min(1, HAIR.bend));
     var e0 = (80 - 65 * bend) * Math.PI / 180, e1 = (40 - 37 * bend) * Math.PI / 180;   // how far the root and the tip rise off the skin
     for (var i = 0; i < N; i++) {
       var r0 = rnd(), r1 = rnd(), r2 = rnd(), rl = rnd(), ra = rnd();
@@ -2978,12 +2984,16 @@ function render(ctx) {
       var fi = C.fl[lo], ia = idx[3 * fi], ib = idx[3 * fi + 1], ic = idx[3 * fi + 2];
       if (r1 + r2 > 1) { r1 = 1 - r1; r2 = 1 - r2; }
       var w0 = 1 - r1 - r2;
-      var u = w0 * uv[2 * ia] + r1 * uv[2 * ib] + r2 * uv[2 * ic], v = w0 * uv[2 * ia + 1] + r1 * uv[2 * ib + 1] + r2 * uv[2 * ic + 1];
-      var px = Math.min(S - 1, Math.max(0, Math.floor(u * S))), py = Math.min(S - 1, Math.max(0, Math.floor((1 - v) * S))), k = 4 * (py * S + px);
+      var k = mid0;
+      if (uv) {
+        var u = w0 * uv[2 * ia] + r1 * uv[2 * ib] + r2 * uv[2 * ic], v = w0 * uv[2 * ia + 1] + r1 * uv[2 * ib + 1] + r2 * uv[2 * ic + 1];
+        var px = Math.min(S - 1, Math.max(0, Math.floor(u * S))), py = Math.min(S - 1, Math.max(0, Math.floor((1 - v) * S)));
+        k = 4 * (py * S + px);
+      }
       var len = Lp[k] / 255, op = Op[k] / 255;
       if (len < 0.01 || op < 0.01) continue;
       len *= L0 * (1 - HAIR.rand * rl);
-      if (len < 0.0002) continue;
+      if (len < 0.0002 * U) continue;
       var x = w0 * pos[3 * ia] + r1 * pos[3 * ib] + r2 * pos[3 * ic], y = w0 * pos[3 * ia + 1] + r1 * pos[3 * ib + 1] + r2 * pos[3 * ic + 1], z = w0 * pos[3 * ia + 2] + r1 * pos[3 * ib + 2] + r2 * pos[3 * ic + 2];
       var nx = w0 * nrm[3 * ia] + r1 * nrm[3 * ib] + r2 * nrm[3 * ic], ny = w0 * nrm[3 * ia + 1] + r1 * nrm[3 * ib + 1] + r2 * nrm[3 * ic + 1], nz = w0 * nrm[3 * ia + 2] + r1 * nrm[3 * ib + 2] + r2 * nrm[3 * ic + 2];
       var nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1; nx /= nl; ny /= nl; nz /= nl;
@@ -2997,7 +3007,7 @@ function render(ctx) {
       var bx = ny * tz - nz * ty, by = nz * tx - nx * tz, bz = nx * ty - ny * tx;
       var qx = tx * cp + bx * sp, qy = ty * cp + by * sp, qz = tz * cp + bz * sp;
       var cr = Cp[k] / 255, cg = Cp[k + 1] / 255, cb = Cp[k + 2] / 255;
-      var sx = x + nx * 0.0002, sy = y + ny * 0.0002, sz = z + nz * 0.0002, seg = len / K;
+      var sx = x + nx * 0.0002 * U, sy = y + ny * 0.0002 * U, sz = z + nz * 0.0002 * U, seg = len / K;
       for (var s = 0; s < K; s++) {
         var fr = (s + 0.5) / K, e = e0 + (e1 - e0) * fr, ce = Math.cos(e), se = Math.sin(e);
         var dx = nx * se + qx * ce, dy = ny * se + qy * ce, dz = nz * se + qz * ce;
