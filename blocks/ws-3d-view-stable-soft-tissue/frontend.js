@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 111 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 112 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2969,10 +2969,10 @@ function render(ctx) {
   }
   function hairBlank(kind) {
     var c = document.createElement('canvas'); c.width = c.height = HAIR.S;
-    var g = c.getContext('2d'); g.fillStyle = kind === 'len' ? '#808080' : kind === 'op' || kind === 'curl' ? '#fff' : HAIR.col; g.fillRect(0, 0, HAIR.S, HAIR.S);
+    var g = c.getContext('2d'); g.fillStyle = kind === 'len' ? '#1a1a1a' : kind === 'op' || kind === 'curl' ? '#fff' : HAIR.col;   // (Length: 10%, short everywhere) g.fillRect(0, 0, HAIR.S, HAIR.S);
     return c;
   }
-  // the maps of the case shown: kept ones (as pictures), else plain (half the longest everywhere, fully visible, the default colour)
+  // the maps of the case shown: kept ones (as pictures), else plain (10% of the longest everywhere, fully visible, the default colour, as curly as the slider)
   function hairMapsFor(key, done) {
     HAIR.key = key; HAIR.maps = { len: hairBlank('len'), op: hairBlank('op'), col: hairBlank('col'), curl: hairBlank('curl') }; HAIR.undo = { len: [], op: [], col: [], curl: [] };
     var kept = HAIR.store[key], left = 0;
@@ -3370,7 +3370,7 @@ function render(ctx) {
     if (!HAIR.maps) return;
     hairUndoPush();
     var c = HAIR.maps[HAIR.layer].getContext('2d');
-    c.fillStyle = clear ? (HAIR.layer === 'len' ? '#000' : HAIR.layer === 'op' || HAIR.layer === 'curl' ? '#fff' : HAIR.col) : hairPaintStyle();
+    c.fillStyle = clear ? (HAIR.layer === 'len' ? '#1a1a1a' : HAIR.layer === 'op' || HAIR.layer === 'curl' ? '#fff' : HAIR.col) : hairPaintStyle();
     c.fillRect(0, 0, HAIR.S, HAIR.S); hairDraw(); hairBuild(); hairSave();
   }
   // painting on the skin in the 3D view: the layout's place under the pointer (the hit face, its uv)
