@@ -1,5 +1,5 @@
 // ── EsaSim block ──────────────────────────────────────────────────────
-// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 115 · view, JavaScript: function render(ctx)
+// 3D view (stable soft tissue) (ws-3d-view-stable-soft-tissue) · version 117 · view, JavaScript: function render(ctx)
 // The project's 3D view: draws whatever the project gives it (scenes, 3D files, live positions, robots with any number of joints, several at once, fleets, rockets, vehicles), with the models, textures a
 // Workspace: Gianluca De Novi's workspace · Author: Gianluca De Novi
 // Saved: 2026-11-28
@@ -2927,11 +2927,11 @@ function render(ctx) {
   function hairFollow() {
     var L = HAIR.lines, F = HAIR.fol, mesh = SKINLOOK.mesh;
     if (!L || !F || !mesh || !mesh.visible || F.g !== mesh.geometry) return;
-    var cur = mesh.geometry.attributes.position.array, idx = mesh.geometry.index.array, out = L.geometry.attributes.position.array, R = F.rest, nv = F.nv, nh = F.fi.length;
+    var cur = mesh.geometry.attributes.position.array, idx = mesh.geometry.index.array, out = L.geometry.attributes.position.array, R = F.rest, VS = F.vs, nh = F.fi.length;
     for (var h = 0; h < nh; h++) {
       var f = F.fi[h], a = 3 * idx[3 * f], b = 3 * idx[3 * f + 1], c = 3 * idx[3 * f + 2], w1 = F.w[2 * h], w2 = F.w[2 * h + 1], w0 = 1 - w1 - w2;
       var dx = w0 * cur[a] + w1 * cur[b] + w2 * cur[c] - F.root[3 * h], dy = w0 * cur[a + 1] + w1 * cur[b + 1] + w2 * cur[c + 1] - F.root[3 * h + 1], dz = w0 * cur[a + 2] + w1 * cur[b + 2] + w2 * cur[c + 2] - F.root[3 * h + 2];
-      for (var j = 0, k = 3 * h * nv; j < nv; j++, k += 3) { out[k] = R[k] + dx; out[k + 1] = R[k + 1] + dy; out[k + 2] = R[k + 2] + dz; }
+      for (var k = 3 * VS[h], k1 = 3 * VS[h + 1]; k < k1; k += 3) { out[k] = R[k] + dx; out[k + 1] = R[k + 1] + dy; out[k + 2] = R[k + 2] + dz; }
     }
     L.geometry.attributes.position.needsUpdate = true;
   }
@@ -3076,11 +3076,12 @@ function render(ctx) {
     var Kp = HAIR.maps.curl.getContext('2d').getImageData(0, 0, S, S).data, Lp = HAIR.maps.len.getContext('2d').getImageData(0, 0, S, S).data, Op = HAIR.maps.op.getContext('2d').getImageData(0, 0, S, S).data, Cp = HAIR.maps.col.getContext('2d').getImageData(0, 0, S, S).data;
     var curl = 0; for (var ki = 0; ki < Kp.length; ki += 4 * 7) if (Kp[ki] > curl) curl = Kp[ki];   // (the curliest place painted: how many points each hair needs)
     curl /= 255;
-    var K = 3 + Math.round(curl * 9), pts = new Float64Array(3 * (K + 1));   // (curly: more points along each hair)
-    var N = Math.min(500000, Math.floor(2.4e6 / K), Math.round(HAIR.dens * C.tot / (U * U) * 1e4)), rnd = hairRng(1234567);
+    var Kmax = 3 + Math.round(curl * 9), pts = new Float64Array(3 * (Kmax + 1));   // (each hair: 3 segments straight, up to 12 curly)
+    var N = Math.min(500000, Math.round(HAIR.dens * C.tot / (U * U) * 1e4)), rnd = hairRng(1234567);
+    var segMax = Math.min(N * Kmax, 2.5e6);                 // (the memory: only curly hair needs more of it)
     var mid0 = 4 * ((S >> 1) * S + (S >> 1));                // (no uv: the middle of each map)
-    var NV = N * 2 * K, P = new Float32Array(3 * NV), Q = new Uint8Array(4 * NV), TT = new Float32Array(3 * NV), NN = new Int8Array(3 * NV);
-    var FI = new Uint32Array(N), FW = new Float32Array(2 * N), FR = new Float32Array(3 * N), dirs = [], nh = 0, pv = 0, L0 = HAIR.len / 1000 * U, bend = Math.max(0, Math.min(1, HAIR.bend));
+    var NV = 2 * segMax, P = new Float32Array(3 * NV), Q = new Uint8Array(4 * NV), TT = new Float32Array(3 * NV), NN = new Int8Array(3 * NV);
+    var FI = new Uint32Array(N), FW = new Float32Array(2 * N), FR = new Float32Array(3 * N), VS = new Uint32Array(N + 1), dirs = [], nh = 0, pv = 0, L0 = HAIR.len / 1000 * U, bend = Math.max(0, Math.min(1, HAIR.bend));
     var e0 = (80 - 65 * bend) * Math.PI / 180, e1 = (40 - 37 * bend) * Math.PI / 180;   // how far the root and the tip rise off the skin
     for (var i = 0; i < N; i++) {
       var r0 = rnd(), r1 = rnd(), r2 = rnd(), rl = rnd(), ra = rnd();
@@ -3113,15 +3114,16 @@ function render(ctx) {
       var qx = tx * cp + bx * sp, qy = ty * cp + by * sp, qz = tz * cp + bz * sp;
       var vb = 0.75 + 0.5 * ((ra * 9.731) % 1);          // (strands not all alike: some lighter, some darker)
       var cr = Math.min(1, vb * Cp[k] / 255), cg = Math.min(1, vb * Cp[k + 1] / 255), cb = Math.min(1, vb * Cp[k + 2] / 255);
+      var curlH = Kp[k] / 255, K = 3 + Math.round(curlH * 9);   // (this hair's curl: the Curliness map where it grows; its points)
+      if (pv / 2 + K > segMax) break;
       var sx = x + nx * 0.0002 * U, sy = y + ny * 0.0002 * U, sz = z + nz * 0.0002 * U, seg = len / K;
-      FI[nh] = fi; FW[2 * nh] = r1; FW[2 * nh + 1] = r2; FR[3 * nh] = x; FR[3 * nh + 1] = y; FR[3 * nh + 2] = z; nh++;
+      FI[nh] = fi; FW[2 * nh] = r1; FW[2 * nh + 1] = r2; FR[3 * nh] = x; FR[3 * nh + 1] = y; FR[3 * nh + 2] = z; VS[nh] = pv; nh++;
       for (var s = 0; s < K; s++) {
         var fr = (s + 0.5) / K, e = e0 + (e1 - e0) * fr, ce = Math.cos(e), se = Math.sin(e);
         dirs[3 * s] = nx * se + qx * ce; dirs[3 * s + 1] = ny * se + qy * ce; dirs[3 * s + 2] = nz * se + qz * ce;
       }
       // the strand's points: along its line (as it lies, towards the feet) and, curly, round that line in a spiral (a
       // few turns, more on long hair; the curl grows from the root, and always stays off the skin)
-      var curlH = Kp[k] / 255;                              // (this hair's curl: the Curliness map where it grows)
       var crl = curlH * Math.min(0.12 * len, 0.004 * U) * (0.7 + 0.6 * ((ra * 3.71) % 1));
       var turns = curlH * (1.2 + 1.8 * ((ra * 5.13) % 1)) * Math.max(0.6, Math.min(4, len / (0.012 * U))), ph0 = 6.2832 * ((ra * 7.77) % 1);
       var wx = ny * qz - nz * qy, wy = nz * qx - nx * qz, wz = nx * qy - ny * qx;   // (across the strand, along the skin)
@@ -3146,15 +3148,16 @@ function render(ctx) {
       }
     }
     if (!nh) return;
+    VS[nh] = pv;
     var hg = new THREE.BufferGeometry(), PA = P.slice(0, 3 * pv);
     hg.setAttribute('position', new THREE.BufferAttribute(PA, 3));
-    hg.setAttribute('hC', new THREE.BufferAttribute(Q.slice(0, 4 * pv), 4, true));
-    hg.setAttribute('hT', new THREE.BufferAttribute(TT.slice(0, 3 * pv), 3));
-    hg.setAttribute('hN', new THREE.BufferAttribute(NN.slice(0, 3 * pv), 3, true));
+    hg.setAttribute('hC', new THREE.BufferAttribute(Q.subarray(0, 4 * pv), 4, true));
+    hg.setAttribute('hT', new THREE.BufferAttribute(TT.subarray(0, 3 * pv), 3));
+    hg.setAttribute('hN', new THREE.BufferAttribute(NN.subarray(0, 3 * pv), 3, true));
     hg.computeBoundingSphere();
     var hm = new THREE.ShaderMaterial({ vertexShader: HAIR_VS, fragmentShader: HAIR_FS, uniforms: { uGloss: { value: HAIR.gloss } }, transparent: true, depthWrite: false });
     HAIR.lines = new THREE.LineSegments(hg, hm); HAIR.lines.name = 'hair'; HAIR.lines.renderOrder = 6; HAIR.lines.frustumCulled = false;
-    HAIR.fol = { g: g, fi: FI.slice(0, nh), w: FW.slice(0, 2 * nh), root: FR.slice(0, 3 * nh), rest: PA.slice(), nv: 2 * K, ver: g.attributes.position.version };
+    HAIR.fol = { g: g, fi: FI.slice(0, nh), w: FW.slice(0, 2 * nh), root: FR.slice(0, 3 * nh), rest: PA.slice(), vs: VS.slice(0, nh + 1), ver: g.attributes.position.version };
     hairFollow();                                         // (where the skin is now)
     mesh.add(HAIR.lines);                                  // (with the skin: hidden with it, moved with it)
     if (HAIR.panel) { var n = HAIR.panel.querySelector('.hr-n'); if (n) n.textContent = nh.toLocaleString() + ' hairs'; }
